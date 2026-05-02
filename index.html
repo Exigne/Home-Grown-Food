@@ -1,120 +1,131 @@
-<!-- ══ ADMIN VIEW ══ -->
-<div class="view" id="view-admin">
-  <!-- Login Screen (Shown if not authenticated) -->
-  <div id="admin-login-screen" style="padding: 5rem 2rem; text-align: center;">
-    <h1 class="admin-heading">Admin Access</h1>
-    <div class="order-summary-box" style="max-width: 400px; margin: 2rem auto; background: white;">
-        <div class="form-group"><label>Username</label><input type="text" id="admin-user"></div>
-        <div class="form-group"><label>Password</label><input type="password" id="admin-pass"></div>
-        <button class="pay-btn" onclick="handleAdminLogin()" style="margin-top:1rem;">Login</button>
-    </div>
-  </div>
+const API_BASE = window.location.origin + '/api'; 
+let adminToken = localStorage.getItem('hg_admin_token') || null; 
+let STRIPE_PUBLISHABLE_KEY = ''; 
+let cart = []; let orders = []; let ingredients = []; let products = []; let stripeInstance = null; let cardElement = null;
 
-  <!-- Main Admin Layout -->
-  <div class="admin-layout" id="admin-layout" style="display:none;">
-    <aside class="admin-sidebar">
-      <div class="sidebar-brand">
-        <div class="sidebar-brand-text">Home Grown</div>
-        <div class="sidebar-brand-sub">Admin Panel</div>
-      </div>
-      <div class="admin-menu-item active" onclick="showAdminSection('dashboard',event)"><span class="admin-menu-icon">📊</span> Dashboard</div>
-      <div class="admin-menu-item" onclick="showAdminSection('orders',event)"><span class="admin-menu-icon">📦</span> Orders</div>
-      <div class="admin-menu-item" onclick="showAdminSection('shipping',event)"><span class="admin-menu-icon">🚚</span> Shipping</div>
-      <div class="admin-menu-item" onclick="showAdminSection('ingredients',event)"><span class="admin-menu-icon">🧂</span> Ingredients</div>
-      <div class="admin-menu-item" onclick="showAdminSection('payments',event)"><span class="admin-menu-icon">💳</span> Payments</div>
-      <div class="admin-menu-item" onclick="showAdminSection('products',event)"><span class="admin-menu-icon">🏷️</span> Products</div>
-      <div class="admin-menu-item" onclick="showAdminSection('settings',event)"><span class="admin-menu-icon">⚙️</span> Settings</div>
-    </aside>
+async function initApp() { await fetchConfig(); await fetchProducts(); updateCartUI(); }
 
-    <main class="admin-content">
-      <!-- 1. DASHBOARD -->
-      <section class="admin-section active" id="section-dashboard">
-        <h1 class="admin-heading">Dashboard</h1>
-        <p class="admin-sub">Business overview and recent activity.</p>
-        <div class="stats-grid">
-          <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value" id="stat-revenue">£0</div></div>
-          <div class="stat-card"><div class="stat-label">Total Orders</div><div class="stat-value" id="stat-orders">0</div></div>
-          <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value" id="stat-pending">0</div></div>
-          <div class="stat-card"><div class="stat-label">Low Stock</div><div class="stat-value" id="stat-lowstock">0</div></div>
-        </div>
-        <div class="admin-sub">Recent Orders</div>
-        <div class="table-wrap">
-          <table><thead><tr><th>Order #</th><th>Customer</th><th>Total</th><th>Status</th><th>Date</th></tr></thead>
-          <tbody id="dashboard-orders-body"></tbody></table>
-        </div>
-      </section>
+async function fetchConfig() {
+    try {
+        const res = await fetch(`${API_BASE}/config`);
+        if (res.ok) {
+            const data = await res.json();
+            STRIPE_PUBLISHABLE_KEY = data.stripePublishableKey;
+            if (STRIPE_PUBLISHABLE_KEY && window.Stripe) stripeInstance = Stripe(STRIPE_PUBLISHABLE_KEY);
+        }
+    } catch (e) { console.error("Config failed"); }
+}
 
-      <!-- 2. ORDERS -->
-      <section class="admin-section" id="section-orders">
-        <h1 class="admin-heading">Orders</h1>
-        <div class="table-wrap">
-          <table><thead><tr><th>Order #</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody id="orders-body"></tbody></table>
-        </div>
-      </section>
+async function fetchProducts() {
+    try {
+        const res = await fetch(`${API_BASE}/products`);
+        products = await res.json();
+        document.getElementById('shop-loading').style.display = 'none';
+        renderShop();
+    } catch (e) { document.getElementById('shop-loading').textContent = "Database Error"; }
+}
 
-      <!-- 3. SHIPPING (The Step-Tracker) -->
-      <section class="admin-section" id="section-shipping">
-        <h1 class="admin-heading">Shipping</h1>
-        <div id="shipping-cards"></div>
-      </section>
+function renderShop() {
+    const grid = document.getElementById('products-grid');
+    grid.innerHTML = products.map(p => `
+        <div class="product-card">
+            <div class="product-img" style="background:${p.bg_color}">${p.emoji || '🍪'}</div>
+            <div class="product-info">
+                <div class="product-name">${p.name}</div>
+                <div class="product-price">£${Number(p.price).toFixed(2)}</div>
+                <button class="add-btn" onclick="addToCart(${p.id})">Add +</button>
+            </div>
+        </div>`).join('');
+}
 
-      <!-- 4. INGREDIENTS (Progress Bars) -->
-      <section class="admin-section" id="section-ingredients">
-        <h1 class="admin-heading">Ingredients</h1>
-        <div class="table-wrap">
-          <table><thead><tr><th>Ingredient</th><th>Stock</th><th>Unit</th><th>Level</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody id="ingredients-body"></tbody></table>
-        </div>
-      </section>
+function showView(v, e) {
+    document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById('view-' + v).classList.add('active');
+    if (e) e.target.classList.add('active');
+    if (v === 'admin' && adminToken) loadAdminData();
+}
 
-      <!-- 5. PAYMENTS (The Chart) -->
-      <section class="admin-section" id="section-payments">
-        <h1 class="admin-heading">Payments</h1>
-        <div class="revenue-chart">
-          <div style="font-size:0.75rem;font-weight:800;text-transform:uppercase;color:var(--text-muted);margin-bottom:1rem;">Revenue — Last 7 Days</div>
-          <div class="chart-bars" id="revenue-chart"></div>
-        </div>
-        <div class="table-wrap">
-          <table><thead><tr><th>Order #</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead>
-          <tbody id="payments-body"></tbody></table>
-        </div>
-      </section>
+async function handleAdminLogin() {
+    const user = document.getElementById('admin-user').value;
+    const pass = document.getElementById('admin-pass').value;
+    const res = await fetch(`${API_BASE}/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user, password: pass }) });
+    if (res.ok) {
+        const data = await res.json();
+        adminToken = data.token; localStorage.setItem('hg_admin_token', adminToken);
+        document.getElementById('admin-login-screen').style.display = 'none';
+        document.getElementById('admin-layout').style.display = 'grid';
+        loadAdminData();
+    } else { showToast("Invalid login"); }
+}
 
-      <!-- 6. PRODUCTS (Add/Edit) -->
-      <section class="admin-section" id="section-products">
-        <h1 class="admin-heading">Snack Catalogue</h1>
-        <div class="ingredient-form" style="margin-bottom:2rem;">
-          <h3 id="product-form-title">Add New Snack</h3>
-          <input type="hidden" id="prod-id">
-          <div class="form-row">
-            <div class="form-group"><label>Name</label><input type="text" id="prod-name"></div>
-            <div class="form-group"><label>Price £</label><input type="number" id="prod-price" step="0.01"></div>
-          </div>
-          <div class="form-row">
-             <div class="form-group"><label>Emoji</label><input type="text" id="prod-emoji"></div>
-             <div class="form-group"><label>Badge</label><input type="text" id="prod-badge"></div>
-          </div>
-          <div class="form-group"><label>Image URL</label><input type="text" id="prod-image"></div>
-          <div class="form-group"><label>Description</label><textarea id="prod-desc" style="width:100%; border-radius:10px; border:2px solid var(--border); padding:10px;"></textarea></div>
-          <div class="form-group"><label>Card Color</label><input type="color" id="prod-bg" value="#FFFBE8" style="height:50px;"></div>
-          <button class="action-btn primary" onclick="saveProduct()" style="margin-top:1rem; padding:12px 24px;">💾 Save to Cloud</button>
-          <button class="action-btn" onclick="resetProductForm()">Clear</button>
-        </div>
-        <div class="product-mgmt-grid" id="product-mgmt-grid"></div>
-      </section>
+async function loadAdminData() {
+    const headers = { 'Authorization': `Bearer ${adminToken}` };
+    const [ordRes, ingRes, prodRes] = await Promise.all([fetch(`${API_BASE}/admin/orders`, { headers }), fetch(`${API_BASE}/admin/ingredients`, { headers }), fetch(`${API_BASE}/admin/products`, { headers })]);
+    if (ordRes.ok) orders = await ordRes.json();
+    if (ingRes.ok) ingredients = await ingRes.json();
+    if (prodRes.ok) products = await prodRes.json();
+    renderAdmin();
+}
 
-      <!-- 7. SETTINGS -->
-      <section class="admin-section" id="section-settings">
-        <h1 class="admin-heading">Settings</h1>
-        <div class="ingredient-form" style="max-width:540px;">
-          <h3>Cloud Configuration</h3>
-          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1.5rem;">Manage your Stripe keys and backend connection.</p>
-          <div class="form-group"><label>Stripe Publishable Key</label><input type="text" id="set-stripe-key"></div>
-          <div class="form-group" style="margin-top:1rem;"><label>Backend URL</label><input type="text" id="set-backend-url" placeholder="https://your-site.netlify.app/api"></div>
-          <button class="action-btn primary" onclick="saveSettings()" style="margin-top:1.5rem;">💾 Update Settings</button>
-        </div>
-      </section>
-    </main>
-  </div>
-</div>
+function renderAdmin() {
+    const total = orders.reduce((s, o) => s + parseFloat(o.total), 0);
+    document.getElementById('stat-revenue').textContent = '£' + total.toFixed(2);
+    document.getElementById('stat-orders').textContent = orders.length;
+
+    // Render Shipping Tracker
+    const shipEl = document.getElementById('shipping-cards');
+    shipEl.innerHTML = orders.filter(o => o.status !== 'delivered').map(o => `
+        <div class="tracking-card">
+            <strong>Order ${o.id}</strong>
+            <div class="tracking-steps">
+                <div class="tracking-step done"><div class="ts-dot">✓</div><div class="ts-label">Ordered</div></div>
+                <div class="tracking-step ${o.status === 'shipped' ? 'current' : ''}"><div class="ts-dot">2</div><div class="ts-label">Shipped</div></div>
+            </div>
+        </div>`).join('');
+
+    // Render Chart
+    const chart = document.getElementById('revenue-chart');
+    const max = Math.max(...orders.map(o => parseFloat(o.total)), 1);
+    chart.innerHTML = orders.slice(-7).map(o => `<div class="chart-bar-wrap"><div class="chart-bar" style="height:${(parseFloat(o.total)/max)*100}px"></div></div>`).join('');
+}
+
+function addToCart(id) {
+    const p = products.find(x => x.id === id);
+    const ex = cart.find(x => x.id === id);
+    if (ex) ex.qty++; else cart.push({...p, qty: 1});
+    updateCartUI(); showToast(`${p.name} added!`);
+}
+
+function updateCartUI() {
+    const total = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
+    document.getElementById('cart-count').textContent = cart.reduce((s, x) => s + x.qty, 0);
+    const itemsEl = document.getElementById('cart-items');
+    if (cart.length === 0) {
+        itemsEl.innerHTML = `<p style="padding:2rem; text-align:center;">Empty</p>`;
+        document.getElementById('cart-footer').style.display = 'none';
+    } else {
+        itemsEl.innerHTML = cart.map(item => `<div style="padding:10px; border-bottom:1px solid #eee;">${item.name} x ${item.qty}</div>`).join('');
+        document.getElementById('cart-total-amount').textContent = '£' + total.toFixed(2);
+        document.getElementById('cart-footer').style.display = 'block';
+    }
+}
+
+function toggleCart() { document.getElementById('cart-overlay').classList.toggle('open'); }
+function closeCartOnOverlay(e) { if(e.target.id === 'cart-overlay') toggleCart(); }
+
+function openCheckout() {
+    const total = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0) + 3.50;
+    document.getElementById('pay-amount').textContent = '£' + total.toFixed(2);
+    if (stripeInstance && !cardElement) {
+        cardElement = stripeInstance.elements().create('card');
+        cardElement.mount('#card-element');
+    }
+    document.getElementById('checkout-modal').classList.add('open');
+    toggleCart();
+}
+
+function closeCheckout() { document.getElementById('checkout-modal').classList.remove('open'); }
+function showToast(m) { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2500); }
+
+initApp();
