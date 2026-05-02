@@ -199,62 +199,47 @@ function closeCartOnOverlay(e) { if(e.target === document.getElementById('cart-o
 
 // --- CHECKOUT & STRIPE ---
 function openCheckout() {
-  if (cart.length === 0) return;
-  const total = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0) + 3.50;
-  document.getElementById('pay-amount').textContent = '£' + total.toFixed(2);
-  
-  if (STRIPE_PUBLISHABLE_KEY && !stripeInstance) {
-      stripeInstance = Stripe(STRIPE_PUBLISHABLE_KEY);
-      const elements = stripeInstance.elements();
-      cardElement = elements.create('card');
-      cardElement.mount('#card-element');
-      document.getElementById('stripe-card-section').style.display = 'block';
+  if (cart.length === 0) {
+      showToast("Your basket is empty!");
+      return;
   }
-  document.getElementById('checkout-modal').classList.add('open');
-  toggleCart();
-}
 
-function closeCheckout() { document.getElementById('checkout-modal').classList.remove('open'); }
-
-async function processPayment() {
-  const btn = document.getElementById('pay-btn');
-  btn.disabled = true; btn.textContent = 'Securing Payment...';
   const total = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0) + 3.50;
-  try {
-      const res = await fetch(BACKEND_URL, {
-          method: 'POST', headers: {'Content-Type': 'application/json'}, 
-          body: JSON.stringify({ amount: Math.round(total * 100) })
-      });
-      const { clientSecret } = await res.json();
-      const { paymentIntent, error } = await stripeInstance.confirmCardPayment(clientSecret, {
-          payment_method: { card: cardElement }
-      });
-      if (error) throw new Error(error.message);
+  
+  // Set the amount on the button
+  const payAmtEl = document.getElementById('pay-amount');
+  if(payAmtEl) payAmtEl.textContent = '£' + total.toFixed(2);
 
-      const oid = 'HG-' + Date.now().toString().slice(-6);
-      const orderData = {
-          id: oid,
-          fname: document.getElementById('ch-fname').value,
-          lname: document.getElementById('ch-lname').value,
-          email: document.getElementById('ch-email').value,
-          address: `${document.getElementById('ch-address').value}, ${document.getElementById('ch-city').value}, ${document.getElementById('ch-postcode').value}`,
-          items: cart.map(i => `${i.name} ×${i.qty}`).join(', '),
-          total: total.toFixed(2),
-          status: 'pending',
-          date: new Date().toLocaleDateString('en-GB'),
-          paymentIntentId: paymentIntent.id
-      };
-      await fetch(`${API_BASE}/orders`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(orderData)
-      });
-      cart = []; updateCartUI();
-      document.getElementById('checkout-content').style.display = 'none';
-      document.getElementById('success-content').style.display = 'block';
-      document.getElementById('success-order-num').textContent = 'Order: ' + oid;
-  } catch (error) { 
-      document.getElementById('card-errors').textContent = error.message;
-  } finally { btn.disabled = false; btn.textContent = 'Place Order'; }
+  // Safely try to initialize Stripe
+  const stripeSection = document.getElementById('stripe-card-section');
+  
+  if (STRIPE_PUBLISHABLE_KEY && window.Stripe) {
+      if (!stripeInstance) {
+          try {
+              stripeInstance = Stripe(STRIPE_PUBLISHABLE_KEY);
+              const elements = stripeInstance.elements();
+              cardElement = elements.create('card');
+              cardElement.mount('#card-element');
+              if(stripeSection) stripeSection.style.display = 'block';
+          } catch(e) {
+              console.error("Stripe could not mount:", e);
+              if(stripeSection) stripeSection.style.display = 'none';
+          }
+      }
+  } else {
+      // If no key, hide the card input so the user can still see the modal
+      if(stripeSection) stripeSection.style.display = 'none';
+      console.warn("Running in Demo Mode: No Stripe Key found.");
+  }
+
+  // FINALLY: Show the modal
+  const modal = document.getElementById('checkout-modal');
+  if (modal) {
+      modal.classList.add('open');
+      toggleCart(); // Close the basket drawer
+  } else {
+      console.error("Could not find checkout-modal in HTML");
+  }
 }
 
 // --- ADMIN MANAGEMENT ---
