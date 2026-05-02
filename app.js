@@ -73,7 +73,7 @@ async function loadAdminData() {
       const [orderRes, ingRes, prodRes] = await Promise.all([
           fetch(`${API_BASE}/admin/orders`, { headers: { 'Authorization': `Bearer ${adminToken}` } }),
           fetch(`${API_BASE}/admin/ingredients`, { headers: { 'Authorization': `Bearer ${adminToken}` } }),
-          fetch(`${API_BASE}/admin/products`, { headers: { 'Authorization': `Bearer ${adminToken}` } })
+          fetch(`${API_BASE}/admin-products`, { headers: { 'Authorization': `Bearer ${adminToken}` } })
       ]);
 
       if(orderRes.ok) orders = await orderRes.json();
@@ -485,8 +485,8 @@ function renderProductMgmt() {
         <div class="pmc-stock">£${parseFloat(p.price).toFixed(2)}</div>
       </div>
       <div style="display:flex;gap:6px;">
-        <button class="action-btn" onclick="editProduct(${p.id})">✏️ Edit</button>
-        <button class="action-btn danger" onclick="deleteProduct(${p.id})">🗑️</button>
+        <button class="action-btn" onclick="event.stopPropagation(); editProduct(${p.id})">✏️ Edit</button>
+        <button class="action-btn danger" onclick="event.stopPropagation(); deleteProduct(${p.id})">🗑️</button>
       </div>
     </div>`).join('');
 }
@@ -520,7 +520,6 @@ function editProduct(id) {
   document.getElementById('prod-bg').value = p.bg || '#FFFBE8';
   document.getElementById('product-form-title').textContent = 'Edit Snack';
 
-  // Scroll to form
   document.getElementById('section-products').scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -545,14 +544,14 @@ async function saveProduct() {
     let res;
     if (id) {
       // UPDATE existing
-      res = await fetch(`${API_BASE}/admin/products/${id}`, {
+      res = await fetch(`${API_BASE}/admin-products/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
         body: JSON.stringify(payload)
       });
     } else {
       // CREATE new
-      res = await fetch(`${API_BASE}/admin/products`, {
+      res = await fetch(`${API_BASE}/admin-products`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
         body: JSON.stringify(payload)
@@ -578,7 +577,7 @@ async function deleteProduct(id) {
   if (!confirm(`Delete "${p.name}"? This cannot be undone.`)) return;
 
   try {
-    const res = await fetch(`${API_BASE}/admin/products/${id}`, {
+    const res = await fetch(`${API_BASE}/admin-products/${id}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${adminToken}` }
     });
