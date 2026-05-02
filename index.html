@@ -1,253 +1,137 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Home Grown — Food That Makes You Feel Good</title>
-    <!-- Brand Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
-    <!-- Payment SDK -->
-    <script src="https://js.stripe.com/v3/"></script>
-    <link rel="stylesheet" href="styles.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Home Grown — Food That Makes You Feel Good</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://js.stripe.com/v3/"></script>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-<!-- ══ NAVIGATION ══ -->
 <nav class="topbar">
   <a class="brand" href="#" onclick="showView('shop',event)">
-    <div class="brand-visual">
-       <!-- SVG Logo inspired by IMG_2645.jpg -->
-       <svg width="45" height="45" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-         <circle cx="50" cy="50" r="48" fill="#5AB348" fill-opacity="0.1"/>
-         <path d="M50 25 Q75 25 75 50 T50 75 Q25 75 25 50 T50 25" fill="#0E3D25"/>
-         <path d="M35 40 Q45 30 55 40" stroke="#A3D674" stroke-width="6" fill="none" stroke-linecap="round"/>
-         <path d="M45 60 Q55 70 65 60" stroke="#5AB348" stroke-width="4" fill="none" stroke-linecap="round"/>
-       </svg>
-    </div>
+    <svg class="brand-logo" viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="21" cy="18" r="14" fill="rgba(107,191,74,0.15)"/>
+      <ellipse cx="17" cy="12" rx="5" ry="8" transform="rotate(-20 17 12)" fill="#6BBF4A"/>
+      <ellipse cx="25" cy="10" rx="3" ry="6" transform="rotate(15 25 10)" fill="#A8D97F"/>
+      <ellipse cx="22" cy="22" rx="7" ry="9" transform="rotate(10 22 22)" fill="#164A2E"/>
+    </svg>
     <div>
       <div class="brand-name">Home Grown</div>
-      <div class="brand-tagline">FOOD THAT MAKES YOU FEEL GOOD</div>
+      <div class="brand-tagline">Food that makes you feel good</div>
     </div>
   </a>
   <div class="nav-links">
     <button class="nav-btn active" id="nav-shop" onclick="showView('shop',event)">Shop</button>
-    <button class="nav-btn" id="nav-admin" onclick="showView('admin',event)">Admin</button>
+    <button class="nav-btn admin-tab" id="nav-admin" onclick="showView('admin',event)">Admin Panel</button>
   </div>
   <button class="cart-btn" onclick="toggleCart()">
-    BASKET (<span id="cart-count">0</span>)
+    🛒 Basket <span class="cart-count" id="cart-count">0</span>
   </button>
 </nav>
 
-<!-- ══ SHOP VIEW ══ -->
+<!-- ══ SHOP ══ -->
 <div class="view active" id="view-shop">
-  <header class="shop-hero">
-    <h1>HOME GROWN</h1>
-    <p>FOOD THAT MAKES YOU FEEL GOOD</p>
-  </header>
-  
+  <div class="shop-hero">
+    <div class="hero-badge">🌿 Small Batch · Freshly Made</div>
+    <h1>HOME <span>GROWN</span></h1>
+    <p>Food That Makes You Feel Good</p>
+  </div>
   <div class="shop-content">
-    <div id="shop-loading" style="text-align:center; font-weight:800; padding: 4rem; color: var(--green-dark);">
-      Gathering fresh snacks...
-    </div>
-    <div class="products-grid" id="products-grid" style="display:none;"></div>
+    <div class="section-sub">Our Snacks</div>
+    <div class="products-grid" id="products-grid"></div>
   </div>
 </div>
 
-<!-- ══ ADMIN VIEW ══ -->
+<!-- ══ ADMIN ══ -->
 <div class="view" id="view-admin">
-  <!-- Login -->
-  <div id="admin-login-screen" class="admin-login-wrap" style="padding: 10% 5%; text-align: center;">
-    <h2 style="font-family: var(--font-brand); color: var(--green-dark); font-size: 2.5rem;">Admin Login</h2>
-    <div class="login-form" style="max-width: 400px; margin: 2rem auto; background: white; padding: 2rem; border: 4px solid var(--green-dark); border-radius: var(--radius);">
-      <input type="text" id="admin-user" placeholder="Username">
-      <input type="password" id="admin-pass" placeholder="Password">
-      <button class="pay-btn-premium" onclick="handleAdminLogin()" style="margin-top: 1rem;">Enter Dashboard</button>
-    </div>
-  </div>
-
-  <!-- Panel -->
-  <div class="admin-layout" id="admin-layout" style="display: none;">
+  <div class="admin-layout">
     <aside class="admin-sidebar">
-      <div class="sidebar-brand" style="font-family: var(--font-brand); margin-bottom: 2rem; font-size: 1.2rem;">HG CONTROL</div>
-      <nav>
-        <div class="admin-menu-item active" onclick="showAdminSection('dashboard',event)">📊 Dashboard</div>
-        <div class="admin-menu-item" onclick="showAdminSection('products',event)">🏷️ Products</div>
-        <div class="admin-menu-item" onclick="showAdminSection('orders',event)">📦 Orders</div>
-        <div class="admin-menu-item" onclick="showAdminSection('ingredients',event)">🧂 Ingredients</div>
-      </nav>
+      <div class="sidebar-brand">
+        <div class="sidebar-brand-text">Home Grown</div>
+      </div>
+      <div class="admin-menu-item active" onclick="showAdminSection('dashboard',event)">📊 Dashboard</div>
+      <div class="admin-menu-item" onclick="showAdminSection('orders',event)">📦 Orders</div>
+      <div class="admin-menu-item" onclick="showAdminSection('products',event)">🏷️ Products</div>
     </aside>
-    
-    <main class="admin-content" style="background: white; flex: 1; padding: 2rem;">
+    <main class="admin-content">
       <section class="admin-section active" id="section-dashboard">
         <h1 class="admin-heading">Dashboard</h1>
         <div class="stats-grid">
-          <div class="stat-card"><div class="stat-label">Revenue</div><div class="stat-value" id="stat-revenue">£0</div></div>
+          <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value" id="stat-revenue">£0</div></div>
           <div class="stat-card"><div class="stat-label">Orders</div><div class="stat-value" id="stat-orders">0</div></div>
-          <div class="stat-card"><div class="stat-label">Low Stock</div><div class="stat-value" id="stat-lowstock">0</div></div>
+        </div>
+        <div class="table-wrap" style="margin-top: 2rem;">
+          <table><thead><tr><th>Order #</th><th>Customer</th><th>Total</th><th>Status</th></tr></thead>
+          <tbody id="dashboard-orders-body"></tbody></table>
         </div>
       </section>
 
       <section class="admin-section" id="section-products">
-        <h1 class="admin-heading">Product Manager</h1>
-        <div class="product-form-card" style="background: var(--brand-yellow); padding: 1.5rem; border: 3px solid var(--green-dark); border-radius: 12px; margin-bottom: 2rem;">
-          <h3 id="product-form-title" style="font-family: var(--font-brand); margin-bottom: 1rem;">Add New Snack</h3>
-          <input type="hidden" id="prod-id">
-          <div class="form-row">
-            <input type="text" id="prod-name" placeholder="Product Name">
-            <input type="number" id="prod-price" step="0.01" placeholder="Price £">
-          </div>
-          <div class="form-row">
-            <input type="text" id="prod-emoji" placeholder="Emoji">
-            <input type="text" id="prod-badge" placeholder="Badge (New, Best Seller)">
-          </div>
-          <input type="text" id="prod-image" placeholder="Image URL (Direct link)">
-          <textarea id="prod-desc" placeholder="Product Description" rows="3"></textarea>
-          <div class="form-row" style="align-items: center; gap: 10px;">
-            <label style="font-weight: 800; font-size: 0.8rem;">Card BG Color:</label>
-            <input type="color" id="prod-bg" value="#FFFBE8" style="height: 45px; cursor: pointer;">
-          </div>
-          <button class="pay-btn-premium" onclick="saveProduct()" style="padding: 1rem; margin-top: 1rem;">Save to Cloud Database</button>
-          <button class="nav-btn" onclick="resetProductForm()" style="margin-top: 10px;">Clear Form</button>
-        </div>
-        <div id="product-mgmt-grid" class="admin-grid"></div>
+        <h1 class="admin-heading">Products</h1>
+        <div id="product-mgmt-grid" class="product-mgmt-grid"></div>
       </section>
-
+      
       <section class="admin-section" id="section-orders">
-        <h1 class="admin-heading">Live Orders</h1>
-        <div class="table-wrap" style="overflow-x: auto;">
-          <table class="admin-table" style="width: 100%; border-collapse: collapse;">
-            <thead>
-              <tr style="text-align: left; border-bottom: 2px solid var(--green-dark);">
-                <th style="padding: 1rem;">ID</th><th>Customer</th><th>Total</th><th>Status</th><th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="orders-body"></tbody>
-          </table>
+        <h1 class="admin-heading">Orders</h1>
+        <div class="table-wrap">
+          <table><thead><tr><th>Order #</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="orders-body"></tbody></table>
         </div>
-      </section>
-
-      <section class="admin-section" id="section-ingredients">
-        <h1 class="admin-heading">Inventory</h1>
-        <div id="ingredients-body" class="admin-grid"></div>
       </section>
     </main>
   </div>
 </div>
 
-<!-- ══ CART DRAWER ══ -->
+<!-- ══ CART ══ -->
 <div class="cart-overlay" id="cart-overlay" onclick="closeCartOnOverlay(event)">
   <div class="cart-drawer">
-    <div class="cart-header">
-      <h2>🧺 YOUR BASKET</h2>
-      <button class="close-btn" onclick="toggleCart()" style="color: white;">✕</button>
-    </div>
+    <div class="cart-header"><h2>🧺 Your Basket</h2><button class="close-btn" onclick="toggleCart()">✕</button></div>
     <div class="cart-items" id="cart-items"></div>
     <div class="cart-footer" id="cart-footer">
-      <div class="cart-total" style="display: flex; justify-content: space-between; margin-bottom: 1.5rem; border-top: 2px solid var(--green-dark); padding-top: 1rem;">
-        <span>TOTAL</span>
-        <span id="cart-total-amount">£0.00</span>
-      </div>
-      <button class="checkout-btn" onclick="openCheckout()">PROCEED TO CHECKOUT →</button>
+      <div class="cart-total"><span>Subtotal</span><span id="cart-total-amount">£0.00</span></div>
+      <button class="checkout-btn" onclick="openCheckout()">Checkout →</button>
     </div>
   </div>
 </div>
 
-<!-- ══ PREMIUM BOUTIQUE CHECKOUT ══ -->
+<!-- ══ CHECKOUT ══ -->
 <div class="modal-overlay" id="checkout-modal">
-  <div class="modal checkout-modal-wide">
-    <div class="modal-head" style="background: var(--green-dark); color: var(--brand-yellow); padding: 1.5rem;">
-      <div>
-        <h2 style="font-family: var(--font-brand); margin: 0;">SECURE CHECKOUT</h2>
-        <p style="font-size: 0.75rem; font-weight: 700; margin: 0; opacity: 0.8;">FREE DELIVERY ON ORDERS OVER £20</p>
-      </div>
-      <button class="close-btn" onclick="closeCheckout()" style="color: var(--brand-yellow);">✕</button>
-    </div>
-
-    <div id="checkout-content" class="modal-body-grid">
-      <!-- Shipping -->
-      <div class="checkout-form-side">
-        <h3 class="checkout-section-title">1. DELIVERY DETAILS</h3>
+  <div class="modal">
+    <div class="modal-head"><h2>Complete Your Order</h2><button class="close-btn" onclick="closeCheckout()">✕</button></div>
+    <div id="checkout-content">
+      <div class="modal-body">
+        <div class="order-summary-box"><div id="checkout-summary"></div></div>
         <div class="form-row">
-          <input type="text" id="ch-fname" placeholder="First Name">
-          <input type="text" id="ch-lname" placeholder="Last Name">
+          <div class="form-group"><label>First Name</label><input type="text" id="ch-fname"></div>
+          <div class="form-group"><label>Last Name</label><input type="text" id="ch-lname"></div>
         </div>
-        <input type="email" id="ch-email" placeholder="Email Address">
-        <input type="text" id="ch-address" placeholder="Street Address">
+        <div class="form-row full"><div class="form-group"><label>Email</label><input type="email" id="ch-email"></div></div>
+        <div class="form-row full"><div class="form-group"><label>Address</label><input type="text" id="ch-address"></div></div>
         <div class="form-row">
-          <input type="text" id="ch-city" placeholder="City">
-          <input type="text" id="ch-postcode" placeholder="Postcode">
+          <div class="form-group"><label>City</label><input type="text" id="ch-city"></div>
+          <div class="form-group"><label>Postcode</label><input type="text" id="ch-postcode"></div>
         </div>
-
-        <h3 class="checkout-section-title" style="margin-top: 2rem;">2. PAYMENT</h3>
-        <div id="stripe-card-section" class="stripe-card-container">
+        <div class="stripe-section" id="stripe-card-section" style="display:none;">
           <div id="card-element"></div>
         </div>
-        <div id="card-errors" class="error-text" style="color: var(--danger); font-size: 0.8rem; margin-top: 5px;"></div>
-        
-        <div class="trust-badges" style="display: flex; gap: 15px; margin-top: 2rem; font-size: 0.65rem; font-weight: 800; color: var(--green-leaf);">
-          <span>🔒 SSL ENCRYPTED</span>
-          <span>💳 STRIPE SECURE</span>
-          <span>🌿 PLASTIC FREE</span>
-        </div>
       </div>
-
-      <!-- Summary -->
-      <div class="checkout-summary-side" style="background: var(--green-light); padding: 2rem; border-left: 4px solid var(--green-dark);">
-        <h3 class="checkout-section-title">YOUR ORDER</h3>
-        <div id="checkout-summary-list" class="summary-items-list" style="margin-bottom: 2rem;"></div>
-        
-        <div class="price-breakdown" style="border-top: 2px solid var(--green-dark); padding-top: 1rem;">
-          <div class="price-row" style="display: flex; justify-content: space-between; font-weight: 700; margin-bottom: 5px;">
-            <span>Subtotal</span><span id="summary-subtotal">£0.00</span>
-          </div>
-          <div class="price-row" style="display: flex; justify-content: space-between; font-weight: 700; margin-bottom: 5px;">
-            <span>Delivery</span><span>£3.50</span>
-          </div>
-          <div class="price-row grand-total" style="display: flex; justify-content: space-between; font-family: var(--font-brand); font-size: 1.5rem; margin-top: 1rem; color: var(--green-dark);">
-            <span>TOTAL</span><span id="summary-total">£0.00</span>
-          </div>
-        </div>
-
-        <button class="pay-btn-premium" id="pay-btn" onclick="processPayment()" style="margin-top: 2rem;">
-          PLACE ORDER — <span id="pay-amount-btn">£0.00</span>
-        </button>
+      <div class="modal-footer">
+        <div id="card-errors"></div>
+        <button class="pay-btn" id="pay-btn" onclick="processPayment()">Place Order — <span id="pay-amount">£0.00</span></button>
       </div>
     </div>
-
-    <!-- Success State -->
-    <div id="success-content" style="display:none; text-align:center; padding: 4rem 2rem; background: var(--brand-yellow);">
-      <div class="success-check">✓</div>
-      <h2 style="font-family: var(--font-brand); color: var(--green-dark); font-size: 2.5rem;">ORDER PLACED!</h2>
-      <p style="font-weight: 700;">Check your email for confirmation.</p>
-      <div id="success-order-num" class="order-id-badge"></div>
-      <button class="pay-btn-premium" onclick="location.reload()" style="margin-top: 2rem; width: auto; padding: 1rem 3rem;">BACK TO SHOP</button>
+    <div id="success-content" style="display:none; text-align:center; padding:3rem;">
+        <h2 style="color: var(--success);">Order Placed! 🎉</h2>
+        <p id="success-order-num"></p>
+        <button class="add-btn" onclick="location.reload()" style="margin-top:2rem;">Continue Shopping</button>
     </div>
   </div>
 </div>
 
-<!-- ══ PRODUCT DETAIL MODAL ══ -->
-<div class="modal-overlay" id="product-modal" onclick="closeProductModalOnOverlay(event)">
-  <div class="modal" style="width: 480px; border: 4px solid var(--green-dark); box-shadow: 10px 10px 0 var(--green-dark);">
-    <div class="modal-head" style="padding: 1.5rem; border-bottom: 3px solid var(--green-dark); display: flex; justify-content: space-between; align-items: center;">
-      <h2 id="pm-name" style="font-family: var(--font-brand); margin: 0; color: var(--green-dark);"></h2>
-      <button class="close-btn" onclick="closeProductModal()">✕</button>
-    </div>
-    <div id="pm-img-container" style="height: 250px; display: flex; align-items: center; justify-content: center; background: white;">
-      <span id="pm-emoji" style="font-size: 6rem;"></span>
-      <span id="pm-badge" class="product-badge" style="display: none;"></span>
-    </div>
-    <div style="padding: 2rem; background: white;">
-      <p id="pm-desc" style="font-weight: 600; color: var(--text-main); margin-bottom: 2rem; line-height: 1.6;"></p>
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h3 id="pm-price" style="font-family: var(--font-brand); font-size: 2rem; color: var(--green-dark); margin: 0;"></h3>
-        <button id="pm-add-btn" class="add-btn" style="padding: 1rem 2rem; font-size: 1rem;">ADD TO BASKET</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Notification -->
 <div class="toast" id="toast"></div>
 
 <script src="app.js"></script>
