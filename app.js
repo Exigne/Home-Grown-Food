@@ -203,8 +203,11 @@ function renderDashboard() {
           <td>${o.fname || ''} ${o.lname || ''}</td>
           <td style="font-size:0.82rem; color:var(--text-muted);">${(o.items || '').substring(0, 40)}${(o.items || '').length > 40 ? '…' : ''}</td>
           <td><strong>£${parseFloat(o.total).toFixed(2)}</strong></td>
-          <td><span class="badge badge-${o.status}">${o.status}</span></td>
-          <td>${o.date || ''}</td>
+          <td>
+          <span class="badge badge-${o.status}">${o.status}</span>
+          ${o.pickup ? '<span class="badge" style="background:#E8F5E9; color:#1B5E20; margin-left:4px;">🏠 Pickup</span>' : ''}
+          </td>
+          <td>${o.date || ''}</td
         </tr>`
     ).join('');
 }
@@ -223,7 +226,10 @@ function renderOrdersTable() {
           <td style="font-size:0.8rem;">${o.address || ''}</td>
           <td style="font-size:0.82rem;">${o.items || ''}</td>
           <td><strong>£${parseFloat(o.total).toFixed(2)}</strong></td>
-          <td><span class="badge badge-${o.status}">${o.status}</span></td>
+          <td>
+          <span class="badge badge-${o.status}">${o.status}</span>
+          ${o.pickup ? '<span style="font-size:0.7rem; margin-left:4px;">🏠</span>' : ''}
+          </td>
           <td>
             ${o.status === 'pending'    ? `<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','processing')">Process</button>` : ''}
             ${o.status === 'processing' ? `<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','shipped')">Ship</button>` : ''}
