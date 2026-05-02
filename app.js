@@ -1,5 +1,5 @@
 // --- CONFIGURATION & STATE ---
-const API_BASE = 'https://your-actual-netlify-url.netlify.app/api';
+const API_BASE = 'https://homegrownfood.netlify.app/api';
 let adminToken = localStorage.getItem('hg_admin_token') || null;
 
 let STRIPE_PUBLISHABLE_KEY = localStorage.getItem('hg_stripe_key') || '';
