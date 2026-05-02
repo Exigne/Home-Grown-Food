@@ -592,3 +592,46 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
   .product-mgmt-grid { grid-template-columns: 1fr; }
   .stats-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* ══════════════════════════════════════════════
+   CHECKOUT — HOME PICKUP
+══════════════════════════════════════════════ */
+.pickup-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 1rem 0;
+  padding: 14px 16px;
+  background: #f0fdf4;
+  border-radius: var(--radius);
+  border: 2px solid #c8e6c9;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pickup-option:hover {
+  background: #e8f5e9;
+  border-color: #a5d6a7;
+}
+
+.pickup-option input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: var(--green-dark);
+  flex-shrink: 0;
+}
+
+.pickup-option label {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--green-dark);
+  font-size: 0.95rem;
+  line-height: 1.4;
+  user-select: none;
+}
+
+.pickup-option:has(input:checked) {
+  background: #e8f5e9;
+  border-color: var(--green-leaf);
+}
