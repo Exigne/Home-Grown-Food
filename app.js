@@ -96,6 +96,8 @@ async function loadAdminData() {
 // --- SHOP & CART LOGIC ---
 function renderShop() {
   const grid = document.getElementById('products-grid');
+  const loading = document.getElementById('shop-loading');
+  
   grid.innerHTML = PRODUCTS.map(p => `
     <div class="product-card">
       <div class="product-img" style="background:${p.bg};">
@@ -111,6 +113,10 @@ function renderShop() {
         </div>
       </div>
     </div>`).join('');
+  
+  // FIX: Hide loading, show grid
+  if (loading) loading.style.display = 'none';
+  grid.style.display = 'grid';
 }
 
 function addToCart(id) {
@@ -119,8 +125,11 @@ function addToCart(id) {
   if(ex) ex.qty++; else cart.push({...p, qty:1});
   updateCartUI();
   const btn = document.getElementById('add-btn-'+id);
-  btn.textContent = '✓ Added'; btn.classList.add('added');
-  setTimeout(() => { btn.textContent = 'Add +'; btn.classList.remove('added'); }, 1500);
+  if (btn) {
+    btn.textContent = '✓ Added'; 
+    btn.classList.add('added');
+    setTimeout(() => { btn.textContent = 'Add +'; btn.classList.remove('added'); }, 1500);
+  }
   showToast(`${p.emoji} ${p.name} added!`);
 }
 
@@ -182,7 +191,7 @@ function openCheckout() {
     `<div class="os-item"><span>Shipping</span><span>£${shipping.toFixed(2)}</span></div>
      <div class="os-item total"><span>Total</span><span>£${grand.toFixed(2)}</span></div>`;
   
-  document.getElementById('pay-amount').textContent = '£' + grand.toFixed(2);
+  // FIX: Removed reference to non-existent #pay-amount element
   document.getElementById('checkout-content').style.display = 'block';
   document.getElementById('success-content').style.display = 'none';
   
@@ -194,6 +203,8 @@ function openCheckout() {
       cardElement = elements.create('card', {style: {base: {fontFamily: "'Nunito',sans-serif", fontSize: '15px', color: '#0E3019'}}});
       cardElement.mount('#card-element');
     }
+  } else {
+    document.getElementById('stripe-card-section').style.display = 'none';
   }
   
   document.getElementById('checkout-modal').classList.add('open');
@@ -235,13 +246,15 @@ async function processPayment() {
       
       if (error) {
           document.getElementById('card-errors').textContent = error.message;
-          btn.disabled = false; btn.innerHTML = `🌿 Place Order — £${total.toFixed(2)}`;
+          btn.disabled = false; 
+          btn.textContent = `🌿 Place Order — £${total.toFixed(2)}`;
           return;
       }
       paymentOk = true;
     } catch(e) {
       document.getElementById('card-errors').textContent = 'Payment error. Please try again.';
-      btn.disabled = false; btn.innerHTML = `🌿 Place Order — £${total.toFixed(2)}`;
+      btn.disabled = false; 
+      btn.textContent = `🌿 Place Order — £${total.toFixed(2)}`;
       return;
     }
   } else {
@@ -336,6 +349,9 @@ function renderOrdersTable() {
 
 function renderShipping() {
   const el = document.getElementById('shipping-cards');
+  // FIX: Guard against missing element
+  if (!el) return;
+  
   const active = orders.filter(o => ['processing', 'shipped'].includes(o.status));
   if(active.length === 0) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.9rem;font-weight:600;">No active shipments yet.</p>'; return; }
   const steps = ['Ordered', 'Processing', 'Dispatched', 'In Transit', 'Delivered'];
@@ -378,18 +394,28 @@ function renderIngredients() {
 }
 
 function renderPayments() {
-  const total = orders.reduce((s, o) => s + parseFloat(o.total), 0);
-  document.getElementById('pay-total').textContent = '£' + total.toFixed(2);
-  document.getElementById('pay-count').textContent = orders.length;
-  document.getElementById('pay-avg').textContent = orders.length ? '£' + (total / orders.length).toFixed(2) : '£0.00';
+  // FIX: Guard against missing elements (payments section may not exist in HTML)
+  const payTotal = document.getElementById('pay-total');
+  const payCount = document.getElementById('pay-count');
+  const payAvg = document.getElementById('pay-avg');
+  const payBody = document.getElementById('payments-body');
   
-  const tbody = document.getElementById('payments-body');
-  tbody.innerHTML = orders.length === 0 ? '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:2rem;">No transactions yet.</td></tr>' :
+  if (!payTotal || !payCount || !payAvg || !payBody) return;
+  
+  const total = orders.reduce((s, o) => s + parseFloat(o.total), 0);
+  payTotal.textContent = '£' + total.toFixed(2);
+  payCount.textContent = orders.length;
+  payAvg.textContent = orders.length ? '£' + (total / orders.length).toFixed(2) : '£0.00';
+  
+  payBody.innerHTML = orders.length === 0 ? '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:2rem;">No transactions yet.</td></tr>' :
     orders.map(o => `<tr><td><strong>${o.id}</strong></td><td>${o.fname} ${o.lname}</td><td><strong>£${o.total}</strong></td><td>${o.date}</td><td><span class="badge badge-paid">Paid</span></td></tr>`).join('');
 }
 
 function renderProductMgmt() {
-  document.getElementById('product-mgmt-grid').innerHTML = PRODUCTS.map(p => `
+  const grid = document.getElementById('product-mgmt-grid');
+  if (!grid) return;
+  
+  grid.innerHTML = PRODUCTS.map(p => `
     <div class="product-mgmt-card">
       <div class="pmc-emoji" style="background:${p.bg};">${p.emoji}</div>
       <div style="flex:1;"><div class="pmc-name">${p.name}</div><div class="pmc-stock">In production</div></div>
@@ -400,8 +426,17 @@ function renderProductMgmt() {
 
 // --- ADMIN ACTIONS (API CALLS) ---
 
-function filterOrders(q) { document.querySelectorAll('#orders-body tr').forEach(r => { r.style.display = r.textContent.toLowerCase().includes(q.toLowerCase()) ? '' : 'none'; }); }
-function filterOrdersByStatus(s) { document.querySelectorAll('#orders-body tr').forEach(r => { r.style.display = !s || r.textContent.toLowerCase().includes(s) ? '' : 'none'; }); }
+function filterOrders(q) { 
+  const rows = document.querySelectorAll('#orders-body tr');
+  if (!rows.length) return;
+  rows.forEach(r => { r.style.display = r.textContent.toLowerCase().includes(q.toLowerCase()) ? '' : 'none'; }); 
+}
+
+function filterOrdersByStatus(s) { 
+  const rows = document.querySelectorAll('#orders-body tr');
+  if (!rows.length) return;
+  rows.forEach(r => { r.style.display = !s || r.textContent.toLowerCase().includes(s) ? '' : 'none'; }); 
+}
 
 async function updateOrderStatus(id, status) {
   try {
@@ -478,15 +513,21 @@ async function deleteIngredient(id) {
 // --- SETTINGS & UTILS ---
 function saveSettings() {
   const key = document.getElementById('set-stripe-key').value.trim();
-  const url = document.getElementById('set-backend-url').value.trim();
+  const url = document.getElementById('set-backend-url') ? document.getElementById('set-backend-url').value.trim() : '';
   if(key) { STRIPE_PUBLISHABLE_KEY = key; localStorage.setItem('hg_stripe_key', key); }
   if(url) { BACKEND_URL = url; localStorage.setItem('hg_backend_url', url); }
   showToast('✓ Settings saved!');
 }
 
 function loadSettings() {
-  if(STRIPE_PUBLISHABLE_KEY) document.getElementById('set-stripe-key').value = STRIPE_PUBLISHABLE_KEY;
-  if(BACKEND_URL) document.getElementById('set-backend-url').value = BACKEND_URL;
+  if(STRIPE_PUBLISHABLE_KEY) {
+    const el = document.getElementById('set-stripe-key');
+    if (el) el.value = STRIPE_PUBLISHABLE_KEY;
+  }
+  if(BACKEND_URL) {
+    const el = document.getElementById('set-backend-url');
+    if (el) el.value = BACKEND_URL;
+  }
 }
 
 let toastTimer;
