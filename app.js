@@ -458,6 +458,21 @@ function closeCartOnOverlay(e) { if (e.target.id === 'cart-overlay') toggleCart(
 
 // ─── CHECKOUT ─────────────────────────────────────────────────────────────────
 function openCheckout() {
+    function togglePickup() {
+    const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
+    const isPickup = document.getElementById('pickup-check').checked;
+    const shipping = isPickup ? 0 : 3.50;
+    const total    = subtotal + shipping;
+
+    document.getElementById('checkout-summary').innerHTML =
+        cart.map(i => `<div class="os-item"><span>${i.emoji || ''} ${i.name} ×${i.qty}</span><span>£${(parseFloat(i.price) * i.qty).toFixed(2)}</span></div>`).join('') +
+        (shipping > 0
+            ? `<div class="os-item"><span>Shipping</span><span>£${shipping.toFixed(2)}</span></div>`
+            : `<div class="os-item" style="color:var(--green-mid);"><span>🏠 Home Pickup</span><span>£0.00</span></div>`) +
+        `<div class="os-item total"><span>Total</span><span>£${total.toFixed(2)}</span></div>`;
+
+    document.getElementById('pay-amount').textContent = '£' + total.toFixed(2);
+}
     if (cart.length === 0) return;
     const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
     const shipping = 3.50;
@@ -522,11 +537,73 @@ async function processPayment() {
     document.getElementById('card-errors').textContent = '';
 
     const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
-    const total    = (subtotal + 3.50).toFixed(2);
+    const isPickup = document.getElementById('pickup-check')?.checked || false;
+    const shipping = isPickup ? 0 : 3.50;
+    const total    = (subtotal + shipping).toFixed(2);
     const oid      = 'HG-' + Date.now().toString().slice(-6);
 
     try {
         let paymentIntentId = null;
+
+        // If Stripe is configured, run real payment
+        if (STRIPE_PUBLISHABLE_KEY && stripeInstance && cardElement) {
+            const res = await fetch(`${API_BASE}/create-payment-intent`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ amount: Math.round(parseFloat(total) * 100), currency: 'gbp' })
+            });
+            const { clientSecret } = await res.json();
+            const { paymentIntent, error } = await stripeInstance.confirmCardPayment(clientSecret, {
+                payment_method: { card: cardElement }
+            });
+            if (error) throw new Error(error.message);
+            paymentIntentId = paymentIntent.id;
+        } else {
+            // Demo mode — simulate network delay
+            await new Promise(r => setTimeout(r, 700));
+        }
+
+        // Save order to backend
+        const orderPayload = {
+            id:              oid,
+            fname:           document.getElementById('ch-fname').value.trim(),
+            lname:           document.getElementById('ch-lname').value.trim(),
+            email:           document.getElementById('ch-email').value.trim(),
+            address:         `${document.getElementById('ch-address').value.trim()}, ${document.getElementById('ch-city').value.trim()}, ${document.getElementById('ch-postcode').value.trim()}`,
+            items:           cart.map(i => `${i.name} ×${i.qty}`).join(', '),
+            total:           total,
+            status:          'pending',
+            date:            new Date().toLocaleDateString('en-GB'),
+            timestamp:       Date.now(),
+            paymentIntentId: paymentIntentId,
+            pickup:          isPickup
+        };
+
+        try {
+            await fetch(`${API_BASE}/orders`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(orderPayload)
+            });
+        } catch (saveErr) {
+            console.warn('Could not save order to backend:', saveErr);
+        }
+
+        // Show success
+        document.getElementById('success-order-num').textContent = 'Order Reference: ' + oid;
+        document.getElementById('checkout-content').style.display = 'none';
+        document.getElementById('success-content').style.display  = 'block';
+        cart = [];
+        updateCartUI();
+        showToast('🎉 Order placed!');
+
+    } catch (e) {
+        document.getElementById('card-errors').textContent = e.message;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `🌿 Place Order — <span id="pay-amount">£${total}</span>`;
+    }
+}
 
         // If Stripe is configured, run real payment
         if (STRIPE_PUBLISHABLE_KEY && stripeInstance && cardElement) {
