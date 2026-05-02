@@ -199,47 +199,41 @@ function closeCartOnOverlay(e) { if(e.target === document.getElementById('cart-o
 
 // --- CHECKOUT & STRIPE ---
 function openCheckout() {
-  if (cart.length === 0) {
-      showToast("Your basket is empty!");
-      return;
-  }
+  if (cart.length === 0) return;
 
-  const total = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0) + 3.50;
+  const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
+  const total = subtotal + 3.50;
   
-  // Set the amount on the button
-  const payAmtEl = document.getElementById('pay-amount');
-  if(payAmtEl) payAmtEl.textContent = '£' + total.toFixed(2);
+  // Update Price Breakdown
+  document.getElementById('summary-subtotal').textContent = '£' + subtotal.toFixed(2);
+  document.getElementById('summary-total').textContent = '£' + total.toFixed(2);
+  document.getElementById('pay-amount-btn').textContent = '£' + total.toFixed(2);
+  
+  // Build Itemized List
+  const summaryList = document.getElementById('checkout-summary-list');
+  summaryList.innerHTML = cart.map(item => `
+    <div class="summary-item">
+      <span>${item.name} × ${item.qty}</span>
+      <span>£${(parseFloat(item.price) * item.qty).toFixed(2)}</span>
+    </div>
+  `).join('');
 
-  // Safely try to initialize Stripe
-  const stripeSection = document.getElementById('stripe-card-section');
-  
+  // Stripe Logic (Existing)
   if (STRIPE_PUBLISHABLE_KEY && window.Stripe) {
       if (!stripeInstance) {
-          try {
-              stripeInstance = Stripe(STRIPE_PUBLISHABLE_KEY);
-              const elements = stripeInstance.elements();
-              cardElement = elements.create('card');
-              cardElement.mount('#card-element');
-              if(stripeSection) stripeSection.style.display = 'block';
-          } catch(e) {
-              console.error("Stripe could not mount:", e);
-              if(stripeSection) stripeSection.style.display = 'none';
-          }
+          stripeInstance = Stripe(STRIPE_PUBLISHABLE_KEY);
+          const elements = stripeInstance.elements();
+          cardElement = elements.create('card', {
+              style: {
+                  base: { fontSize: '16px', color: '#164A2E', fontFamily: 'Nunito, sans-serif' }
+              }
+          });
+          cardElement.mount('#card-element');
       }
-  } else {
-      // If no key, hide the card input so the user can still see the modal
-      if(stripeSection) stripeSection.style.display = 'none';
-      console.warn("Running in Demo Mode: No Stripe Key found.");
   }
 
-  // FINALLY: Show the modal
-  const modal = document.getElementById('checkout-modal');
-  if (modal) {
-      modal.classList.add('open');
-      toggleCart(); // Close the basket drawer
-  } else {
-      console.error("Could not find checkout-modal in HTML");
-  }
+  document.getElementById('checkout-modal').classList.add('open');
+  toggleCart(); 
 }
 
 // --- ADMIN MANAGEMENT ---
