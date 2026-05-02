@@ -13,7 +13,7 @@
 
 <!-- TOP NAV -->
 <nav class="topbar">
-  <a class="brand" href="#" onclick="showView('shop',event)">
+  <a class="brand" href="#" onclick="showView('shop',event); return false;">
     <svg class="brand-logo" viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="21" cy="18" r="14" fill="rgba(107,191,74,0.15)"/>
       <ellipse cx="17" cy="12" rx="5" ry="8" transform="rotate(-20 17 12)" fill="#6BBF4A"/>
@@ -41,110 +41,208 @@
 <div class="view active" id="view-shop">
   <div class="shop-hero">
     <svg class="hero-leaves" viewBox="0 0 1200 320" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-      <ellipse cx="80" cy="160" rx="60" ry="90" transform="rotate(-30 80 160)" fill="#164A2E" opacity="0.08"/>
-      <ellipse cx="1120" cy="80" rx="50" ry="80" transform="rotate(20 1120 80)" fill="#6BBF4A" opacity="0.15"/>
+      <ellipse cx="80"   cy="160" rx="60" ry="90" transform="rotate(-30 80 160)"   fill="#164A2E" opacity="0.08"/>
+      <ellipse cx="1120" cy="80"  rx="50" ry="80" transform="rotate(20 1120 80)"   fill="#6BBF4A" opacity="0.15"/>
       <ellipse cx="1050" cy="240" rx="40" ry="65" transform="rotate(-45 1050 240)" fill="#164A2E" opacity="0.07"/>
-      <ellipse cx="160" cy="40" rx="30" ry="50" transform="rotate(40 160 40)" fill="#6BBF4A" opacity="0.13"/>
+      <ellipse cx="160"  cy="40"  rx="30" ry="50" transform="rotate(40 160 40)"    fill="#6BBF4A" opacity="0.13"/>
     </svg>
     <div class="hero-badge">🌿 Small Batch · Freshly Made</div>
     <h1>HOME <span>GROWN</span></h1>
     <p>Food That Makes You Feel Good</p>
   </div>
   <div class="shop-content">
-    <div class="section-sub">Our Snacks <span></span></div>
-    <div id="shop-loading" style="text-align:center; padding: 2rem; font-weight:800; color: var(--green-dark);">Loading fresh snacks...</div>
+    <div class="section-sub">Our Snacks</div>
+    <div id="shop-loading" style="text-align:center; padding:2rem; font-weight:800; color:var(--green-dark);">Loading fresh snacks…</div>
     <div class="products-grid" id="products-grid" style="display:none;"></div>
   </div>
 </div>
 
 <!-- ══ ADMIN ══ -->
 <div class="view" id="view-admin">
-  <!-- Admin Login Screen -->
-  <div id="admin-login-screen" style="padding: 5rem 2rem; text-align: center;">
-    <h1 class="admin-heading">Admin Access</h1>
-    <div class="order-summary-box" style="max-width: 400px; margin: 2rem auto; background: white;">
-        <div class="form-group"><label>Username</label><input type="text" id="admin-user"></div>
-        <div class="form-group"><label>Password</label><input type="password" id="admin-pass"></div>
-        <button class="pay-btn" onclick="handleAdminLogin()" style="margin-top:1rem;">Login</button>
+
+  <!-- Login Screen -->
+  <div id="admin-login-screen" class="admin-login-screen">
+    <div class="login-card">
+      <h2>🌿 Admin Access</h2>
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" id="admin-user" placeholder="admin" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="admin-pass" placeholder="••••••••" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter') handleAdminLogin()">
+      </div>
+      <button class="pay-btn" onclick="handleAdminLogin()">Login →</button>
     </div>
   </div>
 
+  <!-- Admin Panel (hidden until login) -->
   <div class="admin-layout" id="admin-layout" style="display:none;">
     <aside class="admin-sidebar">
       <div class="sidebar-brand">
         <div class="sidebar-brand-text">Home Grown</div>
         <div class="sidebar-brand-sub">Admin Panel</div>
       </div>
-      <div class="admin-menu-item active" onclick="showAdminSection('dashboard',event)"><span class="admin-menu-icon">📊</span> Dashboard</div>
-      <div class="admin-menu-item" onclick="showAdminSection('orders',event)"><span class="admin-menu-icon">📦</span> Orders</div>
-      <div class="admin-menu-item" onclick="showAdminSection('shipping',event)"><span class="admin-menu-icon">🚚</span> Shipping</div>
-      <div class="admin-menu-item" onclick="showAdminSection('ingredients',event)"><span class="admin-menu-icon">🧂</span> Ingredients</div>
-      <div class="admin-menu-item" onclick="showAdminSection('payments',event)"><span class="admin-menu-icon">💳</span> Payments</div>
-      <div class="admin-menu-item" onclick="showAdminSection('products',event)"><span class="admin-menu-icon">🏷️</span> Products</div>
+      <div class="admin-menu-item active" onclick="showAdminSection('dashboard',this)"><span class="admin-menu-icon">📊</span> Dashboard</div>
+      <div class="admin-menu-item" onclick="showAdminSection('orders',this)"><span class="admin-menu-icon">📦</span> Orders</div>
+      <div class="admin-menu-item" onclick="showAdminSection('shipping',this)"><span class="admin-menu-icon">🚚</span> Shipping</div>
+      <div class="admin-menu-item" onclick="showAdminSection('ingredients',this)"><span class="admin-menu-icon">🧂</span> Ingredients</div>
+      <div class="admin-menu-item" onclick="showAdminSection('payments',this)"><span class="admin-menu-icon">💳</span> Payments</div>
+      <div class="admin-menu-item" onclick="showAdminSection('products',this)"><span class="admin-menu-icon">🏷️</span> Products</div>
+      <div style="padding:1.5rem; border-top:1px solid rgba(255,255,255,0.1); margin-top:1rem;">
+        <button onclick="handleLogout()" style="width:100%; background:none; border:1px solid rgba(255,255,255,0.2); color:#7DC99A; border-radius:var(--radius); padding:8px 12px; font-size:0.8rem; font-weight:700; cursor:pointer; text-align:left;">← Log Out</button>
+      </div>
     </aside>
+
     <main class="admin-content">
 
       <!-- DASHBOARD -->
       <section class="admin-section active" id="section-dashboard">
         <h1 class="admin-heading">Dashboard</h1>
+        <p class="admin-sub">Here's what's growing with your business today.</p>
         <div class="stats-grid">
-          <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value" id="stat-revenue">£0</div></div>
-          <div class="stat-card"><div class="stat-label">Total Orders</div><div class="stat-value" id="stat-orders">0</div></div>
-          <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value" id="stat-pending">0</div></div>
-          <div class="stat-card"><div class="stat-label">Low Stock</div><div class="stat-value" id="stat-lowstock">0</div></div>
+          <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value" id="stat-revenue">£0</div><div class="stat-change stat-up">↑ all time</div></div>
+          <div class="stat-card"><div class="stat-label">Total Orders</div><div class="stat-value" id="stat-orders">0</div><div class="stat-change">placed</div></div>
+          <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value" id="stat-pending">0</div><div class="stat-change stat-down">need action</div></div>
+          <div class="stat-card"><div class="stat-label">Low Stock</div><div class="stat-value" id="stat-lowstock">0</div><div class="stat-change stat-down">ingredients</div></div>
         </div>
-        <div class="admin-sub">Recent Orders</div>
+        <p class="admin-sub">Recent Orders</p>
         <div class="table-wrap">
-          <table><thead><tr><th>Order #</th><th>Customer</th><th>Total</th><th>Status</th><th>Date</th></tr></thead>
-          <tbody id="dashboard-orders-body"></tbody></table>
-        </div>
-      </section>
-
-      <!-- PRODUCTS MGMT -->
-      <section class="admin-section" id="section-products">
-        <h1 class="admin-heading">Manage Products</h1>
-        <div class="ingredient-form">
-          <h3 id="product-form-title">Add New Snack</h3>
-          <input type="hidden" id="prod-id">
-          <div class="form-row">
-            <div class="form-group"><label>Name</label><input type="text" id="prod-name"></div>
-            <div class="form-group"><label>Price £</label><input type="number" id="prod-price" step="0.01"></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label>Emoji</label><input type="text" id="prod-emoji"></div>
-            <div class="form-group"><label>Badge</label><input type="text" id="prod-badge"></div>
-          </div>
-          <div class="form-group"><label>Image URL</label><input type="text" id="prod-image"></div>
-          <div class="form-group"><label>Description</label><textarea id="prod-desc" style="width:100%; padding:10px; border-radius:10px; border:2px solid var(--border);"></textarea></div>
-          <div class="form-group"><label>Card Color</label><input type="color" id="prod-bg" value="#FFFBE8" style="height:50px;"></div>
-          <button class="action-btn primary" onclick="saveProduct()" style="margin-top:1rem; padding:12px 24px;">💾 Save Product</button>
-          <button class="action-btn" onclick="resetProductForm()">Clear</button>
-        </div>
-        <div class="product-mgmt-grid" id="product-mgmt-grid"></div>
-      </section>
-
-      <!-- INGREDIENTS -->
-      <section class="admin-section" id="section-ingredients">
-        <h1 class="admin-heading">Ingredients</h1>
-        <div class="table-wrap">
-          <table><thead><tr><th>Ingredient</th><th>Stock</th><th>Unit</th><th>Level</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody id="ingredients-body"></tbody></table>
+          <table>
+            <thead><tr><th>Order #</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th>Date</th></tr></thead>
+            <tbody id="dashboard-orders-body">
+              <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">No orders yet</td></tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
       <!-- ORDERS -->
       <section class="admin-section" id="section-orders">
         <h1 class="admin-heading">Orders</h1>
+        <p class="admin-sub">Manage and process customer orders.</p>
+        <div class="toolbar">
+          <input class="search-input" placeholder="Search orders…" oninput="filterOrders(this.value)">
+          <select class="filter-select" onchange="filterOrdersByStatus(this.value)">
+            <option value="">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="processing">Processing</option>
+            <option value="shipped">Shipped</option>
+            <option value="delivered">Delivered</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
         <div class="table-wrap">
-          <table><thead><tr><th>Order #</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody id="orders-body"></tbody></table>
+          <table>
+            <thead><tr><th>Order #</th><th>Customer</th><th>Address</th><th>Items</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="orders-body">
+              <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">No orders yet.</td></tr>
+            </tbody>
+          </table>
         </div>
       </section>
-      
+
       <!-- SHIPPING -->
       <section class="admin-section" id="section-shipping">
         <h1 class="admin-heading">Shipping</h1>
-        <div id="shipping-cards"></div>
+        <p class="admin-sub">Track and dispatch active shipments.</p>
+        <div id="shipping-cards">
+          <p style="color:var(--text-muted); font-weight:600;">No active shipments. Orders in Processing or Shipped status appear here.</p>
+        </div>
+      </section>
+
+      <!-- INGREDIENTS -->
+      <section class="admin-section" id="section-ingredients">
+        <h1 class="admin-heading">Ingredients</h1>
+        <p class="admin-sub">Monitor and restock your ingredient inventory.</p>
+        <div class="ingredient-form">
+          <h3>Add / Update Ingredient</h3>
+          <div class="form-inline">
+            <div class="form-group"><label>Name</label><input type="text" id="ing-name" placeholder="e.g. Rolled Oats"></div>
+            <div class="form-group"><label>Unit</label><input type="text" id="ing-unit" placeholder="kg, g, ml"></div>
+            <div class="form-group"><label>Current Stock</label><input type="number" id="ing-stock" placeholder="5" min="0" step="0.1"></div>
+            <div class="form-group"><label>Min. Required</label><input type="number" id="ing-min" placeholder="2" min="0" step="0.1"></div>
+            <div class="form-group"><label>Max Capacity</label><input type="number" id="ing-max" placeholder="20" min="1" step="0.1"></div>
+            <div class="form-group" style="justify-content:flex-end; min-width:auto;">
+              <button class="action-btn primary" onclick="addIngredient()" style="height:42px;">+ Add</button>
+            </div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Ingredient</th><th>Stock</th><th>Unit</th><th>Level</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="ingredients-body">
+              <tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">No ingredients yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- PAYMENTS -->
+      <section class="admin-section" id="section-payments">
+        <h1 class="admin-heading">Payments</h1>
+        <p class="admin-sub">Revenue overview and Stripe transaction history.</p>
+        <div class="setup-banner">
+          <div class="setup-icon">⚡</div>
+          <div>
+            <h3>Stripe Integration Setup</h3>
+            <div class="setup-steps">
+              <div class="setup-step"><strong>1.</strong> Sign up at <strong>stripe.com</strong> — get your API keys from the Dashboard</div>
+              <div class="setup-step"><strong>2.</strong> Set <code>STRIPE_PUBLISHABLE_KEY</code> in your environment (starts with <code>pk_live_</code>)</div>
+              <div class="setup-step"><strong>3.</strong> Set <code>STRIPE_SECRET_KEY</code> on your backend to create <code>PaymentIntents</code></div>
+              <div class="setup-step"><strong>4.</strong> Ensure your <code>/api/create-payment-intent</code> endpoint is live</div>
+              <div class="setup-step"><strong>5.</strong> Enable webhooks in Stripe Dashboard to auto-update order status</div>
+            </div>
+          </div>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value" id="pay-total">£0.00</div></div>
+          <div class="stat-card"><div class="stat-label">This Month</div><div class="stat-value" id="pay-month">£0.00</div></div>
+          <div class="stat-card"><div class="stat-label">Transactions</div><div class="stat-value" id="pay-count">0</div></div>
+          <div class="stat-card"><div class="stat-label">Avg Order</div><div class="stat-value" id="pay-avg">£0.00</div></div>
+        </div>
+        <div class="revenue-chart">
+          <div class="chart-title">Revenue — Last 7 Days</div>
+          <div class="chart-bars" id="revenue-chart"></div>
+        </div>
+        <p class="admin-sub">Transaction History</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Order #</th><th>Customer</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead>
+            <tbody id="payments-body">
+              <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">No transactions yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- PRODUCTS -->
+      <section class="admin-section" id="section-products">
+        <h1 class="admin-heading">Products</h1>
+        <p class="admin-sub">Add, edit and remove snacks from your shop.</p>
+        <div class="ingredient-form">
+          <h3 id="product-form-title">Add New Snack</h3>
+          <input type="hidden" id="prod-id">
+          <div class="form-row">
+            <div class="form-group"><label>Product Name</label><input type="text" id="prod-name" placeholder="e.g. Honey Oat Clusters"></div>
+            <div class="form-group"><label>Price (£)</label><input type="number" id="prod-price" placeholder="5.50" step="0.01" min="0"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Emoji</label><input type="text" id="prod-emoji" placeholder="🍯"></div>
+            <div class="form-group"><label>Badge Text</label><input type="text" id="prod-badge" placeholder="e.g. Best Seller"></div>
+          </div>
+          <div class="form-group"><label>Image URL (optional)</label><input type="text" id="prod-image" placeholder="https://..."></div>
+          <div class="form-group"><label>Description</label><textarea id="prod-desc" rows="2" placeholder="A short description…" style="resize:vertical;"></textarea></div>
+          <div class="form-group" style="max-width:160px;"><label>Card Background Colour</label><input type="color" id="prod-bg" value="#FFFBE8" style="height:48px; cursor:pointer;"></div>
+          <div style="display:flex; gap:10px; margin-top:1rem;">
+            <button class="action-btn primary" onclick="saveProduct()" style="padding:12px 24px;">💾 Save Product</button>
+            <button class="action-btn" onclick="resetProductForm()">Clear</button>
+          </div>
+        </div>
+        <div class="product-mgmt-grid" id="product-mgmt-grid">
+          <p style="color:var(--text-muted); font-size:0.9rem; font-weight:600; grid-column:1/-1;">No products yet.</p>
+        </div>
       </section>
 
     </main>
@@ -154,10 +252,18 @@
 <!-- ══ CART DRAWER ══ -->
 <div class="cart-overlay" id="cart-overlay" onclick="closeCartOnOverlay(event)">
   <div class="cart-drawer">
-    <div class="cart-header"><h2>🧺 Your Basket</h2><button class="close-btn" onclick="toggleCart()">✕</button></div>
-    <div class="cart-items" id="cart-items"></div>
-    <div class="cart-footer" id="cart-footer">
-      <div class="cart-total"><span>Subtotal</span><span id="cart-total-amount">£0.00</span></div>
+    <div class="cart-header">
+      <h2>🧺 Your Basket</h2>
+      <button class="close-btn" onclick="toggleCart()">✕</button>
+    </div>
+    <div class="cart-items" id="cart-items">
+      <div class="empty-cart"><span class="ec-icon">🧺</span><p>Your basket is empty</p></div>
+    </div>
+    <div class="cart-footer" id="cart-footer" style="display:none;">
+      <div class="cart-total">
+        <span>Subtotal</span>
+        <span id="cart-total-amount">£0.00</span>
+      </div>
       <button class="checkout-btn" onclick="openCheckout()">Checkout →</button>
     </div>
   </div>
@@ -166,33 +272,52 @@
 <!-- ══ CHECKOUT MODAL ══ -->
 <div class="modal-overlay" id="checkout-modal">
   <div class="modal">
-    <div class="modal-head"><h2>Complete Your Order</h2><button class="close-btn" onclick="closeCheckout()">✕</button></div>
-    <div id="checkout-content" class="modal-body">
-        <div class="order-summary-box"><div id="checkout-summary"></div></div>
-        <div class="form-row">
-          <div class="form-group"><label>First Name</label><input type="text" id="ch-fname"></div>
-          <div class="form-group"><label>Last Name</label><input type="text" id="ch-lname"></div>
+    <div class="modal-head">
+      <h2>Complete Your Order</h2>
+      <button class="close-btn" onclick="closeCheckout()">✕</button>
+    </div>
+
+    <div id="checkout-content">
+      <div class="modal-body">
+        <div class="stripe-setup-alert" id="stripe-alert">
+          <strong>⚠️ Demo Mode — Stripe not configured</strong>
+          Orders are recorded but no payment is taken. Configure Stripe on your backend to enable real payments.
         </div>
-        <div class="form-group"><label>Email</label><input type="email" id="ch-email"></div>
-        <div class="form-group"><label>Address</label><input type="text" id="ch-address"></div>
-        <div class="form-row">
-          <div class="form-group"><label>City</label><input type="text" id="ch-city"></div>
-          <div class="form-group"><label>Postcode</label><input type="text" id="ch-postcode"></div>
+        <div class="order-summary-box">
+          <div class="os-title">Order Summary</div>
+          <div id="checkout-summary"></div>
         </div>
-        <div id="stripe-card-section" class="stripe-section">
+        <div class="form-row">
+          <div class="form-group"><label>First Name</label><input type="text" id="ch-fname" placeholder="Jane" autocomplete="given-name"></div>
+          <div class="form-group"><label>Last Name</label><input type="text" id="ch-lname" placeholder="Smith" autocomplete="family-name"></div>
+        </div>
+        <div class="form-group"><label>Email</label><input type="email" id="ch-email" placeholder="jane@example.com" autocomplete="email"></div>
+        <div class="form-group"><label>Delivery Address</label><input type="text" id="ch-address" placeholder="123 High Street" autocomplete="street-address"></div>
+        <div class="form-row">
+          <div class="form-group"><label>City / Town</label><input type="text" id="ch-city" placeholder="Boston" autocomplete="address-level2"></div>
+          <div class="form-group"><label>Postcode</label><input type="text" id="ch-postcode" placeholder="PE20 3EJ" autocomplete="postal-code"></div>
+        </div>
+        <div id="stripe-card-section" class="stripe-section" style="display:none;">
           <label class="stripe-label">Payment Card</label>
           <div id="card-element"></div>
-          <div id="card-errors" style="color:var(--danger); font-size:0.8rem; margin-top:5px;"></div>
+          <div class="stripe-note">
+            <span class="stripe-badge">🔒 Stripe</span>
+            Your card details are handled securely by Stripe.
+          </div>
         </div>
-        <button class="pay-btn" id="pay-btn" onclick="processPayment()" style="margin-top:2rem;">
-            🌿 Place Order — <span id="pay-amount">£0.00</span>
+        <div id="card-errors" style="color:var(--danger); font-size:0.85rem; font-weight:700; margin-top:0.75rem;"></div>
+        <button class="pay-btn" id="pay-btn" onclick="processPayment()">
+          🌿 Place Order — <span id="pay-amount">£0.00</span>
         </button>
+      </div>
     </div>
+
     <div id="success-content" class="success-screen" style="display:none;">
-        <div class="success-icon">🎉</div>
-        <h2>Order Placed!</h2>
-        <div class="order-num" id="success-order-num"></div>
-        <button class="action-btn primary" onclick="location.reload()" style="margin-top:2rem;">Continue Shopping</button>
+      <span class="success-icon">🎉</span>
+      <h2>Order Placed!</h2>
+      <p>Thank you! We'll start preparing your snacks with love.</p>
+      <div class="order-num" id="success-order-num"></div>
+      <button class="action-btn primary" onclick="closeCheckout()" style="margin-top:1.5rem;">Continue Shopping</button>
     </div>
   </div>
 </div>
