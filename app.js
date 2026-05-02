@@ -27,7 +27,7 @@ async function fetchConfig() {
         const res = await fetch(`${API_BASE}/config`);
         if (res.ok) {
             const data = await res.json();
-            STRIPE_PUBLISHABLE_KEY = data.stripePublishableKey || '';
+            STRIPE_PUBLISHABLE_KEY = data.stripePublishableKey || 'pk_live_51PU4upEFaqxyf7ELOsith63WwqUuTzYYzEreW1DEyqn6o2KoLBkzYDLECvMznQZiG9enOc7hhu7kFdai1Cg4eFVK00ZV9S7qmV';
         }
     } catch (e) {
         console.warn('Config fetch failed — running in demo mode');
