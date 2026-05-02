@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Home Grown — Food That Makes You Feel Good</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://js.stripe.com/v3/"></script>
+<style>
+:root {
+  --yellow:      #FFD93D;
+  --yellow-deep: #F0C820;
+  --yellow-pale: #FFFBE8;
+  --yellow-soft: #FFF5C0;
+  --green-dark:  #164A2E;
+  --green-mid:   #1E6B3F;
+  --green-leaf:  #6BBF4A;
+  --green-light: #A8D97F;
+  --green-pale:  #E8F5E0;
+  --white:       #FFFFFF;
+  --off-white:   #FEFDF7;
+  --text:        #0E3019;
+  --text-mid:    #2D6040;
+  --text-muted:  #5A8A6A;
+  --border:      #C8E6C0;
+  --success:     #2E7D32;
+  --warning:     #F57F17;
+  --danger:      #C62828;
+  --font-brand:  'Fredoka One', cursive;
+  --font-body:   'Nunito', sans-serif;
+  --radius:      10px;
+  --radius-lg:   16px;
+  --radius-xl:   24px;
+  --shadow:      0 3px 14px rgba(22,74,46,0.10);
+  --shadow-lg:   0 8px 36px rgba(22,74,46,0.16);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:var(--font-body);background:var(--yellow-pale);color:var(--text);min-height:100vh;}
+h1,h2,h3{font-family:var(--font-brand);font-weight:400;letter-spacing:0.01em;}
+
+/* ── NAV ── */
+.topbar{
+  background:var(--green-dark);display:flex;align-items:center;
+  justify-content:space-between;padding:0 2rem;height:68px;
+  position:sticky;top:0;z-index:100;
+  border-bottom:4px solid var(--yellow);
+}
+.brand{display:flex;align-items:center;gap:12px;text-decoration:none;}
+.brand-logo{width:42px;height:42px;}
+.brand-name{font-family:var(--font-brand);font-size:1.55rem;color:var(--yellow);letter-spacing:0.03em;line-height:1;}
+.brand-tagline{font-size:0.58rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:var(--green-leaf);margin-top:1px;}
+.nav-links{display:flex;gap:4px;}
+.nav-btn{
+  background:none;border:none;color:var(--green-light);font-family:var(--font-body);
+  font-size:0.82rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;
+  padding:8px 16px;border-radius:var(--radius);cursor:pointer;transition:all 0.2s;
+}
+.nav-btn:hover{color:var(--yellow);background:rgba(255,217,61,0.1);}
+.nav-btn.active{color:var(--green-dark);background:var(--yellow);}
+.nav-btn.admin-tab{color:var(--green-leaf);}
+.nav-btn.admin-tab.active{color:var(--green-dark);background:var(--green-leaf);}
+.cart-btn{
+  background:var(--yellow);color:var(--green-dark);border:none;border-radius:var(--radius);
+  padding:9px 20px;font-family:var(--font-body);font-size:0.88rem;font-weight:800;
+  cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:8px;
+}
+.cart-btn:hover{background:var(--yellow-deep);transform:scale(1.03);}
+.cart-count{
+  background:var(--green-dark);color:var(--yellow);border-radius:999px;
+  width:22px;height:22px;display:flex;align-items:center;justify-content:center;
+  font-size:0.72rem;font-weight:800;
+}
+
+/* ── VIEWS ── */
+.view{display:none;}.view.active{display:block;}
+
+/* ── HERO ── */
+.shop-hero{
+  background:var(--yellow);padding:5rem 2rem 4rem;text-align:center;position:relative;overflow:hidden;
+}
+.hero-leaves{position:absolute;inset:0;pointer-events:none;overflow:hidden;}
+.hero-leaf{position:absolute;opacity:0.12;}
+.shop-hero h1{
+  font-family:var(--font-brand);font-size:4rem;color:var(--green-dark);
+  line-height:1;margin-bottom:0.6rem;position:relative;
+}
+.shop-hero h1 span{color:var(--green-mid);}
+.shop-hero p{
+  font-size:1.05rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--green-mid);position:relative;
+}
+.hero-badge{
+  display:inline-block;background:var(--green-dark);color:var(--yellow);
+  font-family:var(--font-brand);font-size:1rem;padding:6px 20px;border-radius:999px;
+  margin-bottom:1.2rem;letter-spacing:0.04em;
+}
+
+/* ── SHOP GRID ── */
+.shop-content{max-width:1100px;margin:0 auto;padding:3rem 2rem;}
+.section-title{
+  font-family:var(--font-brand);font-size:1.8rem;color:var(--green-dark);
+  margin-bottom:0.25rem;
+}
+.section-sub{font-size:0.88rem;font-weight:600;color:var(--text-muted);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:2rem;display:flex;align-items:center;gap:12px;}
+.section-sub::after{content:'';flex:1;height:2px;background:var(--border);}
+.products-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1.5rem;}
+
+.product-card{
+  background:var(--white);border-radius:var(--radius-xl);
+  border:2px solid var(--border);overflow:hidden;
+  transition:all 0.25s;cursor:pointer;
+}
+.product-card:hover{box-shadow:var(--shadow-lg);transform:translateY(-4px);border-color:var(--green-leaf);}
+.product-img{
+  height:175px;display:flex;align-items:center;justify-content:center;
+  font-size:4rem;position:relative;
+}
+.product-badge{
+  position:absolute;top:10px;right:10px;
+  background:var(--yellow);color:var(--green-dark);font-size:0.7rem;font-weight:800;
+  letter-spacing:0.05em;text-transform:uppercase;padding:4px 10px;border-radius:999px;
+  border:2px solid var(--green-dark);
+}
+.product-info{padding:1rem 1.25rem 1.25rem;}
+.product-name{font-family:var(--font-brand);font-size:1.1rem;color:var(--green-dark);margin-bottom:4px;}
+.product-desc{font-size:0.82rem;color:var(--text-muted);line-height:1.5;margin-bottom:0.85rem;}
+.product-meta{display:flex;align-items:center;justify-content:space-between;}
+.product-price{font-size:1.2rem;font-weight:800;color:var(--green-mid);}
+.add-btn{
+  background:var(--green-dark);color:var(--yellow);border:none;border-radius:var(--radius);
+  padding:8px 16px;font-size:0.82rem;font-weight:800;cursor:pointer;transition:all 0.2s;
+  font-family:var(--font-body);
+}
+.add-btn:hover{background:var(--green-mid);transform:scale(1.05);}
+.add-btn.added{background:var(--green-leaf);color:var(--green-dark);}
+
+/* ── CART DRAWER ── */
+.cart-overlay{display:none;position:fixed;inset:0;background:rgba(14,48,25,0.5);z-index:200;}
+.cart-overlay.open{display:block;}
+.cart-drawer{
+  position:fixed;right:0;top:0;bottom:0;width:420px;max-width:96vw;
+  background:var(--white);z-index:201;display:flex;flex-direction:column;
+  box-shadow:-4px 0 48px rgba(22,74,46,0.22);transform:translateX(100%);transition:transform 0.3s;
+  border-left:4px solid var(--yellow);
+}
+.cart-overlay.open .cart-drawer{transform:translateX(0);}
+.cart-header{
+  padding:1.25rem 1.5rem;background:var(--green-dark);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.cart-header h2{font-family:var(--font-brand);font-size:1.4rem;color:var(--yellow);}
+.close-btn{background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--green-light);}
+.close-btn:hover{color:var(--yellow);}
+.cart-items{flex:1;overflow-y:auto;padding:1rem 1.5rem;}
+.cart-item{display:flex;gap:12px;padding:1rem 0;border-bottom:1px solid var(--border);align-items:center;}
+.cart-item-emoji{font-size:2rem;width:54px;height:54px;background:var(--yellow-soft);border-radius:var(--radius);display:flex;align-items:center;justify-content:center;flex-shrink:0;border:2px solid var(--border);}
+.cart-item-info{flex:1;}
+.cart-item-name{font-weight:800;font-size:0.9rem;color:var(--green-dark);}
+.cart-item-price{font-size:0.82rem;color:var(--text-muted);}
+.cart-item-qty{display:flex;align-items:center;gap:8px;margin-top:6px;}
+.qty-btn{
+  width:28px;height:28px;border:2px solid var(--green-dark);background:var(--yellow-pale);
+  border-radius:50%;cursor:pointer;font-size:1rem;display:flex;align-items:center;
+  justify-content:center;transition:all 0.15s;font-weight:800;line-height:1;
+}
+.qty-btn:hover{background:var(--yellow);color:var(--green-dark);}
+.qty-num{font-size:0.9rem;font-weight:800;min-width:20px;text-align:center;color:var(--green-dark);}
+.remove-item{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.1rem;}
+.cart-footer{padding:1.5rem;border-top:2px solid var(--border);}
+.cart-total{display:flex;justify-content:space-between;margin-bottom:1rem;align-items:center;}
+.cart-total span:first-child{font-size:0.9rem;color:var(--text-muted);font-weight:600;}
+.cart-total span:last-child{font-size:1.25rem;font-weight:800;color:var(--green-dark);}
+.checkout-btn{
+  width:100%;background:var(--yellow);color:var(--green-dark);border:2px solid var(--green-dark);
+  border-radius:var(--radius-lg);padding:14px;font-family:var(--font-brand);font-size:1.15rem;
+  cursor:pointer;transition:all 0.2s;
+}
+.checkout-btn:hover{background:var(--yellow-deep);}
+.empty-cart{text-align:center;padding:3rem 1rem;color:var(--text-muted);}
+.empty-cart .ec-icon{font-size:3rem;margin-bottom:1rem;}
+
+/* ── CHECKOUT MODAL ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(14,48,25,0.6);z-index:300;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal{background:var(--white);border-radius:var(--radius-xl);width:560px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-lg);border:3px solid var(--green-dark);}
+.modal-head{padding:1.5rem 2rem;background:var(--green-dark);display:flex;align-items:center;justify-content:space-between;border-radius:calc(var(--radius-xl) - 3px) calc(var(--radius-xl) - 3px) 0 0;}
+.modal-head h2{font-family:var(--font-brand);font-size:1.5rem;color:var(--yellow);}
+.modal-body{padding:2rem;}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;}
+.form-row.full{grid-template-columns:1fr;}
+.form-group{display:flex;flex-direction:column;gap:6px;}
+.form-group label{font-size:0.78rem;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:var(--green-mid);}
+.form-group input,.form-group select{
+  padding:11px 14px;border:2px solid var(--border);border-radius:var(--radius);
+  font-family:var(--font-body);font-size:0.95rem;background:var(--yellow-pale);
+  color:var(--text);outline:none;transition:border-color 0.2s;font-weight:600;
+}
+.form-group input:focus,.form-group select:focus{border-color:var(--green-leaf);background:var(--white);}
+.stripe-section{margin-top:1.5rem;}
+.stripe-label{font-size:0.78rem;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:var(--green-mid);margin-bottom:8px;}
+#card-element{padding:13px 14px;border:2px solid var(--border);border-radius:var(--radius);background:var(--yellow-pale);}
+#card-element.StripeElement--focus{border-color:var(--green-leaf);}
+.stripe-note{margin-top:10px;font-size:0.78rem;color:var(--text-muted);display:flex;align-items:center;gap:6px;}
+.stripe-badge{background:var(--green-pale);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:0.7rem;font-weight:800;color:var(--green-mid);}
+.modal-footer{padding:0 2rem 2rem;}
+.pay-btn{
+  width:100%;background:var(--yellow);color:var(--green-dark);border:2px solid var(--green-dark);
+  border-radius:var(--radius-lg);padding:16px;font-family:var(--font-brand);font-size:1.2rem;
+  cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.pay-btn:hover{background:var(--yellow-deep);}
+.pay-btn:disabled{background:var(--border);cursor:not-allowed;border-color:var(--border);color:var(--text-muted);}
+.order-summary-box{background:var(--yellow-pale);border:2px solid var(--border);border-radius:var(--radius);padding:1rem 1.25rem;margin-bottom:1.5rem;}
+.order-summary-box .os-title{font-size:0.78rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--green-mid);margin-bottom:10px;}
+.os-item{display:flex;justify-content:space-between;font-size:0.88rem;padding:3px 0;font-weight:600;}
+.os-item.total{font-weight:800;font-size:1rem;border-top:2px solid var(--border);margin-top:8px;padding-top:8px;color:var(--green-dark);}
+.stripe-setup-alert{background:#FFFDE7;border:2px solid var(--yellow-deep);border-radius:var(--radius);padding:1rem 1.25rem;margin-bottom:1.5rem;font-size:0.85rem;color:#5C4A00;}
+.stripe-setup-alert strong{display:block;margin-bottom:4px;font-weight:800;}
+
+/* ── SUCCESS ── */
+.success-screen{text-align:center;padding:3rem 2rem;}
+.success-icon{font-size:3.5rem;margin-bottom:1rem;}
+.success-screen h2{font-family:var(--font-brand);font-size:2rem;color:var(--success);margin-bottom:0.75rem;}
+.success-screen p{color:var(--text-muted);margin-bottom:1.5rem;font-weight:600;}
+.order-num{font-family:var(--font-brand);font-size:1.3rem;color:var(--green-mid);}
+
+/* ── ADMIN LAYOUT ── */
+.admin-layout{display:grid;grid-template-columns:230px 1fr;min-height:calc(100vh - 68px);}
+.admin-sidebar{background:var(--green-dark);padding:1.5rem 0;}
+.sidebar-brand{padding:0 1.5rem 1.5rem;border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:0.5rem;}
+.sidebar-brand-text{font-family:var(--font-brand);font-size:1.1rem;color:var(--yellow);}
+.sidebar-brand-sub{font-size:0.68rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--green-leaf);margin-top:2px;}
+.admin-menu-item{
+  padding:11px 1.5rem;color:#7DC99A;font-size:0.88rem;font-weight:700;
+  cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:11px;
+  border-left:3px solid transparent;
+}
+.admin-menu-item:hover{color:var(--yellow-soft);background:rgba(255,255,255,0.05);}
+.admin-menu-item.active{color:var(--green-dark);background:var(--yellow);border-left-color:var(--yellow-deep);}
+.admin-menu-icon{font-size:1.05rem;width:20px;text-align:center;}
+.admin-content{padding:2rem 2.5rem;background:var(--yellow-pale);}
+.admin-section{display:none;}.admin-section.active{display:block;}
+.admin-heading{font-family:var(--font-brand);font-size:2.2rem;color:var(--green-dark);margin-bottom:0.3rem;}
+.admin-sub{color:var(--text-muted);font-size:0.9rem;font-weight:600;margin-bottom:2rem;}
+
+/* ── STAT CARDS ── */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:1rem;margin-bottom:2rem;}
+.stat-card{
+  background:var(--white);border-radius:var(--radius-lg);
+  border:2px solid var(--border);padding:1.25rem;transition:box-shadow 0.2s;
+}
+.stat-card:hover{box-shadow:var(--shadow);}
+.stat-label{font-size:0.72rem;font-weight:800;letter-spacing:0.09em;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px;}
+.stat-value{font-family:var(--font-brand);font-size:1.9rem;color:var(--green-dark);}
+.stat-change{font-size:0.78rem;margin-top:4px;font-weight:700;}
+.stat-up{color:var(--success);}
+.stat-down{color:var(--danger);}
+
+/* ── TABLES ── */
+.table-wrap{background:var(--white);border-radius:var(--radius-lg);border:2px solid var(--border);overflow:hidden;}
+table{width:100%;border-collapse:collapse;font-size:0.88rem;}
+thead tr{background:var(--green-dark);}
+thead th{padding:12px 1rem;text-align:left;font-size:0.72rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--yellow);border-bottom:none;}
+tbody tr{border-bottom:1px solid var(--border);transition:background 0.1s;}
+tbody tr:last-child{border-bottom:none;}
+tbody tr:hover{background:var(--yellow-pale);}
+tbody td{padding:12px 1rem;color:var(--text);}
+
+.badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:0.72rem;font-weight:800;letter-spacing:0.04em;text-transform:uppercase;}
+.badge-pending{background:#FFF9C4;color:#827717;}
+.badge-processing{background:#E3F2FD;color:#1565C0;}
+.badge-shipped{background:var(--green-pale);color:var(--green-dark);}
+.badge-delivered{background:#E8F5E9;color:#1B5E20;}
+.badge-cancelled{background:#FFEBEE;color:#B71C1C;}
+.badge-low{background:#FFF9C4;color:#827717;}
+.badge-ok{background:var(--green-pale);color:var(--green-dark);}
+.badge-critical{background:#FFEBEE;color:#B71C1C;}
+.badge-paid{background:var(--green-pale);color:var(--success);}
+.badge-refunded{background:#FFEBEE;color:#B71C1C;}
+
+.action-btn{
+  background:none;border:2px solid var(--border);border-radius:var(--radius);
+  padding:5px 12px;font-size:0.78rem;font-weight:800;cursor:pointer;
+  color:var(--text-mid);transition:all 0.15s;margin-right:4px;font-family:var(--font-body);
+}
+.action-btn:hover{border-color:var(--green-leaf);color:var(--green-dark);}
+.action-btn.primary{background:var(--yellow);color:var(--green-dark);border-color:var(--green-dark);}
+.action-btn.primary:hover{background:var(--yellow-deep);}
+.action-btn.danger{border-color:var(--danger);color:var(--danger);}
+.action-btn.danger:hover{background:var(--danger);color:white;}
+
+/* ── TOOLBAR ── */
+.toolbar{display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap;}
+.search-input{
+  padding:9px 14px;border:2px solid var(--border);border-radius:var(--radius);
+  font-family:var(--font-body);font-size:0.88rem;background:var(--white);
+  color:var(--text);outline:none;width:220px;transition:border-color 0.2s;font-weight:600;
+}
+.search-input:focus{border-color:var(--green-leaf);}
+.filter-select{
+  padding:9px 14px;border:2px solid var(--border);border-radius:var(--radius);
+  font-family:var(--font-body);font-size:0.85rem;background:var(--white);
+  color:var(--text);outline:none;cursor:pointer;font-weight:600;
+}
+
+/* ── INGREDIENT FORM ── */
+.ingredient-form{background:var(--white);border:2px solid var(--border);border-radius:var(--radius-lg);padding:1.5rem;margin-bottom:2rem;}
+.ingredient-form h3{font-family:var(--font-brand);font-size:1.3rem;color:var(--green-dark);margin-bottom:1.2rem;}
+.form-inline{display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;}
+.form-inline .form-group{min-width:130px;}
+.form-inline input{width:100%;}
+.progress-bar-wrap{height:7px;background:var(--border);border-radius:999px;margin-top:4px;}
+.progress-bar{height:100%;border-radius:999px;transition:width 0.4s;}
+.prog-ok{background:var(--green-leaf);}
+.prog-low{background:#FBC02D;}
+.prog-critical{background:var(--danger);}
+
+/* ── SHIPPING ── */
+.tracking-card{background:var(--white);border:2px solid var(--border);border-radius:var(--radius-lg);padding:1.5rem;margin-bottom:1.5rem;}
+.tracking-header{display:flex;align-items:center;gap:1rem;margin-bottom:1rem;}
+.tracking-header .order-id{font-family:var(--font-brand);font-size:1.15rem;color:var(--green-dark);}
+.tracking-steps{display:flex;gap:0;margin-top:1.25rem;}
+.tracking-step{flex:1;text-align:center;position:relative;}
+.tracking-step::before{content:'';position:absolute;top:14px;left:-50%;right:50%;height:3px;background:var(--border);z-index:0;}
+.tracking-step:first-child::before{display:none;}
+.tracking-step.done::before{background:var(--green-leaf);}
+.ts-dot{width:30px;height:30px;border-radius:50%;background:var(--yellow-pale);border:3px solid var(--border);margin:0 auto 8px;display:flex;align-items:center;justify-content:center;font-size:0.7rem;position:relative;z-index:1;transition:all 0.3s;font-weight:800;}
+.tracking-step.done .ts-dot{background:var(--green-leaf);border-color:var(--green-leaf);color:var(--white);}
+.tracking-step.current .ts-dot{background:var(--yellow);border-color:var(--green-dark);color:var(--green-dark);}
+.ts-label{font-size:0.72rem;font-weight:800;color:var(--text-muted);}
+.tracking-step.done .ts-label,.tracking-step.current .ts-label{color:var(--green-dark);}
+
+/* ── PAYMENTS CHART ── */
+.revenue-chart{background:var(--white);border:2px solid var(--border);border-radius:var(--radius-lg);padding:1.5rem;margin-bottom:2rem;}
+.chart-bars{display:flex;align-items:flex-end;gap:8px;height:130px;margin-top:1rem;}
+.chart-bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;}
+.chart-bar{width:100%;background:var(--green-leaf);border-radius:6px 6px 0 0;transition:all 0.4s;min-height:4px;}
+.chart-bar-wrap:hover .chart-bar{background:var(--green-dark);}
+.chart-bar-label{font-size:0.68rem;color:var(--text-muted);font-weight:700;}
+.chart-bar-val{font-size:0.7rem;font-weight:800;color:var(--green-mid);}
+
+/* ── SETUP BANNER ── */
+.setup-banner{
+  background:var(--green-dark);color:var(--yellow-pale);border-radius:var(--radius-lg);
+  padding:1.75rem 2rem;margin-bottom:2rem;display:flex;align-items:flex-start;gap:1.5rem;
+  border:2px solid var(--green-leaf);
+}
+.setup-banner .setup-icon{font-size:2rem;flex-shrink:0;margin-top:2px;}
+.setup-banner h3{font-family:var(--font-brand);font-size:1.3rem;margin-bottom:6px;color:var(--yellow);}
+.setup-banner p{font-size:0.85rem;color:#A8D97F;line-height:1.6;}
+.setup-banner code{background:rgba(255,255,255,0.12);padding:2px 7px;border-radius:4px;font-size:0.8rem;color:var(--yellow);}
+.setup-steps{margin-top:10px;}
+.setup-step{font-size:0.82rem;color:#A8D97F;padding:3px 0;font-weight:600;}
+.setup-step strong{color:var(--yellow);}
+
+/* ── PRODUCT MGMT ── */
+.product-mgmt-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:2rem;}
+.product-mgmt-card{background:var(--white);border:2px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem;display:flex;align-items:center;gap:1rem;}
+.product-mgmt-card:hover{border-color:var(--green-leaf);box-shadow:var(--shadow);}
+.pmc-emoji{font-size:2rem;width:54px;height:54px;border-radius:var(--radius);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.pmc-name{font-weight:800;color:var(--green-dark);font-size:0.95rem;}
+.pmc-stock{font-size:0.78rem;color:var(--text-muted);margin-top:2px;font-weight:600;}
+.pmc-price{font-family:var(--font-brand);font-size:1.3rem;color:var(--green-mid);}
+
+/* ── TOAST ── */
+.toast{
+  position:fixed;bottom:2rem;left:50%;transform:translateX(-50%) translateY(80px);
+  background:var(--green-dark);color:var(--yellow);padding:12px 26px;border-radius:999px;
+  font-size:0.9rem;font-weight:800;z-index:999;transition:transform 0.3s;pointer-events:none;
+  border:2px solid var(--green-leaf);
+}
+.toast.show{transform:translateX(-50%) translateY(0);}
+
+/* ── README MODAL ── */
+.readme-modal{background:var(--white);border-radius:var(--radius-xl);width:680px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-lg);border:3px solid var(--green-dark);}
+.readme-body{padding:2rem;}
+.readme-body h2{font-family:var(--font-brand);font-size:1.5rem;color:var(--green-dark);margin-bottom:0.75rem;}
+.readme-body h3{font-family:var(--font-brand);font-size:1.1rem;color:var(--green-mid);margin:1.25rem 0 0.5rem;}
+.readme-body p,.readme-body li{font-size:0.9rem;color:var(--text-mid);line-height:1.7;font-weight:600;}
+.readme-body ol{padding-left:1.5rem;}
+.readme-body li{margin-bottom:4px;}
+.readme-body code{background:var(--yellow-pale);border:1px solid var(--border);padding:2px 7px;border-radius:4px;font-size:0.82rem;color:var(--green-dark);}
+.readme-body pre{background:var(--green-dark);color:var(--green-light);padding:1rem;border-radius:var(--radius);font-size:0.8rem;overflow-x:auto;margin:0.75rem 0;line-height:1.6;}
+.step-badge{display:inline-block;background:var(--yellow);color:var(--green-dark);font-family:var(--font-brand);font-size:0.85rem;padding:3px 12px;border-radius:999px;margin-right:8px;border:2px solid var(--green-dark);}
+</style>
+</head>
+<body>
+
+<!-- TOP NAV -->
+<nav class="topbar">
+  <a class="brand" href="#" onclick="showView('shop',event)">
+    <svg class="brand-logo" viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="21" cy="18" r="14" fill="rgba(107,191,74,0.15)"/>
+      <ellipse cx="17" cy="12" rx="5" ry="8" transform="rotate(-20 17 12)" fill="#6BBF4A"/>
+      <ellipse cx="25" cy="10" rx="3" ry="6" transform="rotate(15 25 10)" fill="#A8D97F"/>
+      <ellipse cx="13" cy="20" rx="4" ry="7" transform="rotate(-40 13 20)" fill="#A8D97F"/>
+      <ellipse cx="22" cy="22" rx="7" ry="9" transform="rotate(10 22 22)" fill="#164A2E"/>
+      <ellipse cx="28" cy="16" rx="4" ry="6" transform="rotate(30 28 16)" fill="#164A2E"/>
+    </svg>
+    <div>
+      <div class="brand-name">Home Grown</div>
+      <div class="brand-tagline">Food that makes you feel good</div>
+    </div>
+  </a>
+  <div class="nav-links">
+    <button class="nav-btn active" id="nav-shop" onclick="showView('shop',event)">Shop</button>
+    <button class="nav-btn admin-tab" id="nav-admin" onclick="showView('admin',event)">Admin Panel</button>
+    <button class="nav-btn" onclick="openReadme()" style="color:#A8D97F;">GitHub Guide</button>
+  </div>
+  <button class="cart-btn" onclick="toggleCart()">
+    🛒 Basket
+    <span class="cart-count" id="cart-count">0</span>
+  </button>
+</nav>
+
+<!-- ══ SHOP ══ -->
+<div class="view active" id="view-shop">
+  <div class="shop-hero">
+    <svg class="hero-leaves" viewBox="0 0 1200 320" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;">
+      <ellipse cx="80" cy="160" rx="60" ry="90" transform="rotate(-30 80 160)" fill="#164A2E" opacity="0.08"/>
+      <ellipse cx="1120" cy="80" rx="50" ry="80" transform="rotate(20 1120 80)" fill="#6BBF4A" opacity="0.15"/>
+      <ellipse cx="1050" cy="240" rx="40" ry="65" transform="rotate(-45 1050 240)" fill="#164A2E" opacity="0.07"/>
+      <ellipse cx="160" cy="40" rx="30" ry="50" transform="rotate(40 160 40)" fill="#6BBF4A" opacity="0.13"/>
+    </svg>
+    <div class="hero-badge">🌿 Small Batch · Freshly Made</div>
+    <h1>HOME <span>GROWN</span></h1>
+    <p>Food That Makes You Feel Good</p>
+  </div>
+  <div class="shop-content">
+    <div class="section-sub">Our Snacks <span></span></div>
+    <div class="products-grid" id="products-grid"></div>
+  </div>
+</div>
+
+<!-- ══ ADMIN ══ -->
+<div class="view" id="view-admin">
+  <div class="admin-layout">
+    <aside class="admin-sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-brand-text">Home Grown</div>
+        <div class="sidebar-brand-sub">Admin Panel</div>
+      </div>
+      <div class="admin-menu-item active" onclick="showAdminSection('dashboard',event)"><span class="admin-menu-icon">📊</span> Dashboard</div>
+      <div class="admin-menu-item" onclick="showAdminSection('orders',event)"><span class="admin-menu-icon">📦</span> Orders</div>
+      <div class="admin-menu-item" onclick="showAdminSection('shipping',event)"><span class="admin-menu-icon">🚚</span> Shipping</div>
+      <div class="admin-menu-item" onclick="showAdminSection('ingredients',event)"><span class="admin-menu-icon">🧂</span> Ingredients</div>
+      <div class="admin-menu-item" onclick="showAdminSection('payments',event)"><span class="admin-menu-icon">💳</span> Payments</div>
+      <div class="admin-menu-item" onclick="showAdminSection('products',event)"><span class="admin-menu-icon">🏷️</span> Products</div>
+      <div class="admin-menu-item" onclick="showAdminSection('settings',event)"><span class="admin-menu-icon">⚙️</span> Settings</div>
+    </aside>
+    <main class="admin-content">
+
+      <!-- DASHBOARD -->
+      <section class="admin-section active" id="section-dashboard">
+        <h1 class="admin-heading">Dashboard</h1>
+        <p class="admin-sub">Here's what's growing with your business today.</p>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value" id="stat-revenue">£0</div><div class="stat-change stat-up">all time</div></div>
+          <div class="stat-card"><div class="stat-label">Total Orders</div><div class="stat-value" id="stat-orders">0</div><div class="stat-change">placed</div></div>
+          <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value" id="stat-pending">0</div><div class="stat-change stat-down">need action</div></div>
+          <div class="stat-card"><div class="stat-label">Low Stock</div><div class="stat-value" id="stat-lowstock">0</div><div class="stat-change stat-down">ingredients</div></div>
+        </div>
+        <div class="admin-sub">Recent Orders</div>
+        <div class="table-wrap">
+          <table><thead><tr><th>Order #</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th>Date</th></tr></thead>
+          <tbody id="dashboard-orders-body"><tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:2rem;">No orders yet</td></tr></tbody></table>
+        </div>
+      </section>
+
+      <!-- ORDERS -->
+      <section class="admin-section" id="section-orders">
+        <h1 class="admin-heading">Orders</h1>
+        <p class="admin-sub">Manage and process customer orders.</p>
+        <div class="toolbar">
+          <input class="search-input" placeholder="Search orders..." oninput="filterOrders(this.value)">
+          <select class="filter-select" onchange="filterOrdersByStatus(this.value)">
+            <option value="">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="processing">Processing</option>
+            <option value="shipped">Shipped</option>
+            <option value="delivered">Delivered</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table><thead><tr><th>Order #</th><th>Customer</th><th>Address</th><th>Items</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="orders-body"><tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem;">No orders yet.</td></tr></tbody></table>
+        </div>
+      </section>
+
+      <!-- SHIPPING -->
+      <section class="admin-section" id="section-shipping">
+        <h1 class="admin-heading">Shipping</h1>
+        <p class="admin-sub">Track shipments and manage dispatch.</p>
+        <div id="shipping-cards"><p style="color:var(--text-muted);font-size:0.9rem;font-weight:600;">No active shipments yet.</p></div>
+      </section>
+
+      <!-- INGREDIENTS -->
+      <section class="admin-section" id="section-ingredients">
+        <h1 class="admin-heading">Ingredients</h1>
+        <p class="admin-sub">Track your ingredient stock levels.</p>
+        <div class="ingredient-form">
+          <h3>Add / Update Ingredient</h3>
+          <div class="form-inline">
+            <div class="form-group"><label>Name</label><input type="text" id="ing-name" placeholder="e.g. Rolled Oats"></div>
+            <div class="form-group"><label>Unit</label><input type="text" id="ing-unit" placeholder="kg, g, ml"></div>
+            <div class="form-group"><label>Current Stock</label><input type="number" id="ing-stock" placeholder="5" min="0"></div>
+            <div class="form-group"><label>Min. Required</label><input type="number" id="ing-min" placeholder="2" min="0"></div>
+            <div class="form-group"><label>Max Capacity</label><input type="number" id="ing-max" placeholder="20" min="1"></div>
+            <div class="form-group" style="justify-content:flex-end;"><button class="action-btn primary" onclick="addIngredient()" style="height:40px;white-space:nowrap;">+ Add</button></div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table><thead><tr><th>Ingredient</th><th>Stock</th><th>Unit</th><th>Level</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="ingredients-body"></tbody></table>
+        </div>
+      </section>
+
+      <!-- PAYMENTS -->
+      <section class="admin-section" id="section-payments">
+        <h1 class="admin-heading">Payments</h1>
+        <p class="admin-sub">Revenue overview and Stripe payment management.</p>
+        <div class="setup-banner">
+          <div class="setup-icon">⚡</div>
+          <div>
+            <h3>Stripe Setup</h3>
+            <p>To accept real card payments:</p>
+            <div class="setup-steps">
+              <div class="setup-step"><strong>1.</strong> Sign up at <strong>stripe.com</strong> and get your API keys</div>
+              <div class="setup-step"><strong>2.</strong> Go to <strong>Settings</strong> below and enter your <code>pk_live_...</code> key</div>
+              <div class="setup-step"><strong>3.</strong> Set up a backend endpoint to create <code>PaymentIntents</code> with your <code>sk_live_...</code> key</div>
+              <div class="setup-step"><strong>4.</strong> Enter your backend URL in <strong>Settings</strong></div>
+            </div>
+          </div>
+        </div>
+        <div class="stats-grid" style="margin-bottom:2rem;">
+          <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value" id="pay-total">£0.00</div></div>
+          <div class="stat-card"><div class="stat-label">This Month</div><div class="stat-value" id="pay-month">£0.00</div></div>
+          <div class="stat-card"><div class="stat-label">Transactions</div><div class="stat-value" id="pay-count">0</div></div>
+          <div class="stat-card"><div class="stat-label">Avg Order</div><div class="stat-value" id="pay-avg">£0.00</div></div>
+        </div>
+        <div class="revenue-chart">
+          <div style="font-size:0.75rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);">Revenue — Last 7 Days</div>
+          <div class="chart-bars" id="revenue-chart"></div>
+        </div>
+        <div class="admin-sub">Transaction History</div>
+        <div class="table-wrap">
+          <table><thead><tr><th>Order #</th><th>Customer</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead>
+          <tbody id="payments-body"><tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:2rem;">No transactions yet.</td></tr></tbody></table>
+        </div>
+      </section>
+
+      <!-- PRODUCTS -->
+      <section class="admin-section" id="section-products">
+        <h1 class="admin-heading">Products</h1>
+        <p class="admin-sub">Your snack catalogue.</p>
+        <div class="product-mgmt-grid" id="product-mgmt-grid"></div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="admin-section" id="section-settings">
+        <h1 class="admin-heading">Settings</h1>
+        <p class="admin-sub">Configure your shop and Stripe integration.</p>
+        <div class="ingredient-form" style="max-width:540px;">
+          <h3>Shop Details</h3>
+          <div class="form-row full" style="margin-bottom:1rem;"><div class="form-group"><label>Shop Name</label><input type="text" id="set-shopname" value="Home Grown"></div></div>
+          <div class="form-row" style="margin-bottom:1rem;">
+            <div class="form-group"><label>Contact Email</label><input type="email" id="set-email" placeholder="hello@homegrown.co.uk"></div>
+            <div class="form-group"><label>Phone</label><input type="tel" id="set-phone" placeholder="+44..."></div>
+          </div>
+          <div class="form-row full" style="margin-bottom:1rem;"><div class="form-group"><label>Stripe Publishable Key</label><input type="text" id="set-stripe-key" placeholder="pk_live_... or pk_test_..."></div></div>
+          <div class="form-row full" style="margin-bottom:1.5rem;"><div class="form-group"><label>Backend Payment URL</label><input type="text" id="set-backend-url" placeholder="https://yourserver.com/create-payment-intent"></div></div>
+          <button class="action-btn primary" onclick="saveSettings()">💾 Save Settings</button>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- ══ CART DRAWER ══ -->
+<div class="cart-overlay" id="cart-overlay" onclick="closeCartOnOverlay(event)">
+  <div class="cart-drawer">
+    <div class="cart-header"><h2>🧺 Your Basket</h2><button class="close-btn" onclick="toggleCart()">✕</button></div>
+    <div class="cart-items" id="cart-items"></div>
+    <div class="cart-footer" id="cart-footer" style="display:none;">
+      <div class="cart-total"><span>Subtotal</span><span id="cart-total-amount">£0.00</span></div>
+      <button class="checkout-btn" onclick="openCheckout()">Checkout →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CHECKOUT MODAL ══ -->
+<div class="modal-overlay" id="checkout-modal">
+  <div class="modal">
+    <div class="modal-head"><h2>Complete Your Order</h2><button class="close-btn" onclick="closeCheckout()">✕</button></div>
+    <div id="checkout-content">
+      <div class="modal-body">
+        <div class="stripe-setup-alert" id="stripe-alert"><strong>⚠️ Demo Mode — Stripe not configured</strong>Go to Admin → Settings to enter your Stripe key. Orders are still recorded.</div>
+        <div class="order-summary-box"><div class="os-title">Order Summary</div><div id="checkout-summary"></div></div>
+        <div class="form-row">
+          <div class="form-group"><label>First Name</label><input type="text" id="ch-fname" placeholder="Jane"></div>
+          <div class="form-group"><label>Last Name</label><input type="text" id="ch-lname" placeholder="Smith"></div>
+        </div>
+        <div class="form-row full"><div class="form-group"><label>Email</label><input type="email" id="ch-email" placeholder="jane@example.com"></div></div>
+        <div class="form-row full"><div class="form-group"><label>Delivery Address</label><input type="text" id="ch-address" placeholder="123 High Street"></div></div>
+        <div class="form-row">
+          <div class="form-group"><label>City / Town</label><input type="text" id="ch-city" placeholder="London"></div>
+          <div class="form-group"><label>Postcode</label><input type="text" id="ch-postcode" placeholder="EC1A 1BB"></div>
+        </div>
+        <div class="stripe-section" id="stripe-card-section" style="display:none;">
+          <div class="stripe-label">Card Details</div>
+          <div id="card-element"></div>
+          <div class="stripe-note"><span class="stripe-badge">🔒 Stripe</span> Payments secured by Stripe — we never store card details.</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div id="card-errors" style="color:var(--danger);font-size:0.85rem;font-weight:700;margin-bottom:10px;"></div>
+        <button class="pay-btn" id="pay-btn" onclick="processPayment()">🌿 Place Order — <span id="pay-amount">£0.00</span></button>
+      </div>
+    </div>
+    <div id="success-content" style="display:none;">
+      <div class="success-screen">
+        <div class="success-icon">🎉</div>
+        <h2>Order Placed!</h2>
+        <p>Thank you! We'll start making your snacks with love.</p>
+        <div class="order-num" id="success-order-num"></div><br>
+        <button class="action-btn primary" onclick="closeCheckout()" style="margin:0 auto;display:block;">Continue Shopping</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ GITHUB README MODAL ══ -->
+<div class="modal-overlay" id="readme-modal">
+  <div class="readme-modal">
+    <div class="modal-head"><h2>🐙 GitHub Pages Setup Guide</h2><button class="close-btn" onclick="document.getElementById('readme-modal').classList.remove('open')">✕</button></div>
+    <div class="readme-body">
+      <h2>Deploy Home Grown to GitHub Pages</h2>
+      <p>GitHub Pages is the perfect free hosting solution for this site. Your website will be live at <code>https://yourusername.github.io/home-grown</code> — for free, forever.</p>
+
+      <h3><span class="step-badge">1</span>Create a GitHub Account</h3>
+      <p>Go to <strong>github.com</strong> and sign up for a free account if you don't have one.</p>
+
+      <h3><span class="step-badge">2</span>Create a New Repository</h3>
+      <ol>
+        <li>Click the green <strong>New</strong> button on your GitHub dashboard</li>
+        <li>Name it <code>home-grown</code></li>
+        <li>Set it to <strong>Public</strong></li>
+        <li>Click <strong>Create repository</strong></li>
+      </ol>
+
+      <h3><span class="step-badge">3</span>Upload Your Website File</h3>
+      <ol>
+        <li>In your new repo, click <strong>uploading an existing file</strong></li>
+        <li>Drag and drop <code>index.html</code> (the file you downloaded)</li>
+        <li>Make sure it is named exactly <code>index.html</code></li>
+        <li>Click <strong>Commit changes</strong></li>
+      </ol>
+
+      <h3><span class="step-badge">4</span>Enable GitHub Pages</h3>
+      <ol>
+        <li>Go to your repo → <strong>Settings</strong> tab</li>
+        <li>Scroll to <strong>Pages</strong> in the left sidebar</li>
+        <li>Under <em>Source</em>, select <strong>Deploy from a branch</strong></li>
+        <li>Choose <strong>main</strong> branch, <strong>/ (root)</strong> folder</li>
+        <li>Click <strong>Save</strong></li>
+      </ol>
+
+      <h3><span class="step-badge">5</span>Your Site is Live! 🎉</h3>
+      <p>After ~2 minutes, your site will be at:</p>
+      <pre>https://yourusername.github.io/home-grown</pre>
+
+      <h3>Updating Your Site</h3>
+      <p>Whenever you want to update the site, just upload a new <code>index.html</code> to the same repo and it will automatically redeploy within minutes.</p>
+
+      <h3>Custom Domain (Optional)</h3>
+      <p>You can use a custom domain like <code>homegrownsnacks.co.uk</code>. In GitHub Pages settings, enter your domain name, then update your domain's DNS settings to point to GitHub. GitHub even provides a free SSL certificate.</p>
+
+      <h3>Adding Stripe Payments</h3>
+      <p>For real payments, you'll need a small backend server to create Stripe PaymentIntents. Good free options are:</p>
+      <ol>
+        <li><strong>Netlify Functions</strong> — free serverless functions, works great with GitHub</li>
+        <li><strong>Vercel</strong> — free tier, easy Node.js backend</li>
+        <li><strong>Railway</strong> — simple Node.js/Python server hosting</li>
+      </ol>
+      <p>Once your backend is running, paste the URL into <strong>Admin → Settings → Backend Payment URL</strong>.</p>
+    </div>
+    <div style="padding:0 2rem 2rem;">
+      <button class="action-btn primary" onclick="document.getElementById('readme-modal').classList.remove('open')">Got it!</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let STRIPE_PUBLISHABLE_KEY='';
+let BACKEND_URL='';
+
+const PRODUCTS=[
+  {id:1,name:'Honey Oat Clusters',emoji:'🍯',price:5.50,desc:'Golden oat clusters with local honey & toasted almonds',bg:'#FFF8D0',badge:'Best Seller'},
+  {id:2,name:'Chilli Lime Popcorn',emoji:'🍿',price:4.00,desc:'Air-popped corn with zesty lime & a gentle chilli kick',bg:'#FFF0E8',badge:''},
+  {id:3,name:'Rosemary Crackers',emoji:'🌿',price:4.50,desc:'Thin, crisp crackers with fresh rosemary & sea salt',bg:'#EDFAE0',badge:''},
+  {id:4,name:'Dark Chocolate Bark',emoji:'🍫',price:6.50,desc:'72% dark chocolate with pistachios & dried cranberries',bg:'#F8F0E8',badge:'New'},
+  {id:5,name:'Spiced Nut Mix',emoji:'🥜',price:5.00,desc:'Cashews, almonds & walnuts roasted with warming spices',bg:'#FFF5E0',badge:''},
+  {id:6,name:'Lemon Shortbread',emoji:'🍋',price:5.50,desc:'Buttery shortbread infused with real lemon zest',bg:'#FFFFF0',badge:'New'},
+];
+
+const DEFAULT_INGREDIENTS=[
+  {name:'Rolled Oats',unit:'kg',stock:3,min:2,max:10},
+  {name:'Local Honey',unit:'kg',stock:0.8,min:1,max:5},
+  {name:'Almonds',unit:'kg',stock:1.5,min:1,max:5},
+  {name:'Dark Chocolate',unit:'kg',stock:2,min:1.5,max:8},
+  {name:'Sea Salt',unit:'g',stock:400,min:200,max:1000},
+  {name:'Rosemary',unit:'g',stock:50,min:100,max:500},
+  {name:'Cashews',unit:'kg',stock:0.3,min:0.5,max:3},
+  {name:'Butter',unit:'kg',stock:1.2,min:0.5,max:4},
+];
+
+let cart=[];
+let orders=JSON.parse(localStorage.getItem('hg_orders')||'[]');
+let ingredients=JSON.parse(localStorage.getItem('hg_ingredients')||'null')||DEFAULT_INGREDIENTS;
+let stripeInstance=null;
+let cardElement=null;
+
+function showView(v,e){
+  document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(el=>el.classList.remove('active'));
+  document.getElementById('view-'+v).classList.add('active');
+  if(e)e.target.classList.add('active');
+  if(v==='admin')renderAdmin();
+}
+
+function renderShop(){
+  const grid=document.getElementById('products-grid');
+  grid.innerHTML=PRODUCTS.map(p=>`
+    <div class="product-card">
+      <div class="product-img" style="background:${p.bg};">
+        <span style="font-size:3.5rem;">${p.emoji}</span>
+        ${p.badge?`<span class="product-badge">${p.badge}</span>`:''}
+      </div>
+      <div class="product-info">
+        <div class="product-name">${p.name}</div>
+        <div class="product-desc">${p.desc}</div>
+        <div class="product-meta">
+          <span class="product-price">£${p.price.toFixed(2)}</span>
+          <button class="add-btn" id="add-btn-${p.id}" onclick="addToCart(${p.id})">Add +</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function addToCart(id){
+  const p=PRODUCTS.find(x=>x.id===id);
+  const ex=cart.find(x=>x.id===id);
+  if(ex)ex.qty++;else cart.push({...p,qty:1});
+  updateCartUI();
+  const btn=document.getElementById('add-btn-'+id);
+  btn.textContent='✓ Added';btn.classList.add('added');
+  setTimeout(()=>{btn.textContent='Add +';btn.classList.remove('added');},1500);
+  showToast(`${p.emoji} ${p.name} added!`);
+}
+function removeFromCart(id){cart=cart.filter(x=>x.id!==id);updateCartUI();}
+function changeQty(id,d){const i=cart.find(x=>x.id===id);if(!i)return;i.qty+=d;if(i.qty<=0)removeFromCart(id);else updateCartUI();}
+
+function updateCartUI(){
+  const total=cart.reduce((s,x)=>s+x.price*x.qty,0);
+  const count=cart.reduce((s,x)=>s+x.qty,0);
+  document.getElementById('cart-count').textContent=count;
+  const itemsEl=document.getElementById('cart-items');
+  const footerEl=document.getElementById('cart-footer');
+  if(cart.length===0){
+    itemsEl.innerHTML=`<div class="empty-cart"><div class="ec-icon">🧺</div><p style="font-weight:700;">Your basket is empty</p></div>`;
+    footerEl.style.display='none';
+  } else {
+    itemsEl.innerHTML=cart.map(item=>`
+      <div class="cart-item">
+        <div class="cart-item-emoji">${item.emoji}</div>
+        <div class="cart-item-info">
+          <div class="cart-item-name">${item.name}</div>
+          <div class="cart-item-price">£${item.price.toFixed(2)} each</div>
+          <div class="cart-item-qty">
+            <button class="qty-btn" onclick="changeQty(${item.id},-1)">−</button>
+            <span class="qty-num">${item.qty}</span>
+            <button class="qty-btn" onclick="changeQty(${item.id},1)">+</button>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-weight:800;font-size:0.9rem;color:var(--green-dark);">£${(item.price*item.qty).toFixed(2)}</div>
+          <button class="remove-item" onclick="removeFromCart(${item.id})" style="margin-top:8px;">🗑</button>
+        </div>
+      </div>`).join('');
+    document.getElementById('cart-total-amount').textContent='£'+total.toFixed(2);
+    footerEl.style.display='block';
+  }
+}
+
+function toggleCart(){document.getElementById('cart-overlay').classList.toggle('open');}
+function closeCartOnOverlay(e){if(e.target===document.getElementById('cart-overlay'))toggleCart();}
+
+function openCheckout(){
+  if(cart.length===0)return;
+  const total=cart.reduce((s,x)=>s+x.price*x.qty,0);
+  const shipping=3.50;const grand=total+shipping;
+  document.getElementById('checkout-summary').innerHTML=
+    cart.map(i=>`<div class="os-item"><span>${i.emoji} ${i.name} ×${i.qty}</span><span>£${(i.price*i.qty).toFixed(2)}</span></div>`).join('')+
+    `<div class="os-item"><span>Shipping</span><span>£${shipping.toFixed(2)}</span></div>
+     <div class="os-item total"><span>Total</span><span>£${grand.toFixed(2)}</span></div>`;
+  document.getElementById('pay-amount').textContent='£'+grand.toFixed(2);
+  document.getElementById('checkout-content').style.display='block';
+  document.getElementById('success-content').style.display='none';
+  if(STRIPE_PUBLISHABLE_KEY){
+    document.getElementById('stripe-alert').style.display='none';
+    document.getElementById('stripe-card-section').style.display='block';
+    if(!stripeInstance){
+      stripeInstance=Stripe(STRIPE_PUBLISHABLE_KEY);
+      const elements=stripeInstance.elements();
+      cardElement=elements.create('card',{style:{base:{fontFamily:"'Nunito',sans-serif",fontSize:'15px',color:'#0E3019'}}});
+      cardElement.mount('#card-element');
+    }
+  }
+  document.getElementById('checkout-modal').classList.add('open');
+  toggleCart();
+}
+
+function closeCheckout(){document.getElementById('checkout-modal').classList.remove('open');}
+
+async function processPayment(){
+  const fname=document.getElementById('ch-fname').value.trim();
+  const lname=document.getElementById('ch-lname').value.trim();
+  const email=document.getElementById('ch-email').value.trim();
+  const address=document.getElementById('ch-address').value.trim();
+  const city=document.getElementById('ch-city').value.trim();
+  const postcode=document.getElementById('ch-postcode').value.trim();
+  if(!fname||!lname||!email||!address||!city||!postcode){showToast('Please fill in all delivery details');return;}
+  const btn=document.getElementById('pay-btn');
+  btn.disabled=true;btn.textContent='Processing...';
+  const total=cart.reduce((s,x)=>s+x.price*x.qty,0)+3.50;
+  let ok=false;
+  if(STRIPE_PUBLISHABLE_KEY&&BACKEND_URL){
+    try{
+      const res=await fetch(BACKEND_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:Math.round(total*100),currency:'gbp'})});
+      const{clientSecret}=await res.json();
+      const{error}=await stripeInstance.confirmCardPayment(clientSecret,{payment_method:{card:cardElement,billing_details:{name:fname+' '+lname,email}}});
+      if(error){document.getElementById('card-errors').textContent=error.message;btn.disabled=false;btn.innerHTML=`🌿 Place Order — £${total.toFixed(2)}`;return;}
+      ok=true;
+    }catch(e){document.getElementById('card-errors').textContent='Payment error. Please try again.';btn.disabled=false;btn.innerHTML=`🌿 Place Order — £${total.toFixed(2)}`;return;}
+  }else{await new Promise(r=>setTimeout(r,700));ok=true;}
+  if(ok){
+    const oid='HG-'+Date.now().toString().slice(-6);
+    const order={id:oid,fname,lname,email,address:`${address}, ${city}, ${postcode}`,items:cart.map(i=>`${i.name} ×${i.qty}`).join(', '),total:total.toFixed(2),status:'pending',date:new Date().toLocaleDateString('en-GB'),timestamp:Date.now(),paid:true};
+    orders.unshift(order);saveOrders();cart=[];updateCartUI();
+    document.getElementById('success-order-num').textContent='Order: '+oid;
+    document.getElementById('checkout-content').style.display='none';
+    document.getElementById('success-content').style.display='block';
+    btn.disabled=false;
+    showToast('🎉 Order placed!');
+  }
+}
+
+// Admin
+function showAdminSection(s,e){
+  document.querySelectorAll('.admin-section').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.admin-menu-item').forEach(el=>el.classList.remove('active'));
+  document.getElementById('section-'+s).classList.add('active');
+  if(e)e.currentTarget.classList.add('active');
+  renderAdmin();
+}
+
+function renderAdmin(){renderDashboard();renderOrdersTable();renderShipping();renderIngredients();renderPayments();renderProductMgmt();}
+
+function renderDashboard(){
+  const total=orders.reduce((s,o)=>s+parseFloat(o.total),0);
+  document.getElementById('stat-revenue').textContent='£'+total.toFixed(2);
+  document.getElementById('stat-orders').textContent=orders.length;
+  document.getElementById('stat-pending').textContent=orders.filter(o=>o.status==='pending').length;
+  document.getElementById('stat-lowstock').textContent=ingredients.filter(i=>i.stock<i.min).length;
+  const tbody=document.getElementById('dashboard-orders-body');
+  tbody.innerHTML=orders.length===0?'<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:2rem;">No orders yet</td></tr>':
+    orders.slice(0,5).map(o=>`<tr><td><strong>${o.id}</strong></td><td>${o.fname} ${o.lname}</td><td>${o.items.substring(0,35)}${o.items.length>35?'...':''}</td><td><strong>£${o.total}</strong></td><td><span class="badge badge-${o.status}">${o.status}</span></td><td>${o.date}</td></tr>`).join('');
+}
+
+function renderOrdersTable(){
+  const tbody=document.getElementById('orders-body');
+  tbody.innerHTML=orders.length===0?'<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem;">No orders yet.</td></tr>':
+    orders.map(o=>`<tr>
+      <td><strong>${o.id}</strong></td>
+      <td>${o.fname} ${o.lname}<br><small style="color:var(--text-muted)">${o.email}</small></td>
+      <td style="font-size:0.8rem;">${o.address}</td>
+      <td style="font-size:0.82rem;">${o.items}</td>
+      <td><strong>£${o.total}</strong></td>
+      <td><span class="badge badge-${o.status}">${o.status}</span></td>
+      <td>
+        ${o.status==='pending'?`<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','processing')">Process</button>`:''}
+        ${o.status==='processing'?`<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','shipped')">Ship</button>`:''}
+        ${o.status==='shipped'?`<button class="action-btn" onclick="updateOrderStatus('${o.id}','delivered')">Delivered</button>`:''}
+        <button class="action-btn danger" onclick="cancelOrder('${o.id}')">Cancel</button>
+      </td></tr>`).join('');
+}
+
+function renderShipping(){
+  const el=document.getElementById('shipping-cards');
+  const active=orders.filter(o=>['processing','shipped'].includes(o.status));
+  if(active.length===0){el.innerHTML='<p style="color:var(--text-muted);font-size:0.9rem;font-weight:600;">No active shipments yet.</p>';return;}
+  const steps=['Ordered','Processing','Dispatched','In Transit','Delivered'];
+  el.innerHTML=active.map(o=>{
+    const si=o.status==='processing'?1:o.status==='shipped'?3:4;
+    return`<div class="tracking-card">
+      <div class="tracking-header"><span class="order-id">${o.id}</span><span class="badge badge-${o.status}">${o.status}</span><span style="color:var(--text-muted);font-size:0.85rem;font-weight:600;margin-left:auto;">${o.fname} ${o.lname}</span></div>
+      <div style="font-size:0.82rem;color:var(--text-muted);font-weight:600;margin-bottom:1rem;">${o.items}</div>
+      <div class="tracking-steps">${steps.map((s,i)=>`<div class="tracking-step ${i<si?'done':''} ${i===si?'current':''}"><div class="ts-dot">${i<si?'✓':i+1}</div><div class="ts-label">${s}</div></div>`).join('')}</div>
+      <div style="display:flex;gap:8px;margin-top:1.5rem;align-items:center;">
+        ${o.status==='processing'?`<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','shipped');renderAdmin()">Mark Shipped</button>`:''}
+        ${o.status==='shipped'?`<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','delivered');renderAdmin()">Mark Delivered</button>`:''}
+        <input type="text" placeholder="Add tracking number..." style="flex:1;padding:7px 12px;border:2px solid var(--border);border-radius:var(--radius);font-size:0.85rem;font-family:var(--font-body);background:var(--yellow-pale);color:var(--text);font-weight:600;">
+      </div></div>`;
+  }).join('');
+}
+
+function renderIngredients(){
+  const tbody=document.getElementById('ingredients-body');
+  tbody.innerHTML=ingredients.map((ing,i)=>{
+    const pct=Math.min(100,Math.round((ing.stock/ing.max)*100));
+    const status=ing.stock<ing.min?(ing.stock<ing.min*0.5?'critical':'low'):'ok';
+    return`<tr>
+      <td><strong>${ing.name}</strong></td>
+      <td>${ing.stock} / ${ing.max}</td>
+      <td>${ing.unit}</td>
+      <td style="min-width:120px;"><div class="progress-bar-wrap"><div class="progress-bar prog-${status}" style="width:${pct}%;"></div></div></td>
+      <td><span class="badge badge-${status}">${status}</span></td>
+      <td><button class="action-btn" onclick="restockIngredient(${i})">+ Restock</button><button class="action-btn danger" onclick="deleteIngredient(${i})">Remove</button></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('stat-lowstock').textContent=ingredients.filter(i=>i.stock<i.min).length;
+}
+
+function renderPayments(){
+  const total=orders.reduce((s,o)=>s+parseFloat(o.total),0);
+  const now=new Date();
+  const mTotal=orders.filter(o=>{const d=new Date(o.timestamp);return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();}).reduce((s,o)=>s+parseFloat(o.total),0);
+  document.getElementById('pay-total').textContent='£'+total.toFixed(2);
+  document.getElementById('pay-month').textContent='£'+mTotal.toFixed(2);
+  document.getElementById('pay-count').textContent=orders.length;
+  document.getElementById('pay-avg').textContent=orders.length?'£'+(total/orders.length).toFixed(2):'£0.00';
+  const days=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const key=d.toLocaleDateString('en-GB');const rev=orders.filter(o=>o.date===key).reduce((s,o)=>s+parseFloat(o.total),0);days.push({label:d.toLocaleDateString('en-GB',{weekday:'short'}),val:rev});}
+  const maxR=Math.max(...days.map(d=>d.val),1);
+  document.getElementById('revenue-chart').innerHTML=days.map(d=>`<div class="chart-bar-wrap"><div class="chart-bar-val">${d.val>0?'£'+d.val.toFixed(0):''}</div><div class="chart-bar" style="height:${Math.round((d.val/maxR)*110)}px;"></div><div class="chart-bar-label">${d.label}</div></div>`).join('');
+  const tbody=document.getElementById('payments-body');
+  tbody.innerHTML=orders.length===0?'<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:2rem;">No transactions yet.</td></tr>':
+    orders.map(o=>`<tr><td><strong>${o.id}</strong></td><td>${o.fname} ${o.lname}</td><td><strong>£${o.total}</strong></td><td>${o.date}</td><td><span class="badge badge-paid">Paid</span></td></tr>`).join('');
+}
+
+function renderProductMgmt(){
+  document.getElementById('product-mgmt-grid').innerHTML=PRODUCTS.map(p=>`
+    <div class="product-mgmt-card">
+      <div class="pmc-emoji" style="background:${p.bg};">${p.emoji}</div>
+      <div style="flex:1;"><div class="pmc-name">${p.name}</div><div class="pmc-stock">In production</div></div>
+      <div class="pmc-price">£${p.price.toFixed(2)}</div>
+    </div>`).join('');
+}
+
+function updateOrderStatus(id,status){
+  const o=orders.find(x=>x.id===id);
+  if(o){o.status=status;saveOrders();renderAdmin();showToast('Order '+id+' → '+status);}
+}
+function cancelOrder(id){
+  if(confirm('Cancel order '+id+'?')){const o=orders.find(x=>x.id===id);if(o){o.status='cancelled';saveOrders();renderAdmin();}}
+}
+function filterOrders(q){document.querySelectorAll('#orders-body tr').forEach(r=>{r.style.display=r.textContent.toLowerCase().includes(q.toLowerCase())?'':'none';});}
+function filterOrdersByStatus(s){document.querySelectorAll('#orders-body tr').forEach(r=>{r.style.display=!s||r.textContent.toLowerCase().includes(s)?'':'none';});}
+
+function addIngredient(){
+  const name=document.getElementById('ing-name').value.trim();
+  const unit=document.getElementById('ing-unit').value.trim();
+  const stock=parseFloat(document.getElementById('ing-stock').value)||0;
+  const min=parseFloat(document.getElementById('ing-min').value)||0;
+  const max=parseFloat(document.getElementById('ing-max').value)||10;
+  if(!name||!unit){showToast('Please enter name and unit');return;}
+  ingredients.push({name,unit,stock,min,max});saveIngredients();renderIngredients();
+  ['ing-name','ing-unit','ing-stock','ing-min','ing-max'].forEach(id=>document.getElementById(id).value='');
+  showToast('✓ '+name+' added');
+}
+function restockIngredient(i){
+  const amt=parseFloat(prompt('Add how much '+ingredients[i].unit+' to '+ingredients[i].name+'?'));
+  if(!isNaN(amt)&&amt>0){ingredients[i].stock=Math.min(ingredients[i].max,ingredients[i].stock+amt);saveIngredients();renderIngredients();showToast('✓ Restocked '+ingredients[i].name);}
+}
+function deleteIngredient(i){if(confirm('Remove '+ingredients[i].name+'?')){ingredients.splice(i,1);saveIngredients();renderIngredients();}}
+
+function saveSettings(){
+  const key=document.getElementById('set-stripe-key').value.trim();
+  const url=document.getElementById('set-backend-url').value.trim();
+  if(key){STRIPE_PUBLISHABLE_KEY=key;localStorage.setItem('hg_stripe_key',key);}
+  if(url){BACKEND_URL=url;localStorage.setItem('hg_backend_url',url);}
+  showToast('✓ Settings saved!');
+}
+function loadSettings(){
+  const key=localStorage.getItem('hg_stripe_key');
+  const url=localStorage.getItem('hg_backend_url');
+  if(key){STRIPE_PUBLISHABLE_KEY=key;document.getElementById('set-stripe-key').value=key;}
+  if(url){BACKEND_URL=url;document.getElementById('set-backend-url').value=url;}
+}
+
+function saveOrders(){localStorage.setItem('hg_orders',JSON.stringify(orders));}
+function saveIngredients(){localStorage.setItem('hg_ingredients',JSON.stringify(ingredients));}
+
+function openReadme(){document.getElementById('readme-modal').classList.add('open');}
+
+let toastTimer;
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2500);}
+
+// Init
+renderShop();updateCartUI();loadSettings();renderAdmin();
+</script>
+</body>
+</html>
