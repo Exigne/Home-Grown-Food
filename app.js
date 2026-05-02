@@ -23,9 +23,6 @@ async function fetchConfig() {
         if (res.ok) {
             const data = await res.json();
             STRIPE_PUBLISHABLE_KEY = data.stripePublishableKey;
-            if (STRIPE_PUBLISHABLE_KEY && window.Stripe) {
-                stripeInstance = Stripe(STRIPE_PUBLISHABLE_KEY);
-            }
         }
     } catch (e) { console.error("Config fetch failed"); }
 }
@@ -42,7 +39,7 @@ async function fetchProducts() {
     }
 }
 
-// --- NAVIGATION & AUTH ---
+// --- NAVIGATION ---
 function showView(v, e) {
   document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
@@ -93,7 +90,7 @@ async function loadAdminData() {
   } catch (error) { console.error("Admin sync failed"); }
 }
 
-// --- MAIN RENDERERS ---
+// --- RENDERING ---
 function renderShop() {
   const grid = document.getElementById('products-grid');
   grid.innerHTML = products.map(p => `
@@ -119,82 +116,64 @@ function renderAdmin() {
   renderIngredients();
   renderProductMgmt();
   renderShipping();
-  renderPayments();
 }
 
-// --- ADMIN SUB-RENDERERS ---
 function renderDashboard() {
   const total = orders.reduce((s, o) => s + parseFloat(o.total), 0);
   document.getElementById('stat-revenue').textContent = '£' + total.toFixed(2);
   document.getElementById('stat-orders').textContent = orders.length;
   document.getElementById('stat-pending').textContent = orders.filter(o => o.status === 'pending').length;
-  document.getElementById('stat-lowstock').textContent = ingredients.filter(i => parseFloat(i.stock) < parseFloat(i.min_stock || 0)).length;
-
+  
   const tbody = document.getElementById('dashboard-orders-body');
   tbody.innerHTML = orders.slice(0,5).map(o => `
-    <tr><td><strong>${o.id}</strong></td><td>${o.fname}</td><td>£${o.total}</td><td><span class="badge badge-${o.status}">${o.status}</span></td><td>${o.date}</td></tr>
+    <tr><td>${o.id}</td><td>${o.fname}</td><td>£${o.total}</td><td>${o.status}</td><td>${o.date}</td></tr>
   `).join('');
 }
 
-function renderShipping() {
-  const el = document.getElementById('shipping-cards');
-  const active = orders.filter(o => ['pending', 'processing', 'shipped'].includes(o.status));
-  if(active.length === 0) { el.innerHTML = "<p>No active shipments.</p>"; return; }
-  
-  const steps = ['Ordered', 'Processing', 'Dispatched', 'In Transit', 'Delivered'];
-  el.innerHTML = active.map(o => {
-    const si = o.status === 'pending' ? 0 : o.status === 'processing' ? 1 : 3;
-    return `
-      <div class="tracking-card">
-        <div class="tracking-header"><span class="order-id">${o.id}</span> <span class="badge badge-${o.status}">${o.status}</span></div>
-        <div class="tracking-steps">
-          ${steps.map((s, i) => `
-            <div class="tracking-step ${i <= si ? 'done' : ''} ${i === si ? 'current' : ''}">
-              <div class="ts-dot">${i < si ? '✓' : i + 1}</div>
-              <div class="ts-label">${s}</div>
-            </div>`).join('')}
-        </div>
-      </div>`;
-  }).join('');
+function renderProductMgmt() {
+  document.getElementById('product-mgmt-grid').innerHTML = products.map(p => `
+    <div class="product-mgmt-card">
+      <div class="pmc-emoji" style="background:${p.bg_color}">${p.emoji || '🍪'}</div>
+      <div style="flex:1;"><strong>${p.name}</strong><br><small>£${p.price}</small></div>
+      <button class="action-btn" onclick="editProduct(${p.id})">✏️</button>
+      <button class="action-btn danger" onclick="deleteProduct(${p.id})">🗑</button>
+    </div>`).join('');
 }
 
 function renderIngredients() {
   const tbody = document.getElementById('ingredients-body');
-  tbody.innerHTML = ingredients.map((ing, idx) => {
-      const pct = Math.min(100, (ing.stock / (ing.max_stock || 100)) * 100);
-      const isLow = parseFloat(ing.stock) < parseFloat(ing.min_stock || 0);
-      return `
-        <tr>
-            <td><strong>${ing.name}</strong></td><td>${ing.stock}</td><td>${ing.unit}</td>
-            <td><div class="progress-bar-wrap"><div class="progress-bar ${isLow ? 'prog-critical' : 'prog-ok'}" style="width:${pct}%"></div></div></td>
-            <td><span class="badge badge-${isLow ? 'low' : 'ok'}">${isLow ? 'Low' : 'OK'}</span></td>
-            <td><button class="action-btn" onclick="restockIngredient(${idx})">+ Restock</button></td>
-        </tr>`;
-  }).join('');
+  tbody.innerHTML = ingredients.map(ing => `
+    <tr>
+        <td>${ing.name}</td><td>${ing.stock}</td><td>${ing.unit}</td>
+        <td><div class="progress-bar-wrap"><div class="progress-bar prog-ok" style="width:70%"></div></div></td>
+        <td><span class="badge badge-ok">OK</span></td>
+        <td><button class="action-btn">+ Restock</button></td>
+    </tr>`).join('');
 }
 
-function renderPayments() {
-  const chart = document.getElementById('revenue-chart');
-  if(!chart) return;
-  const last7 = [];
-  for(let i=6; i>=0; i--) {
-      const d = new Date(); d.setDate(d.getDate()-i);
-      const ds = d.toLocaleDateString('en-GB');
-      const rev = orders.filter(o => o.date === ds).reduce((s, o) => s + parseFloat(o.total), 0);
-      last7.push({ day: d.toLocaleDateString('en-GB', {weekday: 'short'}), val: rev });
-  }
-  const max = Math.max(...last7.map(d => d.val), 1);
-  chart.innerHTML = last7.map(d => `
-    <div class="chart-bar-wrap">
-      <div class="chart-bar" style="height:${(d.val/max)*100}px"></div>
-      <div class="chart-bar-label">${d.day}</div>
+function renderOrdersTable() {
+  const tbody = document.getElementById('orders-body');
+  tbody.innerHTML = orders.map(o => `
+    <tr>
+        <td>${o.id}</td><td>${o.fname} ${o.lname}</td><td>${o.items}</td><td>£${o.total}</td><td>${o.status}</td>
+        <td><button class="action-btn primary" onclick="updateOrderStatus('${o.id}', 'shipped')">Ship</button></td>
+    </tr>`).join('');
+}
+
+function renderShipping() {
+  const el = document.getElementById('shipping-cards');
+  const active = orders.filter(o => ['pending', 'shipped'].includes(o.status));
+  el.innerHTML = active.map(o => `
+    <div class="tracking-card">
+        <div class="tracking-header"><span class="order-id">${o.id}</span></div>
+        <div class="tracking-steps">
+            <div class="tracking-step done"><div class="ts-dot">✓</div><div class="ts-label">Ordered</div></div>
+            <div class="tracking-step ${o.status === 'shipped' ? 'current' : ''}"><div class="ts-dot">2</div><div class="ts-label">Shipped</div></div>
+        </div>
     </div>`).join('');
-
-  const pBody = document.getElementById('payments-body');
-  if(pBody) pBody.innerHTML = orders.map(o => `<tr><td>${o.id}</td><td>£${o.total}</td><td>${o.date}</td><td><span class="badge badge-paid">Paid</span></td></tr>`).join('');
 }
 
-// --- BASKET LOGIC ---
+// --- BASKET & CHECKOUT ---
 function addToCart(id) {
   const p = products.find(x => x.id === id);
   const ex = cart.find(x => x.id === id);
@@ -230,13 +209,12 @@ function updateCartUI() {
 }
 
 function changeQty(id, d) {
-  const i = cart.find(x => x.id === id);
-  if(i) { i.qty += d; if (i.qty <= 0) cart = cart.filter(x => x.id !== id); updateCartUI(); }
+    const i = cart.find(x => x.id === id);
+    if(i) { i.qty += d; if (i.qty <= 0) cart = cart.filter(x => x.id !== id); updateCartUI(); }
 }
 function toggleCart() { document.getElementById('cart-overlay').classList.toggle('open'); }
 function closeCartOnOverlay(e) { if(e.target.id === 'cart-overlay') toggleCart(); }
 
-// --- CHECKOUT & STRIPE ---
 function openCheckout() {
   if (cart.length === 0) return;
   const total = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0) + 3.50;
@@ -252,6 +230,8 @@ function openCheckout() {
   document.getElementById('checkout-modal').classList.add('open');
   toggleCart();
 }
+
+function closeCheckout() { document.getElementById('checkout-modal').classList.remove('open'); }
 
 async function processPayment() {
     const btn = document.getElementById('pay-btn');
@@ -272,12 +252,14 @@ async function processPayment() {
         await fetch(`${API_BASE}/orders`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                id: oid, fname: document.getElementById('ch-fname').value,
+                id: oid,
+                fname: document.getElementById('ch-fname').value,
                 lname: document.getElementById('ch-lname').value,
                 email: document.getElementById('ch-email').value,
                 address: document.getElementById('ch-address').value,
                 items: cart.map(i => `${i.name} ×${i.qty}`).join(', '),
-                total: total.toFixed(2), status: 'pending',
+                total: total.toFixed(2),
+                status: 'pending',
                 date: new Date().toLocaleDateString('en-GB'),
                 paymentIntentId: paymentIntent.id
             })
@@ -290,11 +272,10 @@ async function processPayment() {
     finally { btn.disabled = false; btn.textContent = 'Place Order'; }
 }
 
-// --- ADMIN CRUD & MISC ---
+// --- ADMIN CRUD ---
 function resetProductForm() {
     document.getElementById('prod-id').value = '';
     ['prod-name','prod-price','prod-emoji','prod-badge','prod-image','prod-desc'].forEach(id => document.getElementById(id).value = '');
-    document.getElementById('product-form-title').textContent = "Add New Snack";
 }
 
 function editProduct(id) {
@@ -329,17 +310,12 @@ async function saveProduct() {
     showToast('Product Saved!'); resetProductForm(); loadAdminData();
 }
 
-async function restockIngredient(idx) {
-    const ing = ingredients[idx];
-    const amt = prompt(`Add how much ${ing.unit} to ${ing.name}?`);
-    if(amt) {
-        const newStock = parseFloat(ing.stock) + parseFloat(amt);
-        await fetch(`${API_BASE}/admin/ingredients/${ing.id}`, {
-            method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
-            body: JSON.stringify({ stock: newStock })
-        });
-        loadAdminData();
-    }
+async function deleteProduct(id) {
+    if(!confirm('Delete?')) return;
+    await fetch(`${API_BASE}/admin/products/${id}`, {
+        method: 'DELETE', headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    showToast('Deleted'); loadAdminData();
 }
 
 async function updateOrderStatus(id, status) {
@@ -350,16 +326,11 @@ async function updateOrderStatus(id, status) {
   loadAdminData();
 }
 
-function saveSettings() {
-    const key = document.getElementById('set-stripe-key').value;
-    const url = document.getElementById('set-backend-url').value;
-    if(key) localStorage.setItem('hg_stripe_key', key);
-    if(url) localStorage.setItem('hg_backend_url', url);
-    showToast("Settings saved locally!");
+function showAdminSection(s, e) {
+    document.querySelectorAll('.admin-section').forEach(el => el.classList.remove('active'));
+    document.getElementById('section-' + s).classList.add('active');
+    loadAdminData();
 }
-
-function openReadme() { document.getElementById('readme-modal').classList.add('open'); }
-function closeCheckout() { document.getElementById('checkout-modal').classList.remove('open'); }
 
 function showToast(msg) {
     const t = document.getElementById('toast');
