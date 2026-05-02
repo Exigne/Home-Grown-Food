@@ -134,8 +134,6 @@ app.delete('/api/admin/ingredients/:id', authenticateAdmin, async (req, res) => 
     }
 });
 
-// Start the server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`🌿 Home Grown Backend running on http://localhost:${PORT}`);
-});
+// Export as a Netlify Serverless Function
+const serverless = require('serverless-http');
+module.exports.handler = serverless(app);
