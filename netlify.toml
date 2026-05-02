@@ -1,5 +1,5 @@
 [build]
-  functions = "server.js"
+  functions = "functions"
 
 [[redirects]]
   from = "/api/*"
