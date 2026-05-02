@@ -464,9 +464,9 @@ function closeCartOnOverlay(e) { if (e.target.id === 'cart-overlay') toggleCart(
 
 // ─── CHECKOUT ─────────────────────────────────────────────────────────────────
 function openCheckout() {
-    function togglePickup() {
+    if (cart.length === 0) return;
     const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
-    const isPickup = document.getElementById('pickup-check').checked;
+    const isPickup = document.getElementById('pickup-check')?.checked || false;
     const shipping = isPickup ? 0 : 3.50;
     const total    = subtotal + shipping;
 
@@ -478,26 +478,11 @@ function openCheckout() {
         `<div class="os-item total"><span>Total</span><span>£${total.toFixed(2)}</span></div>`;
 
     document.getElementById('pay-amount').textContent = '£' + total.toFixed(2);
-}
-    if (cart.length === 0) return;
-    const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
-    const shipping = 3.50;
-    const total    = subtotal + shipping;
-
-    // Populate summary
-    document.getElementById('checkout-summary').innerHTML =
-        cart.map(i => `<div class="os-item"><span>${i.emoji || ''} ${i.name} ×${i.qty}</span><span>£${(parseFloat(i.price) * i.qty).toFixed(2)}</span></div>`).join('') +
-        `<div class="os-item"><span>Shipping</span><span>£${shipping.toFixed(2)}</span></div>
-         <div class="os-item total"><span>Total</span><span>£${total.toFixed(2)}</span></div>`;
-
-    document.getElementById('pay-amount').textContent = '£' + total.toFixed(2);
     document.getElementById('card-errors').textContent = '';
 
-    // Reset to form view
     document.getElementById('checkout-content').style.display = 'block';
     document.getElementById('success-content').style.display  = 'none';
 
-    // Mount Stripe if key is available
     if (STRIPE_PUBLISHABLE_KEY) {
         document.getElementById('stripe-alert').style.display       = 'none';
         document.getElementById('stripe-card-section').style.display = 'block';
@@ -518,10 +503,109 @@ function openCheckout() {
     toggleCart();
 }
 
+function togglePickup() {
+    const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
+    const isPickup = document.getElementById('pickup-check').checked;
+    const shipping = isPickup ? 0 : 3.50;
+    const total    = subtotal + shipping;
+
+    document.getElementById('checkout-summary').innerHTML =
+        cart.map(i => `<div class="os-item"><span>${i.emoji || ''} ${i.name} ×${i.qty}</span><span>£${(parseFloat(i.price) * i.qty).toFixed(2)}</span></div>`).join('') +
+        (shipping > 0
+            ? `<div class="os-item"><span>Shipping</span><span>£${shipping.toFixed(2)}</span></div>`
+            : `<div class="os-item" style="color:var(--green-mid);"><span>🏠 Home Pickup</span><span>£0.00</span></div>`) +
+        `<div class="os-item total"><span>Total</span><span>£${total.toFixed(2)}</span></div>`;
+
+    document.getElementById('pay-amount').textContent = '£' + total.toFixed(2);
+}
+
 function closeCheckout() {
     document.getElementById('checkout-modal').classList.remove('open');
 }
 
+// FIX: graceful fallback when Stripe not configured (demo mode records order without payment)
+async function processPayment() {
+    const fields = [
+        ['ch-fname', 'First name'], ['ch-lname', 'Last name'],
+        ['ch-email', 'Email'], ['ch-address', 'Address'],
+        ['ch-city', 'City'], ['ch-postcode', 'Postcode']
+    ];
+    for (const [id, label] of fields) {
+        if (!document.getElementById(id).value.trim()) {
+            showToast(`Please enter your ${label}`);
+            return;
+        }
+    }
+
+    const btn  = document.getElementById('pay-btn');
+    btn.disabled = true;
+    btn.innerHTML = 'Processing…';
+    document.getElementById('card-errors').textContent = '';
+
+    const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
+    const isPickup = document.getElementById('pickup-check')?.checked || false;
+    const shipping = isPickup ? 0 : 3.50;
+    const total    = (subtotal + shipping).toFixed(2);
+    const oid      = 'HG-' + Date.now().toString().slice(-6);
+
+    try {
+        let paymentIntentId = null;
+
+        if (STRIPE_PUBLISHABLE_KEY && stripeInstance && cardElement) {
+            const res = await fetch(`${API_BASE}/create-payment-intent`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ amount: Math.round(parseFloat(total) * 100), currency: 'gbp' })
+            });
+            const { clientSecret } = await res.json();
+            const { paymentIntent, error } = await stripeInstance.confirmCardPayment(clientSecret, {
+                payment_method: { card: cardElement }
+            });
+            if (error) throw new Error(error.message);
+            paymentIntentId = paymentIntent.id;
+        } else {
+            await new Promise(r => setTimeout(r, 700));
+        }
+
+        const orderPayload = {
+            id:              oid,
+            fname:           document.getElementById('ch-fname').value.trim(),
+            lname:           document.getElementById('ch-lname').value.trim(),
+            email:           document.getElementById('ch-email').value.trim(),
+            address:         `${document.getElementById('ch-address').value.trim()}, ${document.getElementById('ch-city').value.trim()}, ${document.getElementById('ch-postcode').value.trim()}`,
+            items:           cart.map(i => `${i.name} ×${i.qty}`).join(', '),
+            total:           total,
+            status:          'pending',
+            date:            new Date().toLocaleDateString('en-GB'),
+            timestamp:       Date.now(),
+            paymentIntentId: paymentIntentId,
+            pickup:          isPickup
+        };
+
+        try {
+            await fetch(`${API_BASE}/orders`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(orderPayload)
+            });
+        } catch (saveErr) {
+            console.warn('Could not save order to backend:', saveErr);
+        }
+
+        document.getElementById('success-order-num').textContent = 'Order Reference: ' + oid;
+        document.getElementById('checkout-content').style.display = 'none';
+        document.getElementById('success-content').style.display  = 'block';
+        cart = [];
+        updateCartUI();
+        showToast('🎉 Order placed!');
+
+    } catch (e) {
+        document.getElementById('card-errors').textContent = e.message;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `🌿 Place Order — <span id="pay-amount">£${total}</span>`;
+    }
+}
 // FIX: graceful fallback when Stripe not configured (demo mode records order without payment)
 async function processPayment() {
     // Validate required fields
