@@ -5,7 +5,7 @@
 // --- CONFIGURATION & STATE ---
 const API_BASE = window.location.origin + '/api';
 let adminToken = localStorage.getItem('hg_admin_token') || null;
-let STRIPE_PUBLISHABLE_KEY = '';
+let STRIPE_PUBLISHABLE_KEY = 'pk_live_51PU4upEFaqxyf7ELOsith63WwqUuTzYYzEreW1DEyqn6o2KoLBkzYDLECvMznQZiG9enOc7hhu7kFdai1Cg4eFVK00ZV9S7qmV';
 let cart = [];
 let orders = [];
 let ingredients = [];
