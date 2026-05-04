@@ -1,7 +1,5 @@
 // ═══════════════════════════════════════════════
 //  HOME GROWN — app.js
-//  Fixed: sidebar active states, stock levels,
-//  order flow, payments section, Stripe fallback
 // ═══════════════════════════════════════════════
 
 // --- CONFIGURATION & STATE ---
@@ -54,7 +52,6 @@ function showView(v, e) {
     document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
     document.getElementById('view-' + v).classList.add('active');
 
-    // The nav-btn click target is the button itself
     if (e) {
         const btn = e.target.closest('.nav-btn') || e.target;
         if (btn.classList.contains('nav-btn')) btn.classList.add('active');
@@ -128,14 +125,11 @@ async function loadAdminData() {
 }
 
 // ─── ADMIN SECTION SWITCHING ──────────────────────────────────────────────────
-// FIX: was not updating sidebar active state
 function showAdminSection(s, el) {
-    // Update content sections
     document.querySelectorAll('.admin-section').forEach(sec => sec.classList.remove('active'));
     const section = document.getElementById('section-' + s);
     if (section) section.classList.add('active');
 
-    // Update sidebar menu items
     document.querySelectorAll('.admin-menu-item').forEach(item => item.classList.remove('active'));
     const menuEl = el instanceof Element ? el : el?.currentTarget;
     if (menuEl && menuEl.classList.contains('admin-menu-item')) {
@@ -153,7 +147,7 @@ function renderShop() {
         return;
     }
     grid.innerHTML = products.map(p => `
-        <div class="product-card">
+        <div class="product-card" onclick="openProductModal(${p.id})">
           <div class="product-img" style="background-color:${p.bg_color || '#FFFBE8'};${p.image_url ? `background-image:url('${p.image_url}');background-size:cover;background-position:center;` : ''}">
             ${p.image_url ? '' : `<span style="font-size:3.5rem;">${p.emoji || '🍪'}</span>`}
             ${p.badge ? `<span class="product-badge">${p.badge}</span>` : ''}
@@ -163,11 +157,47 @@ function renderShop() {
             <div class="product-desc">${p.description || ''}</div>
             <div class="product-meta">
               <span class="product-price">£${Number(p.price).toFixed(2)}</span>
-              <button class="add-btn" id="add-btn-${p.id}" onclick="addToCart(${p.id})">Add +</button>
+              <button class="add-btn" id="add-btn-${p.id}" onclick="event.stopPropagation(); addToCart(${p.id})">Add +</button>
             </div>
           </div>
         </div>`
     ).join('');
+}
+
+// ─── PRODUCT DETAIL MODAL ─────────────────────────────────────────────────────
+function openProductModal(id) {
+    const p = products.find(x => x.id === id);
+    if (!p) return;
+
+    document.getElementById('pm-name').textContent  = p.name;
+    document.getElementById('pm-price').textContent = '£' + Number(p.price).toFixed(2);
+    document.getElementById('pm-desc').textContent  = p.description || '';
+    document.getElementById('pm-emoji').textContent = p.emoji || '🍪';
+
+    const imgContainer = document.getElementById('pm-img-container');
+    imgContainer.style.backgroundColor = p.bg_color || '#FFFBE8';
+    if (p.image_url) {
+        imgContainer.style.backgroundImage = `url('${p.image_url}')`;
+        document.getElementById('pm-emoji').style.display = 'none';
+    } else {
+        imgContainer.style.backgroundImage = '';
+        document.getElementById('pm-emoji').style.display = '';
+    }
+
+    const badgeEl = document.getElementById('pm-badge');
+    if (p.badge) { badgeEl.textContent = p.badge; badgeEl.style.display = ''; }
+    else { badgeEl.style.display = 'none'; }
+
+    document.getElementById('pm-add-btn').onclick = () => { addToCart(id); closeProductModal(); };
+    document.getElementById('product-modal').classList.add('open');
+}
+
+function closeProductModal() {
+    document.getElementById('product-modal').classList.remove('open');
+}
+
+function closeProductModalOnOverlay(e) {
+    if (e.target.id === 'product-modal') closeProductModal();
 }
 
 // ─── RENDER ADMIN ─────────────────────────────────────────────────────────────
@@ -180,11 +210,9 @@ function renderAdmin() {
     renderProductMgmt();
 }
 
-// FIX: was missing stat-lowstock update
 function renderDashboard() {
-    const total   = orders.reduce((s, o) => s + parseFloat(o.total || 0), 0);
-    const pending = orders.filter(o => o.status === 'pending').length;
-    // FIX: calculate low stock properly
+    const total    = orders.reduce((s, o) => s + parseFloat(o.total || 0), 0);
+    const pending  = orders.filter(o => o.status === 'pending').length;
     const lowStock = ingredients.filter(i => parseFloat(i.stock) < parseFloat(i.min_stock || i.min || 0)).length;
 
     document.getElementById('stat-revenue').textContent  = '£' + total.toFixed(2);
@@ -204,15 +232,14 @@ function renderDashboard() {
           <td style="font-size:0.82rem; color:var(--text-muted);">${(o.items || '').substring(0, 40)}${(o.items || '').length > 40 ? '…' : ''}</td>
           <td><strong>£${parseFloat(o.total).toFixed(2)}</strong></td>
           <td>
-          <span class="badge badge-${o.status}">${o.status}</span>
-          ${o.pickup ? '<span class="badge" style="background:#E8F5E9; color:#1B5E20; margin-left:4px;">🏠 Pickup</span>' : ''}
+            <span class="badge badge-${o.status}">${o.status}</span>
+            ${o.pickup ? '<span class="badge" style="background:#E8F5E9; color:#1B5E20; margin-left:4px;">🏠 Pickup</span>' : ''}
           </td>
-          <td>${o.date || ''}</td
+          <td>${o.date || ''}</td>
         </tr>`
     ).join('');
 }
 
-// FIX: Full status flow buttons, not just "Ship"
 function renderOrdersTable() {
     const tbody = document.getElementById('orders-body');
     if (!orders.length) {
@@ -227,8 +254,8 @@ function renderOrdersTable() {
           <td style="font-size:0.82rem;">${o.items || ''}</td>
           <td><strong>£${parseFloat(o.total).toFixed(2)}</strong></td>
           <td>
-          <span class="badge badge-${o.status}">${o.status}</span>
-          ${o.pickup ? '<span style="font-size:0.7rem; margin-left:4px;">🏠</span>' : ''}
+            <span class="badge badge-${o.status}">${o.status}</span>
+            ${o.pickup ? '<span style="font-size:0.7rem; margin-left:4px;">🏠</span>' : ''}
           </td>
           <td>
             ${o.status === 'pending'    ? `<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','processing')">Process</button>` : ''}
@@ -240,7 +267,6 @@ function renderOrdersTable() {
     ).join('');
 }
 
-// FIX: was filtering on 'pending' — should be processing/shipped
 function renderShipping() {
     const el = document.getElementById('shipping-cards');
     const active = orders.filter(o => ['processing', 'shipped'].includes(o.status));
@@ -275,25 +301,23 @@ function renderShipping() {
     }).join('');
 }
 
-// FIX: was hardcoding prog-ok / badge-ok regardless of actual stock level
 function renderIngredients() {
     const tbody = document.getElementById('ingredients-body');
     if (!ingredients.length) {
         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">No ingredients yet.</td></tr>';
-        // Also update dashboard lowstock counter
         const el = document.getElementById('stat-lowstock');
         if (el) el.textContent = '0';
         return;
     }
     tbody.innerHTML = ingredients.map((ing, i) => {
-        const stock   = parseFloat(ing.stock || 0);
-        const min     = parseFloat(ing.min_stock || ing.min || 0);
-        const max     = parseFloat(ing.max_stock || ing.max || 1);
-        const pct     = Math.min(100, max > 0 ? Math.round((stock / max) * 100) : 0);
-        const isCrit  = stock < min * 0.5;
-        const isLow   = stock < min && !isCrit;
-        const status  = isCrit ? 'critical' : isLow ? 'low' : 'ok';
-        const barCls  = isCrit ? 'prog-critical' : isLow ? 'prog-low' : 'prog-ok';
+        const stock  = parseFloat(ing.stock || 0);
+        const min    = parseFloat(ing.min_stock || ing.min || 0);
+        const max    = parseFloat(ing.max_stock || ing.max || 1);
+        const pct    = Math.min(100, max > 0 ? Math.round((stock / max) * 100) : 0);
+        const isCrit = stock < min * 0.5;
+        const isLow  = stock < min && !isCrit;
+        const status = isCrit ? 'critical' : isLow ? 'low' : 'ok';
+        const barCls = isCrit ? 'prog-critical' : isLow ? 'prog-low' : 'prog-ok';
 
         return `
         <tr>
@@ -314,7 +338,6 @@ function renderIngredients() {
     }).join('');
 }
 
-// NEW: Payments section rendering (was completely missing)
 function renderPayments() {
     const total = orders.reduce((s, o) => s + parseFloat(o.total || 0), 0);
     const now   = new Date();
@@ -322,16 +345,15 @@ function renderPayments() {
         .filter(o => { const d = new Date(o.timestamp || o.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); })
         .reduce((s, o) => s + parseFloat(o.total || 0), 0);
 
-    const payTotal  = document.getElementById('pay-total');
-    const payMonth  = document.getElementById('pay-month');
-    const payCount  = document.getElementById('pay-count');
-    const payAvg    = document.getElementById('pay-avg');
-    if (payTotal)  payTotal.textContent  = '£' + total.toFixed(2);
-    if (payMonth)  payMonth.textContent  = '£' + mTot.toFixed(2);
-    if (payCount)  payCount.textContent  = orders.length;
-    if (payAvg)    payAvg.textContent    = orders.length ? '£' + (total / orders.length).toFixed(2) : '£0.00';
+    const payTotal = document.getElementById('pay-total');
+    const payMonth = document.getElementById('pay-month');
+    const payCount = document.getElementById('pay-count');
+    const payAvg   = document.getElementById('pay-avg');
+    if (payTotal) payTotal.textContent = '£' + total.toFixed(2);
+    if (payMonth) payMonth.textContent = '£' + mTot.toFixed(2);
+    if (payCount) payCount.textContent = orders.length;
+    if (payAvg)   payAvg.textContent   = orders.length ? '£' + (total / orders.length).toFixed(2) : '£0.00';
 
-    // Revenue chart — last 7 days
     const chartEl = document.getElementById('revenue-chart');
     if (chartEl) {
         const days = [];
@@ -339,9 +361,7 @@ function renderPayments() {
             const d = new Date();
             d.setDate(d.getDate() - i);
             const key = d.toLocaleDateString('en-GB');
-            const rev = orders
-                .filter(o => o.date === key)
-                .reduce((s, o) => s + parseFloat(o.total || 0), 0);
+            const rev = orders.filter(o => o.date === key).reduce((s, o) => s + parseFloat(o.total || 0), 0);
             days.push({ label: d.toLocaleDateString('en-GB', { weekday: 'short' }), val: rev });
         }
         const maxR = Math.max(...days.map(d => d.val), 1);
@@ -354,7 +374,6 @@ function renderPayments() {
         ).join('');
     }
 
-    // Transaction table
     const tbody = document.getElementById('payments-body');
     if (!tbody) return;
     if (!orders.length) {
@@ -401,7 +420,6 @@ function addToCart(id) {
     else cart.push({ ...p, qty: 1 });
     updateCartUI();
 
-    // Visual feedback on button
     const btn = document.getElementById('add-btn-' + id);
     if (btn) {
         btn.textContent = '✓ Added'; btn.classList.add('added');
@@ -423,7 +441,6 @@ function removeFromCart(id) {
     updateCartUI();
 }
 
-// FIX: Added remove button, fixed missing cart-footer display logic
 function updateCartUI() {
     const total = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
     const count = cart.reduce((s, x) => s + x.qty, 0);
@@ -479,12 +496,11 @@ function openCheckout() {
 
     document.getElementById('pay-amount').textContent = '£' + total.toFixed(2);
     document.getElementById('card-errors').textContent = '';
-
     document.getElementById('checkout-content').style.display = 'block';
     document.getElementById('success-content').style.display  = 'none';
 
     if (STRIPE_PUBLISHABLE_KEY) {
-        document.getElementById('stripe-alert').style.display       = 'none';
+        document.getElementById('stripe-alert').style.display        = 'none';
         document.getElementById('stripe-card-section').style.display = 'block';
         if (!stripeInstance) {
             stripeInstance = Stripe(STRIPE_PUBLISHABLE_KEY);
@@ -495,7 +511,7 @@ function openCheckout() {
             cardElement.mount('#card-element');
         }
     } else {
-        document.getElementById('stripe-alert').style.display       = 'block';
+        document.getElementById('stripe-alert').style.display        = 'block';
         document.getElementById('stripe-card-section').style.display = 'none';
     }
 
@@ -523,7 +539,7 @@ function closeCheckout() {
     document.getElementById('checkout-modal').classList.remove('open');
 }
 
-// FIX: graceful fallback when Stripe not configured (demo mode records order without payment)
+// ─── PROCESS PAYMENT ──────────────────────────────────────────────────────────
 async function processPayment() {
     const fields = [
         ['ch-fname', 'First name'], ['ch-lname', 'Last name'],
@@ -537,10 +553,23 @@ async function processPayment() {
         }
     }
 
-    const btn  = document.getElementById('pay-btn');
-    btn.disabled = true;
+    const btn = document.getElementById('pay-btn');
+    btn.disabled  = true;
     btn.innerHTML = 'Processing…';
     document.getElementById('card-errors').textContent = '';
+
+    // Collect all customer details in one place — used for Stripe, order record, and email
+    const customer = {
+        fname:    document.getElementById('ch-fname').value.trim(),
+        lname:    document.getElementById('ch-lname').value.trim(),
+        name:     `${document.getElementById('ch-fname').value.trim()} ${document.getElementById('ch-lname').value.trim()}`,
+        email:    document.getElementById('ch-email').value.trim(),
+        address:  document.getElementById('ch-address').value.trim(),
+        city:     document.getElementById('ch-city').value.trim(),
+        postcode: document.getElementById('ch-postcode').value.trim(),
+        phone:    document.getElementById('ch-phone')?.value.trim() || ''
+    };
+    const fullAddress = `${customer.address}, ${customer.city}, ${customer.postcode}`;
 
     const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
     const isPickup = document.getElementById('pickup-check')?.checked || false;
@@ -552,27 +581,58 @@ async function processPayment() {
         let paymentIntentId = null;
 
         if (STRIPE_PUBLISHABLE_KEY && stripeInstance && cardElement) {
+            // Send full customer info to backend so it attaches to the Stripe payment
             const res = await fetch(`${API_BASE}/create-payment-intent`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ amount: Math.round(parseFloat(total) * 100), currency: 'gbp' })
+                body: JSON.stringify({
+                    amount:        Math.round(parseFloat(total) * 100),
+                    currency:      'gbp',
+                    receipt_email: customer.email,      // Stripe sends its own receipt
+                    metadata: {                         // visible in Stripe Dashboard
+                        order_id:      oid,
+                        customer_name: customer.name,
+                        email:         customer.email,
+                        address:       fullAddress,
+                        items:         cart.map(i => `${i.name} x${i.qty}`).join(', ')
+                    }
+                })
             });
             const { clientSecret } = await res.json();
+
+            // Pass billing_details so name/email/address appear on the charge in Stripe
             const { paymentIntent, error } = await stripeInstance.confirmCardPayment(clientSecret, {
-                payment_method: { card: cardElement }
+                payment_method: {
+                    card: cardElement,
+                    billing_details: {
+                        name:  customer.name,
+                        email: customer.email,
+                        phone: customer.phone || undefined,
+                        address: {
+                            line1:       customer.address,
+                            city:        customer.city,
+                            postal_code: customer.postcode,
+                            country:     'GB'
+                        }
+                    }
+                },
+                receipt_email: customer.email
             });
+
             if (error) throw new Error(error.message);
             paymentIntentId = paymentIntent.id;
         } else {
+            // Demo mode — no Stripe key configured
             await new Promise(r => setTimeout(r, 700));
         }
 
+        // Build and save the order record
         const orderPayload = {
             id:              oid,
-            fname:           document.getElementById('ch-fname').value.trim(),
-            lname:           document.getElementById('ch-lname').value.trim(),
-            email:           document.getElementById('ch-email').value.trim(),
-            address:         `${document.getElementById('ch-address').value.trim()}, ${document.getElementById('ch-city').value.trim()}, ${document.getElementById('ch-postcode').value.trim()}`,
+            fname:           customer.fname,
+            lname:           customer.lname,
+            email:           customer.email,
+            address:         fullAddress,
             items:           cart.map(i => `${i.name} ×${i.qty}`).join(', '),
             total:           total,
             status:          'pending',
@@ -592,18 +652,83 @@ async function processPayment() {
             console.warn('Could not save order to backend:', saveErr);
         }
 
+        // Send confirmation email to customer
+        await sendConfirmationEmail(orderPayload, customer);
+
+        // Show success
         document.getElementById('success-order-num').textContent = 'Order Reference: ' + oid;
         document.getElementById('checkout-content').style.display = 'none';
         document.getElementById('success-content').style.display  = 'block';
         cart = [];
         updateCartUI();
-        showToast('🎉 Order placed!');
+        showToast('🎉 Order placed! Confirmation email sent.');
 
     } catch (e) {
         document.getElementById('card-errors').textContent = e.message;
     } finally {
-        btn.disabled = false;
+        btn.disabled  = false;
         btn.innerHTML = `🌿 Place Order — <span id="pay-amount">£${total}</span>`;
+    }
+}
+
+// ─── EMAIL CONFIRMATION (EmailJS) ─────────────────────────────────────────────
+//
+//  Free tier: 200 emails/month, no backend needed — purely client-side.
+//
+//  SETUP (5 minutes):
+//    1. Sign up at https://emailjs.com
+//    2. Add a Service → connect your Gmail or business inbox
+//    3. Create an Email Template using these variables:
+//         {{to_name}}          Customer's full name
+//         {{to_email}}         Customer's email  ← set as "To Email" in the template
+//         {{order_id}}         e.g. HG-123456
+//         {{order_date}}       e.g. 04/05/2026
+//         {{items_list}}       e.g. Honey Oat Clusters ×2, Crackers ×1
+//         {{order_total}}      e.g. £12.50
+//         {{delivery_address}} Full delivery address (or "Home Pickup")
+//         {{shop_name}}        Home Grown
+//         {{reply_to}}         Your business email
+//    4. Replace the three IDs below with your real values from the EmailJS dashboard
+//
+const EMAILJS_SERVICE_ID  = 'YOUR_SERVICE_ID';   // e.g. 'service_abc123'
+const EMAILJS_TEMPLATE_ID = 'YOUR_TEMPLATE_ID';  // e.g. 'template_xyz789'
+const EMAILJS_PUBLIC_KEY  = 'YOUR_PUBLIC_KEY';   // e.g. 'aBcDeFgHiJkLmNoP'
+
+function emailJsReady() {
+    return typeof emailjs !== 'undefined' &&
+           !EMAILJS_SERVICE_ID.startsWith('YOUR_') &&
+           !EMAILJS_TEMPLATE_ID.startsWith('YOUR_') &&
+           !EMAILJS_PUBLIC_KEY.startsWith('YOUR_');
+}
+
+async function sendConfirmationEmail(order, customer) {
+    if (!emailJsReady()) {
+        console.info('EmailJS not configured — skipping confirmation email. See the SETUP notes in app.js.');
+        return;
+    }
+
+    const itemLines = cart.length
+        ? cart.map(i => `• ${i.name} × ${i.qty}   —   £${(parseFloat(i.price) * i.qty).toFixed(2)}`).join('\n')
+        : order.items;
+
+    const templateParams = {
+        to_name:          customer.name,
+        to_email:         customer.email,
+        order_id:         order.id,
+        order_date:       order.date,
+        items_list:       itemLines,
+        order_total:      `£${parseFloat(order.total).toFixed(2)}`,
+        delivery_address: order.pickup ? '🏠 Home Pickup — no delivery needed' : order.address,
+        shop_name:        'Home Grown',
+        reply_to:         'hello@homegrown.co.uk'  // ← change to your business email
+    };
+
+    try {
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams, EMAILJS_PUBLIC_KEY);
+        console.info('✓ Confirmation email sent to', customer.email);
+    } catch (err) {
+        // Don't block the success screen if the email fails
+        console.warn('Confirmation email failed:', err);
     }
 }
 
@@ -632,12 +757,11 @@ function editProduct(id) {
     document.getElementById('prod-desc').value  = p.description || '';
     document.getElementById('prod-bg').value    = p.bg_color || '#FFFBE8';
     document.getElementById('product-form-title').textContent = 'Edit Snack';
-    // Scroll to form
     document.getElementById('product-form-title').scrollIntoView({ behavior: 'smooth' });
 }
 
 async function saveProduct() {
-    const id = document.getElementById('prod-id').value;
+    const id   = document.getElementById('prod-id').value;
     const name = document.getElementById('prod-name').value.trim();
     if (!name) { showToast('Product name is required'); return; }
 
@@ -701,7 +825,6 @@ async function cancelOrder(id) {
 }
 
 // ─── ORDER FILTERING ──────────────────────────────────────────────────────────
-// NEW: was referenced in HTML toolbar but not defined
 function filterOrders(q) {
     document.querySelectorAll('#orders-body tr').forEach(row => {
         row.style.display = row.textContent.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
@@ -715,7 +838,6 @@ function filterOrdersByStatus(s) {
 }
 
 // ─── INGREDIENT ACTIONS ───────────────────────────────────────────────────────
-// NEW: add ingredient (form in HTML)
 async function addIngredient() {
     const name  = document.getElementById('ing-name').value.trim();
     const unit  = document.getElementById('ing-unit').value.trim();
