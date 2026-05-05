@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Home Grown — Food That Makes You Feel Good</title>
+<title>Home Grown — Food That Makes You Feel Good</title>Stripe Integration Setup
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://js.stripe.com/v3/"></script>
@@ -187,16 +188,6 @@
         <p class="admin-sub">Revenue overview and Stripe transaction history.</p>
         <div class="setup-banner">
           <div class="setup-icon">⚡</div>
-          <div>
-            <h3>Stripe Integration Setup</h3>
-            <div class="setup-steps">
-              <div class="setup-step"><strong>1.</strong> Sign up at <strong>stripe.com</strong> — get your API keys from the Dashboard</div>
-              <div class="setup-step"><strong>2.</strong> Set <code>STRIPE_PUBLISHABLE_KEY</code> in your environment (starts with <code>pk_live_</code>)</div>
-              <div class="setup-step"><strong>3.</strong> Set <code>STRIPE_SECRET_KEY</code> on your backend to create <code>PaymentIntents</code></div>
-              <div class="setup-step"><strong>4.</strong> Ensure your <code>/api/create-payment-intent</code> endpoint is live</div>
-              <div class="setup-step"><strong>5.</strong> Enable webhooks in Stripe Dashboard to auto-update order status</div>
-            </div>
-          </div>
         </div>
         <div class="stats-grid">
           <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value" id="pay-total">£0.00</div></div>
