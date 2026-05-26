@@ -10,6 +10,7 @@ let cart = [];
 let orders = [];
 let ingredients = [];
 let products = [];
+let promos = [];
 let stripeInstance = null;
 let cardElement = null;
 
@@ -86,7 +87,6 @@ async function initApp() {
         }
     } catch (error) {
         console.error('Products fetch failed:', error);
-        // If we have nothing to show, fall back to demo products
         if (!products.length) {
             products = DEMO_PRODUCTS;
             document.getElementById('shop-loading').style.display = 'none';
@@ -96,37 +96,6 @@ async function initApp() {
     }
 
     updateCartUI();
-}
-
-async function fetchConfig() {
-    try {
-        const res = await fetchWithTimeout(`${API_BASE}/config`, {}, 5000);
-        if (res.ok) {
-            const data = await res.json();
-            STRIPE_PUBLISHABLE_KEY = data.stripePublishableKey || 'pk_live_51PU4upEFaqxyf7ELOsith63WwqUuTzYYzEreW1DEyqn6o2KoLBkzYDLECvMznQZiG9enOc7hhu7kFdai1Cg4eFVK00ZV9S7qmV';
-        }
-    } catch (e) {
-        console.warn('Config fetch failed — running in demo mode');
-    }
-}
-
-async function fetchProducts() {
-    try {
-        const res = await fetchWithTimeout(`${API_BASE}/products`, {}, 8000);
-        if (!res.ok) throw new Error('Bad response');
-        products = await res.json();
-        document.getElementById('shop-loading').style.display = 'none';
-        document.getElementById('products-grid').style.display = 'grid';
-        renderShop();
-    } catch (error) {
-        console.error('Products fetch failed:', error);
-        if (!products.length) {
-            products = DEMO_PRODUCTS;
-            document.getElementById('shop-loading').style.display = 'none';
-            document.getElementById('products-grid').style.display = 'grid';
-            renderShop();
-        }
-    }
 }
 
 // ─── NAVIGATION ──────────────────────────────────────────────────────────────
@@ -193,15 +162,19 @@ async function loadAdminData() {
     if (!adminToken) return;
     try {
         const headers = { 'Authorization': `Bearer ${adminToken}` };
-        const [ordRes, ingRes, prodRes] = await Promise.all([
+        const [ordRes, ingRes, prodRes, promoRes] = await Promise.all([
             fetch(`${API_BASE}/admin/orders`,      { headers }),
             fetch(`${API_BASE}/admin/ingredients`, { headers }),
-            fetch(`${API_BASE}/admin/products`,    { headers })
+            fetch(`${API_BASE}/admin/products`,    { headers }),
+            fetch(`${API_BASE}/admin/promos`,      { headers })
         ]);
-        if (ordRes.ok)  orders      = await ordRes.json();
-        if (ingRes.ok)  ingredients = await ingRes.json();
-        if (prodRes.ok) products    = await prodRes.json();
+        if (ordRes.ok)   orders      = await ordRes.json();
+        if (ingRes.ok)   ingredients = await ingRes.json();
+        if (prodRes.ok)  products    = await prodRes.json();
+        if (promoRes.ok) promos      = await promoRes.json();
+        
         renderAdmin();
+        renderPromos();
     } catch (error) {
         console.error('Admin data sync failed:', error);
     }
@@ -229,8 +202,13 @@ function renderShop() {
         grid.innerHTML = '<p style="color:var(--text-muted); font-weight:700;">No products available.</p>';
         return;
     }
-    grid.innerHTML = products.map(p => `
-        <div class="product-card" onclick="openProductModal(${p.id})">
+    grid.innerHTML = products.map(p => {
+        // If stock exists and is 0, add out-of-stock class
+        const stockStatusClass = (p.stock !== undefined && p.stock <= 0) ? 'out-of-stock' : '';
+        const addBtnText = (p.stock !== undefined && p.stock <= 0) ? 'Sold Out' : 'Add +';
+        
+        return `
+        <div class="product-card ${stockStatusClass}" onclick="openProductModal(${p.id})">
           <div class="product-img" style="background-color:${p.bg_color || '#FFFBE8'};${p.image_url ? `background-image:url('${p.image_url}');background-size:cover;background-position:center;` : ''}">
             ${p.image_url ? '' : `<span style="font-size:3.5rem;">${p.emoji || '🍪'}</span>`}
             ${p.badge ? `<span class="product-badge">${p.badge}</span>` : ''}
@@ -240,11 +218,11 @@ function renderShop() {
             <div class="product-desc">${p.description || ''}</div>
             <div class="product-meta">
               <span class="product-price">£${Number(p.price).toFixed(2)}</span>
-              <button class="add-btn" id="add-btn-${p.id}" onclick="event.stopPropagation(); addToCart(${p.id})">Add +</button>
+              <button class="add-btn" id="add-btn-${p.id}" onclick="event.stopPropagation(); addToCart(${p.id})">${addBtnText}</button>
             </div>
           </div>
-        </div>`
-    ).join('');
+        </div>`;
+    }).join('');
 }
 
 // ─── PRODUCT DETAIL MODAL ─────────────────────────────────────────────────────
@@ -494,6 +472,23 @@ function renderProductMgmt() {
     ).join('');
 }
 
+function renderPromos() {
+    const tbody = document.getElementById('promos-body');
+    if (!tbody) return;
+    if (!promos.length) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:2rem;">No active promo codes.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = promos.map(p => `
+        <tr>
+          <td><strong>${p.code}</strong></td>
+          <td>${p.discount_percent}%</td>
+          <td>${p.used_count} / ${p.max_uses || '∞'}</td>
+          <td><button class="action-btn danger" onclick="deletePromo(${p.id})">Remove</button></td>
+        </tr>`
+    ).join('');
+}
+
 // ─── BASKET ───────────────────────────────────────────────────────────────────
 function addToCart(id) {
     const p  = products.find(x => x.id === id);
@@ -563,22 +558,57 @@ function toggleCart() { document.getElementById('cart-overlay').classList.toggle
 function closeCartOnOverlay(e) { if (e.target.id === 'cart-overlay') toggleCart(); }
 
 // ─── CHECKOUT ─────────────────────────────────────────────────────────────────
-function openCheckout() {
-    if (cart.length === 0) return;
+
+function updateCheckoutTotals() {
     const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
     const isPickup = document.getElementById('pickup-check')?.checked || false;
-    const shipping = isPickup ? 0 : 3.50;
-    const total    = subtotal + shipping;
+    const postcode = (document.getElementById('ch-postcode')?.value || '').trim().toUpperCase();
 
-    document.getElementById('checkout-summary').innerHTML =
-        cart.map(i => `<div class="os-item"><span>${i.emoji || ''} ${i.name} ×${i.qty}</span><span>£${(parseFloat(i.price) * i.qty).toFixed(2)}</span></div>`).join('') +
-        (shipping > 0
-            ? `<div class="os-item"><span>Shipping</span><span>£${shipping.toFixed(2)}</span></div>`
-            : `<div class="os-item" style="color:var(--green-mid);"><span>🏠 Home Pickup</span><span>£0.00</span></div>`) +
-        `<div class="os-item total"><span>Total</span><span>£${total.toFixed(2)}</span></div>`;
+    let shipping = 0;
+    let shippingLabel = '<span style="color:var(--green-mid);">🏠 Home Pickup</span>';
+    const btn = document.getElementById('pay-btn');
 
+    if (!isPickup) {
+        if (postcode.startsWith('S')) {
+            shipping = 2.00;
+            shippingLabel = 'Sheffield Delivery';
+            btn.disabled = false;
+            document.getElementById('card-errors').textContent = '';
+        } else if (postcode.length > 0) {
+            shippingLabel = '<span style="color:var(--danger);">Delivery unavailable</span>';
+            shipping = 0; 
+            btn.disabled = true;
+            document.getElementById('card-errors').textContent = 'Sorry, we currently only deliver to Sheffield (S) postcodes. Please select Home Pickup instead.';
+        } else {
+            shippingLabel = 'Delivery (Enter Postcode)';
+            shipping = 0; 
+            btn.disabled = false;
+        }
+    } else {
+        btn.disabled = false;
+        document.getElementById('card-errors').textContent = '';
+    }
+
+    const total = subtotal + shipping;
+
+    let html = cart.map(i => `<div class="os-item"><span>${i.emoji || ''} ${i.name} ×${i.qty}</span><span>£${(parseFloat(i.price) * i.qty).toFixed(2)}</span></div>`).join('');
+    html += `<div class="os-item"><span>${shippingLabel}</span><span>£${shipping.toFixed(2)}</span></div>`;
+    html += `<div class="os-item total"><span>Total</span><span>£${total.toFixed(2)}</span></div>`;
+
+    document.getElementById('checkout-summary').innerHTML = html;
     document.getElementById('pay-amount').textContent = '£' + total.toFixed(2);
-    document.getElementById('card-errors').textContent = '';
+}
+
+function openCheckout() {
+    if (cart.length === 0) return;
+    
+    const postcodeInput = document.getElementById('ch-postcode');
+    if (postcodeInput) {
+        postcodeInput.addEventListener('input', updateCheckoutTotals);
+    }
+
+    updateCheckoutTotals(); 
+
     document.getElementById('checkout-content').style.display = 'block';
     document.getElementById('success-content').style.display  = 'none';
 
@@ -603,19 +633,7 @@ function openCheckout() {
 }
 
 function togglePickup() {
-    const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
-    const isPickup = document.getElementById('pickup-check').checked;
-    const shipping = isPickup ? 0 : 3.50;
-    const total    = subtotal + shipping;
-
-    document.getElementById('checkout-summary').innerHTML =
-        cart.map(i => `<div class="os-item"><span>${i.emoji || ''} ${i.name} ×${i.qty}</span><span>£${(parseFloat(i.price) * i.qty).toFixed(2)}</span></div>`).join('') +
-        (shipping > 0
-            ? `<div class="os-item"><span>Shipping</span><span>£${shipping.toFixed(2)}</span></div>`
-            : `<div class="os-item" style="color:var(--green-mid);"><span>🏠 Home Pickup</span><span>£0.00</span></div>`) +
-        `<div class="os-item total"><span>Total</span><span>£${total.toFixed(2)}</span></div>`;
-
-    document.getElementById('pay-amount').textContent = '£' + total.toFixed(2);
+    updateCheckoutTotals();
 }
 
 function closeCheckout() {
@@ -648,31 +666,30 @@ async function processPayment() {
         email:    document.getElementById('ch-email').value.trim(),
         address:  document.getElementById('ch-address').value.trim(),
         city:     document.getElementById('ch-city').value.trim(),
-        postcode: document.getElementById('ch-postcode').value.trim(),
+        postcode: document.getElementById('ch-postcode').value.trim().toUpperCase(),
         phone:    document.getElementById('ch-phone')?.value.trim() || ''
     };
     const fullAddress = `${customer.address}, ${customer.city}, ${customer.postcode}`;
 
     const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
     const isPickup = document.getElementById('pickup-check')?.checked || false;
-    const shipping = isPickup ? 0 : 3.50;
+    const shipping = isPickup ? 0 : (customer.postcode.startsWith('S') ? 2.00 : 0);
     const total    = (subtotal + shipping).toFixed(2);
     const oid      = 'HG-' + Date.now().toString().slice(-6);
     
-    // Create the secure array of IDs and quantities for the backend
     const secureCartItems = cart.map(i => ({ id: i.id, qty: i.qty }));
 
     try {
         let paymentIntentId = null;
 
         if (STRIPE_PUBLISHABLE_KEY && stripeInstance && cardElement) {
-            // Send the secure cart array so the backend can verify prices
             const res = await fetch(`${API_BASE}/create-payment-intent`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     cartItems:     secureCartItems,
                     pickup:        isPickup,
+                    postcode:      customer.postcode, 
                     receipt_email: customer.email,
                     metadata: {
                         order_id:      oid,
@@ -707,17 +724,17 @@ async function processPayment() {
             if (error) throw new Error(error.message);
             paymentIntentId = paymentIntent.id;
         } else {
-            await new Promise(r => setTimeout(r, 700)); // Demo mode
+            await new Promise(r => setTimeout(r, 700)); 
         }
 
-        // Build the order payload (now including cartItems!)
         const orderPayload = {
             id:              oid,
             fname:           customer.fname,
             lname:           customer.lname,
             email:           customer.email,
             address:         fullAddress,
-            cartItems:       secureCartItems, // Passed safely to backend!
+            postcode:        customer.postcode,
+            cartItems:       secureCartItems,
             status:          'pending',
             date:            new Date().toLocaleDateString('en-GB'),
             timestamp:       Date.now(),
@@ -732,14 +749,13 @@ async function processPayment() {
                 body: JSON.stringify(orderPayload)
             });
             
-            // Check for inventory or validation errors thrown by the backend
             if (!res.ok) {
                 const errorData = await res.json();
                 throw new Error(errorData.error || 'Order backend processing failed');
             }
         } catch (saveErr) {
             console.warn('Backend rejected order:', saveErr);
-            throw saveErr; // Stop execution if DB fails (like out of stock)
+            throw saveErr;
         }
 
         await sendConfirmationEmail(orderPayload, customer);
@@ -760,9 +776,9 @@ async function processPayment() {
 }
 
 // ─── EMAIL CONFIRMATION (EmailJS) ─────────────────────────────────────────────
-const EMAILJS_SERVICE_ID  = 'YOUR_SERVICE_ID';   // e.g. 'service_abc123'
-const EMAILJS_TEMPLATE_ID = 'YOUR_TEMPLATE_ID';  // e.g. 'template_xyz789'
-const EMAILJS_PUBLIC_KEY  = 'YOUR_PUBLIC_KEY';   // e.g. 'aBcDeFgHiJkLmNoP'
+const EMAILJS_SERVICE_ID  = 'YOUR_SERVICE_ID';   
+const EMAILJS_TEMPLATE_ID = 'YOUR_TEMPLATE_ID';  
+const EMAILJS_PUBLIC_KEY  = 'YOUR_PUBLIC_KEY';   
 
 function emailJsReady() {
     return typeof emailjs !== 'undefined' &&
@@ -790,14 +806,13 @@ async function sendConfirmationEmail(order, customer) {
         order_total:      `£${parseFloat(order.total).toFixed(2)}`,
         delivery_address: order.pickup ? '🏠 Home Pickup — no delivery needed' : order.address,
         shop_name:        'Home Grown',
-        reply_to:         'hello@homegrown.co.uk'  // ← change to your business email
+        reply_to:         'hello@homegrown.co.uk'
     };
 
     try {
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams, EMAILJS_PUBLIC_KEY);
         console.info('✓ Confirmation email sent to', customer.email);
     } catch (err) {
-        // Don't block the success screen if the email fails
         console.warn('Confirmation email failed:', err);
     }
 }
@@ -906,7 +921,6 @@ async function cancelOrder(id) {
     await updateOrderStatus(id, 'cancelled');
 }
 
-// ─── ORDER FILTERING ──────────────────────────────────────────────────────────
 function filterOrders(q) {
     document.querySelectorAll('#orders-body tr').forEach(row => {
         row.style.display = row.textContent.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
@@ -919,7 +933,6 @@ function filterOrdersByStatus(s) {
     });
 }
 
-// ─── INGREDIENT ACTIONS ───────────────────────────────────────────────────────
 async function addIngredient() {
     const name  = document.getElementById('ing-name').value.trim();
     const unit  = document.getElementById('ing-unit').value.trim();
@@ -988,6 +1001,40 @@ async function deleteIngredient(index) {
         console.error('Delete Ingredient Error:', err);
         showToast('Delete failed');
     }
+}
+
+async function addPromo() {
+    const code = document.getElementById('promo-code').value.trim();
+    const disc = parseFloat(document.getElementById('promo-disc').value);
+    const max  = parseInt(document.getElementById('promo-max').value) || null;
+
+    if (!code || isNaN(disc)) { showToast('Please enter a valid code and discount %'); return; }
+
+    try {
+        const res = await fetch(`${API_BASE}/admin/promos`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+            body: JSON.stringify({ code, discount_percent: disc, max_uses: max })
+        });
+        if (!res.ok) throw new Error('Server error');
+        showToast('✓ Promo code active!');
+        document.getElementById('promo-code').value = '';
+        document.getElementById('promo-disc').value = '';
+        document.getElementById('promo-max').value = '';
+        await loadAdminData();
+    } catch (err) { showToast('Failed to add promo code'); }
+}
+
+async function deletePromo(id) {
+    if (!confirm('Delete this promo code?')) return;
+    try {
+        await fetch(`${API_BASE}/admin/promos/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        showToast('Promo code removed');
+        await loadAdminData();
+    } catch (err) { showToast('Delete failed'); }
 }
 
 // ─── TOAST ────────────────────────────────────────────────────────────────────
