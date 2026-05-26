@@ -91,71 +91,108 @@ app.post('/api/validate-promo', async (req, res) => {
     }
 });
 
-// --- STRIPE PAYMENT INTENT ---
+// --- STRIPE PAYMENT INTENT (SECURED) ---
 app.post('/api/create-payment-intent', async (req, res) => {
+    const { cartItems, pickup, receipt_email, metadata } = req.body;
+    
+    if (!cartItems || cartItems.length === 0) {
+        return res.status(400).json({ error: 'Cart is empty' });
+    }
+
+    const client = await pool.connect();
     try {
-        const { amount } = req.body;
+        // Calculate the total securely using database prices, NOT frontend prices
+        let totalCents = 0;
+        for (const item of cartItems) {
+            const result = await client.query('SELECT price FROM products WHERE id = $1', [item.id]);
+            if (result.rows.length === 0) throw new Error(`Product ID ${item.id} not found.`);
+            totalCents += Math.round(parseFloat(result.rows[0].price) * 100) * item.qty;
+        }
+
+        // Add shipping if not picking up
+        if (!pickup) totalCents += 350; // £3.50
+
         const paymentIntent = await stripe.paymentIntents.create({
-            amount: amount,
+            amount: totalCents,
             currency: 'gbp',
+            receipt_email,
+            metadata,
             automatic_payment_methods: { enabled: true },
         });
+        
         res.json({ clientSecret: paymentIntent.client_secret });
     } catch (error) {
         res.status(500).json({ error: error.message });
+    } finally {
+        client.release();
     }
 });
 
-// --- ORDERS (with stock decrement) ---
+// --- ORDERS & INVENTORY (SECURED) ---
 app.post('/api/orders', async (req, res) => {
-    const { id, fname, lname, email, address, items, total, status, date, paymentIntentId, postcode, promoCode } = req.body;
+    const { id, fname, lname, email, address, status, date, paymentIntentId, postcode, pickup, cartItems, promoCode } = req.body;
+
+    if (!cartItems || cartItems.length === 0) {
+        return res.status(400).json({ error: 'Order must contain items' });
+    }
 
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
 
-        const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
-        if (intent.status !== 'succeeded') {
-            await client.query('ROLLBACK');
-            return res.status(400).json({ error: 'Payment not verified' });
+        // 1. Verify Payment Intent
+        if (paymentIntentId) {
+            const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+            if (intent.status !== 'succeeded') {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'Payment not verified' });
+            }
         }
 
-        // Parse items and decrement stock
-        const itemList = items.split(', ').map(item => {
-            const match = item.match(/(.+?)\s*×\s*(\d+)/);
-            return match ? { name: match[1].trim(), qty: parseInt(match[2]) } : null;
-        }).filter(Boolean);
+        // 2. Process Inventory Safely by ID
+        let generatedItemsText = [];
+        let calculatedTotal = pickup ? 0 : 3.50;
 
-        for (const item of itemList) {
+        for (const item of cartItems) {
+            // Fetch product data and lock the row to prevent race conditions
             const stockRes = await client.query(
-                'SELECT id, stock FROM products WHERE name = $1',
-                [item.name]
+                'SELECT id, name, price, stock FROM products WHERE id = $1 FOR UPDATE',
+                [item.id]
             );
+            
             if (stockRes.rows.length === 0) {
                 await client.query('ROLLBACK');
-                return res.status(400).json({ error: `Product not found: ${item.name}` });
+                return res.status(400).json({ error: `Product ID ${item.id} not found in database.` });
             }
 
-            const currentStock = stockRes.rows[0].stock;
-            const productId = stockRes.rows[0].id;
+            const product = stockRes.rows[0];
 
-            if (currentStock < item.qty) {
+            if (product.stock < item.qty) {
                 await client.query('ROLLBACK');
-                return res.status(400).json({ error: `Not enough stock for ${item.name}. Only ${currentStock} remaining.` });
+                return res.status(400).json({ error: `Not enough stock for ${product.name}. Only ${product.stock} remaining.` });
             }
 
+            // Deduct stock safely
             await client.query(
                 'UPDATE products SET stock = stock - $1 WHERE id = $2',
-                [item.qty, productId]
+                [item.qty, item.id]
             );
+
+            // Build out the display string and total for the database record
+            generatedItemsText.push(`${product.name} × ${item.qty}`);
+            calculatedTotal += parseFloat(product.price) * item.qty;
         }
 
+        const itemsString = generatedItemsText.join(', ');
+
+        // 3. Save Order Record
         await client.query(
             `INSERT INTO orders (id, fname, lname, email, address, items, total, status, date, postcode)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-            [id, fname, lname, email, address, items, total, status, date, postcode]
+            [id, fname, lname, email, address, itemsString, calculatedTotal.toFixed(2), status, date, postcode]
         );
 
+        // 4. Record Promo Usage
         if (promoCode) {
             await client.query(
                 'INSERT INTO promo_uses (email, code) VALUES ($1, $2) ON CONFLICT DO NOTHING',
@@ -169,11 +206,12 @@ app.post('/api/orders', async (req, res) => {
 
         await client.query('COMMIT');
 
+        // 5. Send Email
         await transporter.sendMail({
             from: process.env.EMAIL_USER,
             to: process.env.EMAIL_USER,
             subject: `📦 Order ${id} Confirmed`,
-            html: `<h3>New Order from ${fname} ${lname}</h3><p>Total: £${total}</p><p>Items: ${items}</p><p>Postcode: ${postcode}</p>`
+            html: `<h3>New Order from ${fname} ${lname}</h3><p>Total: £${calculatedTotal.toFixed(2)}</p><p>Items: ${itemsString}</p><p>Postcode: ${postcode}</p>`
         });
 
         res.status(201).json({ message: 'Order processed successfully' });
@@ -207,11 +245,12 @@ app.post('/api/admin/products', authenticateAdmin, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// [FIXED BUG]: Added COALESCE($8, stock) to prevent overwriting inventory to NULL
 app.put('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
     const { name, emoji, price, description, bg_color, badge, image_url, stock } = req.body;
     try {
         await pool.query(
-            `UPDATE products SET name=$1, emoji=$2, price=$3, description=$4, bg_color=$5, badge=$6, image_url=$7, stock=$8
+            `UPDATE products SET name=$1, emoji=$2, price=$3, description=$4, bg_color=$5, badge=$6, image_url=$7, stock=COALESCE($8, stock)
              WHERE id=$9`,
             [name, emoji, price, description, bg_color, badge, image_url, stock, req.params.id]
         );
