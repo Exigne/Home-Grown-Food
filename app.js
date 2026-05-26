@@ -13,16 +13,94 @@ let products = [];
 let stripeInstance = null;
 let cardElement = null;
 
+// --- DEMO FALLBACK DATA ---
+const DEMO_PRODUCTS = [
+    { id: 1, name: 'Honey Oat Clusters', price: 5.50, emoji: '🍯', badge: 'Best Seller', description: 'Crunchy clusters baked with local honey.', bg_color: '#FFFBE8' },
+    { id: 2, name: 'Seeded Crackers',    price: 3.95, emoji: '🌾', badge: null,       description: 'Wholegrain crackers with flax & sesame.', bg_color: '#F5F5DC' },
+    { id: 3, name: 'Fruit & Nut Bar',    price: 2.50, emoji: '🍫', badge: 'Vegan',      description: 'Dates, almonds and dark chocolate.',      bg_color: '#FFF0F0' },
+    { id: 4, name: 'Sourdough Crisps',   price: 4.20, emoji: '🥖', badge: null,       description: 'Thin, crispy sourdough bites.',         bg_color: '#FFF8F0' }
+];
+
+// --- CACHE HELPERS ---
+const CACHE_KEY = 'hg_products_cache';
+const CACHE_MAX_AGE = 1000 * 60 * 60 * 24; // 24 hours
+
+function getCachedProducts() {
+    try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        if (!raw) return null;
+        const { data, ts } = JSON.parse(raw);
+        if (Date.now() - ts > CACHE_MAX_AGE) return null;
+        return data;
+    } catch (e) { return null; }
+}
+
+function setCachedProducts(data) {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); }
+    catch (e) { /* ignore quota errors */ }
+}
+
+function fetchWithTimeout(url, options = {}, timeout = 8000) {
+    return Promise.race([
+        fetch(url, options),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeout))
+    ]);
+}
+
 // ─── INITIALIZE ──────────────────────────────────────────────────────────────
 async function initApp() {
-    await fetchConfig();
-    await fetchProducts();
+    // 1. Render from cache instantly if available
+    const cached = getCachedProducts();
+    if (cached && cached.length) {
+        products = cached;
+        document.getElementById('shop-loading').style.display = 'none';
+        document.getElementById('products-grid').style.display = 'grid';
+        renderShop();
+    }
+
+    // 2. Fetch config in background (optional, non-blocking)
+    try {
+        const res = await fetchWithTimeout(`${API_BASE}/config`, {}, 5000);
+        if (res.ok) {
+            const data = await res.json();
+            STRIPE_PUBLISHABLE_KEY = data.stripePublishableKey || STRIPE_PUBLISHABLE_KEY;
+        }
+    } catch (e) {
+        console.warn('Config fetch failed — running in demo mode');
+    }
+
+    // 3. Fetch fresh products in background
+    try {
+        const res = await fetchWithTimeout(`${API_BASE}/products`, {}, 8000);
+        if (res.ok) {
+            const fresh = await res.json();
+            if (fresh && fresh.length) {
+                products = fresh;
+                setCachedProducts(fresh);
+                document.getElementById('shop-loading').style.display = 'none';
+                document.getElementById('products-grid').style.display = 'grid';
+                renderShop();
+            }
+        } else {
+            throw new Error('Bad response');
+        }
+    } catch (error) {
+        console.error('Products fetch failed:', error);
+        // If we have nothing to show, fall back to demo products
+        if (!products.length) {
+            products = DEMO_PRODUCTS;
+            document.getElementById('shop-loading').style.display = 'none';
+            document.getElementById('products-grid').style.display = 'grid';
+            renderShop();
+        }
+    }
+
     updateCartUI();
 }
 
 async function fetchConfig() {
     try {
-        const res = await fetch(`${API_BASE}/config`);
+        const res = await fetchWithTimeout(`${API_BASE}/config`, {}, 5000);
         if (res.ok) {
             const data = await res.json();
             STRIPE_PUBLISHABLE_KEY = data.stripePublishableKey || 'pk_live_51PU4upEFaqxyf7ELOsith63WwqUuTzYYzEreW1DEyqn6o2KoLBkzYDLECvMznQZiG9enOc7hhu7kFdai1Cg4eFVK00ZV9S7qmV';
@@ -34,15 +112,20 @@ async function fetchConfig() {
 
 async function fetchProducts() {
     try {
-        const res = await fetch(`${API_BASE}/products`);
+        const res = await fetchWithTimeout(`${API_BASE}/products`, {}, 8000);
         if (!res.ok) throw new Error('Bad response');
         products = await res.json();
         document.getElementById('shop-loading').style.display = 'none';
         document.getElementById('products-grid').style.display = 'grid';
         renderShop();
     } catch (error) {
-        document.getElementById('shop-loading').textContent = 'Could not load products. Please check your backend connection.';
         console.error('Products fetch failed:', error);
+        if (!products.length) {
+            products = DEMO_PRODUCTS;
+            document.getElementById('shop-loading').style.display = 'none';
+            document.getElementById('products-grid').style.display = 'grid';
+            renderShop();
+        }
     }
 }
 
