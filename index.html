@@ -110,6 +110,33 @@
           <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value" id="stat-pending">0</div><div class="stat-change stat-down">need action</div></div>
           <div class="stat-card"><div class="stat-label">Low Stock</div><div class="stat-value" id="stat-lowstock">0</div><div class="stat-change stat-down">products</div></div>
         </div>
+        <div id="section-promos" class="admin-section">
+    <h2 class="admin-heading">Promo Codes</h2>
+    <p class="admin-sub">Manage discount codes for your customers.</p>
+    
+    <div class="ingredient-form" style="display:flex; gap:10px; align-items:flex-end; margin-bottom:2rem; flex-wrap: wrap;">
+        <div class="form-group" style="flex:1; min-width: 150px;">
+            <label>Code (e.g. SUMMER10)</label>
+            <input type="text" id="promo-code">
+        </div>
+        <div class="form-group" style="flex:1; min-width: 100px;">
+            <label>Discount %</label>
+            <input type="number" id="promo-disc" placeholder="10">
+        </div>
+        <div class="form-group" style="flex:1; min-width: 100px;">
+            <label>Max Uses (optional)</label>
+            <input type="number" id="promo-max" placeholder="Unlimited">
+        </div>
+        <button class="pay-btn" style="width:auto; padding:11px 20px; margin-top:0;" onclick="addPromo()">Add Promo</button>
+    </div>
+
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Code</th><th>Discount</th><th>Uses</th><th>Action</th></tr></thead>
+            <tbody id="promos-body"></tbody>
+        </table>
+    </div>
+</div>
         <p class="admin-sub">Recent Orders</p>
         <div class="table-wrap">
           <table>
@@ -120,6 +147,8 @@
           </table>
         </div>
       </section>
+
+      
 
       <!-- ORDERS -->
       <section class="admin-section" id="section-orders">
