@@ -258,12 +258,15 @@ app.put('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
     const { name, emoji, price, description, bg_color, badge, image_url, stock } = req.body;
     try {
         await pool.query(
-            `UPDATE products SET name=$1, emoji=$2, price=$3, description=$4, bg_color=$5, badge=$6, image_url=$7, stock=COALESCE($8, stock)
+            `UPDATE products SET name=$1, emoji=$2, price=$3, description=$4, bg_color=$5, badge=$6, image_url=$7, stock=$8
              WHERE id=$9`,
-            [name, emoji, price, description, bg_color, badge, image_url, stock, req.params.id]
+            [name, emoji, price, description, bg_color, badge, image_url, stock !== undefined ? stock : 0, req.params.id]
         );
         res.json({ message: 'Product updated' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { 
+        console.error('Product update error:', err);
+        res.status(500).json({ error: err.message }); 
+    }
 });
 
 app.delete('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
