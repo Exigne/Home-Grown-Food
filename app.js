@@ -16,9 +16,9 @@ let cardElement = null;
 // --- DEMO FALLBACK DATA ---
 const DEMO_PRODUCTS = [
     { id: 1, name: 'Honey Oat Clusters', price: 5.50, emoji: '🍯', badge: 'Best Seller', description: 'Crunchy clusters baked with local honey.', bg_color: '#FFFBE8' },
-    { id: 2, name: 'Seeded Crackers',    price: 3.95, emoji: '🌾', badge: null,       description: 'Wholegrain crackers with flax & sesame.', bg_color: '#F5F5DC' },
+    { id: 2, name: 'Seeded Crackers',    price: 3.95, emoji: '🌾', badge: null,        description: 'Wholegrain crackers with flax & sesame.', bg_color: '#F5F5DC' },
     { id: 3, name: 'Fruit & Nut Bar',    price: 2.50, emoji: '🍫', badge: 'Vegan',      description: 'Dates, almonds and dark chocolate.',      bg_color: '#FFF0F0' },
-    { id: 4, name: 'Sourdough Crisps',   price: 4.20, emoji: '🥖', badge: null,       description: 'Thin, crispy sourdough bites.',         bg_color: '#FFF8F0' }
+    { id: 4, name: 'Sourdough Crisps',   price: 4.20, emoji: '🥖', badge: null,        description: 'Thin, crispy sourdough bites.',          bg_color: '#FFF8F0' }
 ];
 
 // --- CACHE HELPERS ---
@@ -681,6 +681,8 @@ async function processPayment() {
                     }
                 })
             });
+            
+            if (!res.ok) throw new Error('Failed to initialize payment.');
             const { clientSecret } = await res.json();
 
             // Pass billing_details so name/email/address appear on the charge in Stripe
@@ -726,11 +728,12 @@ async function processPayment() {
         };
 
         try {
-            await fetch(`${API_BASE}/orders`, {
+            const res = await fetch(`${API_BASE}/orders`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(orderPayload)
             });
+            if (!res.ok) throw new Error('Order backend processing failed');
         } catch (saveErr) {
             console.warn('Could not save order to backend:', saveErr);
         }
@@ -755,24 +758,6 @@ async function processPayment() {
 }
 
 // ─── EMAIL CONFIRMATION (EmailJS) ─────────────────────────────────────────────
-//
-//  Free tier: 200 emails/month, no backend needed — purely client-side.
-//
-//  SETUP (5 minutes):
-//    1. Sign up at https://emailjs.com
-//    2. Add a Service → connect your Gmail or business inbox
-//    3. Create an Email Template using these variables:
-//         {{to_name}}          Customer's full name
-//         {{to_email}}         Customer's email  ← set as "To Email" in the template
-//         {{order_id}}         e.g. HG-123456
-//         {{order_date}}       e.g. 04/05/2026
-//         {{items_list}}       e.g. Honey Oat Clusters ×2, Crackers ×1
-//         {{order_total}}      e.g. £12.50
-//         {{delivery_address}} Full delivery address (or "Home Pickup")
-//         {{shop_name}}        Home Grown
-//         {{reply_to}}         Your business email
-//    4. Replace the three IDs below with your real values from the EmailJS dashboard
-//
 const EMAILJS_SERVICE_ID  = 'YOUR_SERVICE_ID';   // e.g. 'service_abc123'
 const EMAILJS_TEMPLATE_ID = 'YOUR_TEMPLATE_ID';  // e.g. 'template_xyz789'
 const EMAILJS_PUBLIC_KEY  = 'YOUR_PUBLIC_KEY';   // e.g. 'aBcDeFgHiJkLmNoP'
@@ -861,15 +846,19 @@ async function saveProduct() {
     try {
         const url    = id ? `${API_BASE}/admin/products/${id}` : `${API_BASE}/admin/products`;
         const method = id ? 'PUT' : 'POST';
-        await fetch(url, {
+        const res = await fetch(url, {
             method,
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
             body: JSON.stringify(payload)
         });
+
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
         showToast(id ? '✓ Product updated!' : '✓ Product added!');
         resetProductForm();
         await loadAdminData();
     } catch (err) {
+        console.error('Save Product Error:', err);
         showToast('Save failed — check your connection');
     }
 }
@@ -877,27 +866,35 @@ async function saveProduct() {
 async function deleteProduct(id) {
     if (!confirm('Delete this product?')) return;
     try {
-        await fetch(`${API_BASE}/admin/products/${id}`, {
+        const res = await fetch(`${API_BASE}/admin/products/${id}`, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${adminToken}` }
         });
+        
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
         showToast('Product deleted');
         await loadAdminData();
     } catch (err) {
+        console.error('Delete Product Error:', err);
         showToast('Delete failed');
     }
 }
 
 async function updateOrderStatus(id, status) {
     try {
-        await fetch(`${API_BASE}/admin/orders/${id}`, {
+        const res = await fetch(`${API_BASE}/admin/orders/${id}`, {
             method:  'PUT',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
             body:    JSON.stringify({ status })
         });
+        
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
         showToast(`Order ${id} → ${status}`);
         await loadAdminData();
     } catch (err) {
+        console.error('Update Order Error:', err);
         showToast('Update failed');
     }
 }
@@ -931,15 +928,19 @@ async function addIngredient() {
     if (!name || !unit) { showToast('Please enter ingredient name and unit'); return; }
 
     try {
-        await fetch(`${API_BASE}/admin/ingredients`, {
+        const res = await fetch(`${API_BASE}/admin/ingredients`, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
             body:    JSON.stringify({ name, unit, stock, min_stock: min, max_stock: max })
         });
+        
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
         showToast('✓ ' + name + ' added');
         ['ing-name','ing-unit','ing-stock','ing-min','ing-max'].forEach(id => document.getElementById(id).value = '');
         await loadAdminData();
     } catch (err) {
+        console.error('Add Ingredient Error:', err);
         showToast('Failed to add ingredient');
     }
 }
@@ -952,14 +953,18 @@ async function restockIngredient(index) {
     const newStock = Math.min(parseFloat(ing.max_stock || ing.max || 999), parseFloat(ing.stock) + amt);
 
     try {
-        await fetch(`${API_BASE}/admin/ingredients/${ing.id}`, {
+        const res = await fetch(`${API_BASE}/admin/ingredients/${ing.id}`, {
             method:  'PUT',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
             body:    JSON.stringify({ stock: newStock })
         });
+        
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
         showToast(`✓ Restocked ${ing.name}`);
         await loadAdminData();
     } catch (err) {
+        console.error('Restock Error:', err);
         showToast('Restock failed');
     }
 }
@@ -968,13 +973,17 @@ async function deleteIngredient(index) {
     const ing = ingredients[index];
     if (!ing || !confirm(`Remove ${ing.name}?`)) return;
     try {
-        await fetch(`${API_BASE}/admin/ingredients/${ing.id}`, {
+        const res = await fetch(`${API_BASE}/admin/ingredients/${ing.id}`, {
             method:  'DELETE',
             headers: { 'Authorization': `Bearer ${adminToken}` }
         });
+        
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
         showToast(`${ing.name} removed`);
         await loadAdminData();
     } catch (err) {
+        console.error('Delete Ingredient Error:', err);
         showToast('Delete failed');
     }
 }
