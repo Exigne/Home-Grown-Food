@@ -93,7 +93,7 @@ app.post('/api/validate-promo', async (req, res) => {
 
 // --- STRIPE PAYMENT INTENT (SECURED) ---
 app.post('/api/create-payment-intent', async (req, res) => {
-    const { cartItems, pickup, receipt_email, metadata } = req.body;
+    const { cartItems, pickup, receipt_email, metadata, postcode } = req.body;
     
     if (!cartItems || cartItems.length === 0) {
         return res.status(400).json({ error: 'Cart is empty' });
@@ -101,7 +101,6 @@ app.post('/api/create-payment-intent', async (req, res) => {
 
     const client = await pool.connect();
     try {
-        // Calculate the total securely using database prices, NOT frontend prices
         let totalCents = 0;
         for (const item of cartItems) {
             const result = await client.query('SELECT price FROM products WHERE id = $1', [item.id]);
@@ -109,8 +108,14 @@ app.post('/api/create-payment-intent', async (req, res) => {
             totalCents += Math.round(parseFloat(result.rows[0].price) * 100) * item.qty;
         }
 
-        // Add shipping if not picking up
-        if (!pickup) totalCents += 350; // £3.50
+        // --- SECURE SHEFFIELD DELIVERY LOGIC ---
+        if (!pickup) {
+            const cleanPostcode = (postcode || '').trim().toUpperCase();
+            if (!cleanPostcode.startsWith('S')) {
+                return res.status(400).json({ error: 'Delivery is only available for Sheffield (S) postcodes.' });
+            }
+            totalCents += 200; // Add exactly £2.00 for Sheffield delivery
+        }
 
         const paymentIntent = await stripe.paymentIntents.create({
             amount: totalCents,
@@ -140,7 +145,6 @@ app.post('/api/orders', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // 1. Verify Payment Intent
         if (paymentIntentId) {
             const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
             if (intent.status !== 'succeeded') {
@@ -149,12 +153,20 @@ app.post('/api/orders', async (req, res) => {
             }
         }
 
-        // 2. Process Inventory Safely by ID
         let generatedItemsText = [];
-        let calculatedTotal = pickup ? 0 : 3.50;
+        let calculatedTotal = 0;
+
+        // --- SECURE SHEFFIELD DELIVERY LOGIC ---
+        if (!pickup) {
+            const cleanPostcode = (postcode || '').trim().toUpperCase();
+            if (!cleanPostcode.startsWith('S')) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'Delivery is only available for Sheffield (S) postcodes.' });
+            }
+            calculatedTotal += 2.00; // Base total starts at £2.00 for delivery
+        }
 
         for (const item of cartItems) {
-            // Fetch product data and lock the row to prevent race conditions
             const stockRes = await client.query(
                 'SELECT id, name, price, stock FROM products WHERE id = $1 FOR UPDATE',
                 [item.id]
@@ -162,37 +174,34 @@ app.post('/api/orders', async (req, res) => {
             
             if (stockRes.rows.length === 0) {
                 await client.query('ROLLBACK');
-                return res.status(400).json({ error: `Product ID ${item.id} not found in database.` });
+                return res.status(400).json({ error: `Product ID ${item.id} not found.` });
             }
 
             const product = stockRes.rows[0];
 
             if (product.stock < item.qty) {
                 await client.query('ROLLBACK');
-                return res.status(400).json({ error: `Not enough stock for ${product.name}. Only ${product.stock} remaining.` });
+                return res.status(400).json({ error: `Not enough stock for ${product.name}.` });
             }
 
-            // Deduct stock safely
             await client.query(
                 'UPDATE products SET stock = stock - $1 WHERE id = $2',
                 [item.qty, item.id]
             );
 
-            // Build out the display string and total for the database record
             generatedItemsText.push(`${product.name} × ${item.qty}`);
             calculatedTotal += parseFloat(product.price) * item.qty;
         }
 
         const itemsString = generatedItemsText.join(', ');
 
-        // 3. Save Order Record
         await client.query(
             `INSERT INTO orders (id, fname, lname, email, address, items, total, status, date, postcode)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
             [id, fname, lname, email, address, itemsString, calculatedTotal.toFixed(2), status, date, postcode]
         );
 
-        // 4. Record Promo Usage
+        // Record Promo Usage (if applicable)
         if (promoCode) {
             await client.query(
                 'INSERT INTO promo_uses (email, code) VALUES ($1, $2) ON CONFLICT DO NOTHING',
@@ -206,7 +215,7 @@ app.post('/api/orders', async (req, res) => {
 
         await client.query('COMMIT');
 
-        // 5. Send Email
+        // Send Email
         await transporter.sendMail({
             from: process.env.EMAIL_USER,
             to: process.env.EMAIL_USER,
@@ -245,7 +254,6 @@ app.post('/api/admin/products', authenticateAdmin, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// [FIXED BUG]: Added COALESCE($8, stock) to prevent overwriting inventory to NULL
 app.put('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
     const { name, emoji, price, description, bg_color, badge, image_url, stock } = req.body;
     try {
