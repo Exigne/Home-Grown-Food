@@ -1,7 +1,6 @@
 [build]
   functions = "functions"
 
-# IMPORTANT: specific routes must come BEFORE the catch-all
 [[redirects]]
   from = "/api/products"
   to = "/.netlify/functions/products"
@@ -12,11 +11,10 @@
   to = "/.netlify/functions/server/api/:splat"
   status = 200
 
-# Cache static assets so CSS/JS don't re-download every visit
 [[headers]]
   for = "/*.css"
   [headers.values]
-    Cache-Control = "public, max-age=604800, immutable"
+    Cache-Control = "public, max-age=604800"
 
 [[headers]]
   for = "/*.js"
