@@ -857,7 +857,8 @@ async function saveProduct() {
         badge:       document.getElementById('prod-badge').value,
         image_url:   document.getElementById('prod-image').value,
         description: document.getElementById('prod-desc').value,
-        bg_color:    document.getElementById('prod-bg').value
+        bg_color:    document.getElementById('prod-bg').value,
+        stock:       parseInt(document.getElementById('prod-stock').value) || 0
     };
 
     try {
@@ -869,14 +870,17 @@ async function saveProduct() {
             body: JSON.stringify(payload)
         });
 
-        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || `Server returned ${res.status}`);
+        }
 
         showToast(id ? '✓ Product updated!' : '✓ Product added!');
         resetProductForm();
         await loadAdminData();
     } catch (err) {
         console.error('Save Product Error:', err);
-        showToast('Save failed — check your connection');
+        showToast('Save failed: ' + err.message);
     }
 }
 
@@ -1004,11 +1008,12 @@ async function deleteIngredient(index) {
 }
 
 async function addPromo() {
-    const code = document.getElementById('promo-code').value.trim();
-    const disc = parseFloat(document.getElementById('promo-disc').value);
-    const max  = parseInt(document.getElementById('promo-max').value) || null;
+    const code = document.getElementById('promo-new-code').value.trim();
+    const disc = parseInt(document.getElementById('promo-new-discount').value);
+    const max  = document.getElementById('promo-new-max').value ? parseInt(document.getElementById('promo-new-max').value) : null;
 
-    if (!code || isNaN(disc)) { showToast('Please enter a valid code and discount %'); return; }
+    if (!code) { showToast('Please enter a promo code'); return; }
+    if (isNaN(disc) || disc < 1 || disc > 100) { showToast('Please enter a valid discount (1-100%)'); return; }
 
     try {
         const res = await fetch(`${API_BASE}/admin/promos`, {
@@ -1016,13 +1021,21 @@ async function addPromo() {
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
             body: JSON.stringify({ code, discount_percent: disc, max_uses: max })
         });
-        if (!res.ok) throw new Error('Server error');
-        showToast('✓ Promo code active!');
-        document.getElementById('promo-code').value = '';
-        document.getElementById('promo-disc').value = '';
-        document.getElementById('promo-max').value = '';
+        
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || 'Server error');
+        }
+        
+        showToast('✓ Promo code added!');
+        document.getElementById('promo-new-code').value = '';
+        document.getElementById('promo-new-discount').value = '10';
+        document.getElementById('promo-new-max').value = '';
         await loadAdminData();
-    } catch (err) { showToast('Failed to add promo code'); }
+    } catch (err) {
+        console.error('Add Promo Error:', err);
+        showToast('Failed: ' + err.message);
+    }
 }
 
 async function deletePromo(id) {
