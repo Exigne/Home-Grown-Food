@@ -1,8 +1,8 @@
 const { Pool } = require('pg');
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  connectionString: process.env.NEON_DATABASE_URL,
+  ssl: { require: true },
   max: 2,
   idleTimeoutMillis: 0,
   connectionTimeoutMillis: 5000
@@ -30,6 +30,7 @@ exports.handler = async (event, context) => {
       body: JSON.stringify(result.rows)
     };
   } catch (err) {
+    console.error('Products query failed:', err.message);
     return {
       statusCode: 500,
       headers: { ...headers, 'Content-Type': 'application/json' },
