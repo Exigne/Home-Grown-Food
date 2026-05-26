@@ -3,13 +3,12 @@ const { Pool } = require('pg');
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
-  max: 2,                // keep low for serverless
-  idleTimeoutMillis: 0,    // don't hold idle connections
+  max: 2,
+  idleTimeoutMillis: 0,
   connectionTimeoutMillis: 5000
 });
 
 exports.handler = async (event, context) => {
-  // CRITICAL: send response immediately, don't wait for event loop to drain
   context.callbackWaitsForEmptyEventLoop = false;
 
   const headers = {
