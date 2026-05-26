@@ -14,7 +14,7 @@
 <body>
 
 <!-- TOP NAV -->
-<nav class="topbar">
+<<nav class="topbar">
   <a class="brand" href="#" onclick="showView('shop',event); return false;">
     <svg class="brand-logo" viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="21" cy="18" r="14" fill="rgba(107,191,74,0.15)"/>
@@ -110,33 +110,6 @@
           <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value" id="stat-pending">0</div><div class="stat-change stat-down">need action</div></div>
           <div class="stat-card"><div class="stat-label">Low Stock</div><div class="stat-value" id="stat-lowstock">0</div><div class="stat-change stat-down">products</div></div>
         </div>
-        <div id="section-promos" class="admin-section">
-    <h2 class="admin-heading">Promo Codes</h2>
-    <p class="admin-sub">Manage discount codes for your customers.</p>
-    
-    <div class="ingredient-form" style="display:flex; gap:10px; align-items:flex-end; margin-bottom:2rem; flex-wrap: wrap;">
-        <div class="form-group" style="flex:1; min-width: 150px;">
-            <label>Code (e.g. SUMMER10)</label>
-            <input type="text" id="promo-code">
-        </div>
-        <div class="form-group" style="flex:1; min-width: 100px;">
-            <label>Discount %</label>
-            <input type="number" id="promo-disc" placeholder="10">
-        </div>
-        <div class="form-group" style="flex:1; min-width: 100px;">
-            <label>Max Uses (optional)</label>
-            <input type="number" id="promo-max" placeholder="Unlimited">
-        </div>
-        <button class="pay-btn" style="width:auto; padding:11px 20px; margin-top:0;" onclick="addPromo()">Add Promo</button>
-    </div>
-
-    <div class="table-wrap">
-        <table>
-            <thead><tr><th>Code</th><th>Discount</th><th>Uses</th><th>Action</th></tr></thead>
-            <tbody id="promos-body"></tbody>
-        </table>
-    </div>
-</div>
         <p class="admin-sub">Recent Orders</p>
         <div class="table-wrap">
           <table>
@@ -147,8 +120,6 @@
           </table>
         </div>
       </section>
-
-      
 
       <!-- ORDERS -->
       <section class="admin-section" id="section-orders">
@@ -349,7 +320,7 @@
         <!-- PROMO CODE -->
         <div class="promo-section" style="margin:1rem 0; padding:1rem; background:#f8f9fa; border-radius:var(--radius);">
           <div style="display:flex; gap:8px; align-items:center;">
-            <input type="text" id="promo-code" placeholder="Promo code" style="flex:1; text-transform:uppercase;">
+            <input type="text" id="promo-input" placeholder="Promo code" style="flex:1; text-transform:uppercase;">
             <button class="action-btn" onclick="applyPromo()" id="promo-btn">Apply</button>
           </div>
           <div id="promo-message" style="font-size:0.85rem; margin-top:4px; font-weight:600; min-height:1.2rem;"></div>
@@ -397,7 +368,7 @@
           <span id="pm-badge" class="product-badge" style="position:static; display:none;"></span>
         </div>
         <p id="pm-desc" style="color:var(--text-muted); line-height:1.6; font-size:1rem; font-weight:600; margin-bottom:2rem;"></p>
-        <div id="pm-stock" style="font-weight:700; margin-bottom:1rem;"></div>
+        <div id="pm-stock" style="font-weight:700; margin-bottom:1rem; color:var(--green-mid);"></div>
         <button class="pay-btn" id="pm-add-btn" style="width:100%;">Add to Basket</button>
       </div>
     </div>
@@ -406,6 +377,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>
