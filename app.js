@@ -641,7 +641,6 @@ async function processPayment() {
     btn.innerHTML = 'Processing…';
     document.getElementById('card-errors').textContent = '';
 
-    // Collect all customer details in one place — used for Stripe, order record, and email
     const customer = {
         fname:    document.getElementById('ch-fname').value.trim(),
         lname:    document.getElementById('ch-lname').value.trim(),
@@ -659,25 +658,27 @@ async function processPayment() {
     const shipping = isPickup ? 0 : 3.50;
     const total    = (subtotal + shipping).toFixed(2);
     const oid      = 'HG-' + Date.now().toString().slice(-6);
+    
+    // Create the secure array of IDs and quantities for the backend
+    const secureCartItems = cart.map(i => ({ id: i.id, qty: i.qty }));
 
     try {
         let paymentIntentId = null;
 
         if (STRIPE_PUBLISHABLE_KEY && stripeInstance && cardElement) {
-            // Send full customer info to backend so it attaches to the Stripe payment
+            // Send the secure cart array so the backend can verify prices
             const res = await fetch(`${API_BASE}/create-payment-intent`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    amount:        Math.round(parseFloat(total) * 100),
-                    currency:      'gbp',
-                    receipt_email: customer.email,      // Stripe sends its own receipt
-                    metadata: {                         // visible in Stripe Dashboard
+                    cartItems:     secureCartItems,
+                    pickup:        isPickup,
+                    receipt_email: customer.email,
+                    metadata: {
                         order_id:      oid,
                         customer_name: customer.name,
                         email:         customer.email,
-                        address:       fullAddress,
-                        items:         cart.map(i => `${i.name} x${i.qty}`).join(', ')
+                        address:       fullAddress
                     }
                 })
             });
@@ -685,7 +686,6 @@ async function processPayment() {
             if (!res.ok) throw new Error('Failed to initialize payment.');
             const { clientSecret } = await res.json();
 
-            // Pass billing_details so name/email/address appear on the charge in Stripe
             const { paymentIntent, error } = await stripeInstance.confirmCardPayment(clientSecret, {
                 payment_method: {
                     card: cardElement,
@@ -707,19 +707,17 @@ async function processPayment() {
             if (error) throw new Error(error.message);
             paymentIntentId = paymentIntent.id;
         } else {
-            // Demo mode — no Stripe key configured
-            await new Promise(r => setTimeout(r, 700));
+            await new Promise(r => setTimeout(r, 700)); // Demo mode
         }
 
-        // Build and save the order record
+        // Build the order payload (now including cartItems!)
         const orderPayload = {
             id:              oid,
             fname:           customer.fname,
             lname:           customer.lname,
             email:           customer.email,
             address:         fullAddress,
-            items:           cart.map(i => `${i.name} ×${i.qty}`).join(', '),
-            total:           total,
+            cartItems:       secureCartItems, // Passed safely to backend!
             status:          'pending',
             date:            new Date().toLocaleDateString('en-GB'),
             timestamp:       Date.now(),
@@ -733,15 +731,19 @@ async function processPayment() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(orderPayload)
             });
-            if (!res.ok) throw new Error('Order backend processing failed');
+            
+            // Check for inventory or validation errors thrown by the backend
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.error || 'Order backend processing failed');
+            }
         } catch (saveErr) {
-            console.warn('Could not save order to backend:', saveErr);
+            console.warn('Backend rejected order:', saveErr);
+            throw saveErr; // Stop execution if DB fails (like out of stock)
         }
 
-        // Send confirmation email to customer
         await sendConfirmationEmail(orderPayload, customer);
 
-        // Show success
         document.getElementById('success-order-num').textContent = 'Order Reference: ' + oid;
         document.getElementById('checkout-content').style.display = 'none';
         document.getElementById('success-content').style.display  = 'block';
