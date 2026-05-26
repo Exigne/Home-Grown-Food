@@ -11,7 +11,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// --- DATABASE CONNECTION ---
 const pool = new Pool({
   connectionString: process.env.NEON_DATABASE_URL,
   ssl: { require: true },
@@ -20,7 +19,6 @@ const pool = new Pool({
   connectionTimeoutMillis: 5000
 });
 
-// --- EMAIL CONFIGURATION ---
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -44,14 +42,12 @@ const authenticateAdmin = (req, res, next) => {
   });
 };
 
-// --- PUBLIC CONFIG ROUTE ---
+// --- PUBLIC CONFIG ---
 app.get('/api/config', (req, res) => {
-  res.json({
-    stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY
-  });
+  res.json({ stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY });
 });
 
-// --- AUTHENTICATION ROUTE ---
+// --- AUTH ---
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
   if (username === ADMIN_USER && password === ADMIN_PASS) {
@@ -62,7 +58,44 @@ app.post('/api/login', (req, res) => {
   }
 });
 
-// --- STRIPE PAYMENT INTENT ---
+// --- PROMO CODE VALIDATION ---
+app.post('/api/validate-promo', async (req, res) => {
+  const { code, email } = req.body;
+  if (!code || !email) return res.status(400).json({ error: 'Code and email required' });
+
+  try {
+    // Check if code exists and is active
+    const codeResult = await pool.query(
+      'SELECT * FROM promo_codes WHERE code = $1 AND active = true',
+      [code.toUpperCase()]
+    );
+    if (codeResult.rows.length === 0) {
+      return res.json({ valid: false, message: 'Invalid promo code' });
+    }
+
+    const promo = codeResult.rows[0];
+
+    // Check max uses
+    if (promo.max_uses !== null && promo.used_count >= promo.max_uses) {
+      return res.json({ valid: false, message: 'Promo code expired' });
+    }
+
+    // Check if this email already used it
+    const usedResult = await pool.query(
+      'SELECT * FROM promo_uses WHERE email = $1 AND code = $2',
+      [email.toLowerCase(), code.toUpperCase()]
+    );
+    if (usedResult.rows.length > 0) {
+      return res.json({ valid: false, message: 'You have already used this code' });
+    }
+
+    res.json({ valid: true, discount: promo.discount_percent });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- STRIPE PAYMENT INTENT (with discount support) ---
 app.post('/api/create-payment-intent', async (req, res) => {
   try {
     const { amount } = req.body;
@@ -77,63 +110,119 @@ app.post('/api/create-payment-intent', async (req, res) => {
   }
 });
 
-// --- SECURE ORDER PLACEMENT ---
+// --- ORDERS (with stock decrement) ---
 app.post('/api/orders', async (req, res) => {
-  const { id, fname, lname, email, address, items, total, status, date, paymentIntentId } = req.body;
-  try {
-    const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
-    if (intent.status !== 'succeeded') return res.status(400).json({ error: 'Payment not verified' });
+  const { id, fname, lname, email, address, items, total, status, date, paymentIntentId, postcode } = req.body;
 
-    await pool.query(
-      `INSERT INTO orders (id, fname, lname, email, address, items, total, status, date)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [id, fname, lname, email, address, items, total, status, date]
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Verify payment
+    const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    if (intent.status !== 'succeeded') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Payment not verified' });
+    }
+
+    // Parse items to decrement stock
+    const itemList = items.split(', ').map(item => {
+      const match = item.match(/(.+?)\s*×\s*(\d+)/);
+      return match ? { name: match[1].trim(), qty: parseInt(match[2]) } : null;
+    }).filter(Boolean);
+
+    // Check and decrement stock
+    for (const item of itemList) {
+      const stockRes = await client.query(
+        'SELECT id, stock FROM products WHERE name = $1',
+        [item.name]
+      );
+      if (stockRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `Product not found: ${item.name}` });
+      }
+
+      const currentStock = stockRes.rows[0].stock;
+      const productId = stockRes.rows[0].id;
+
+      if (currentStock < item.qty) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `Not enough stock for ${item.name}. Only ${currentStock} remaining.` });
+      }
+
+      await client.query(
+        'UPDATE products SET stock = stock - $1 WHERE id = $2',
+        [item.qty, productId]
+      );
+    }
+
+    // Save order
+    await client.query(
+      `INSERT INTO orders (id, fname, lname, email, address, items, total, status, date, postcode)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [id, fname, lname, email, address, items, total, status, date, postcode]
     );
 
+    // Record promo use if applicable
+    if (req.body.promoCode) {
+      await client.query(
+        'INSERT INTO promo_uses (email, code) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+        [email.toLowerCase(), req.body.promoCode.toUpperCase()]
+      );
+      await client.query(
+        'UPDATE promo_codes SET used_count = used_count + 1 WHERE code = $1',
+        [req.body.promoCode.toUpperCase()]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    // Send notification email
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: process.env.EMAIL_USER,
       subject: `📦 Order ${id} Confirmed`,
-      html: `<h3>New Order from ${fname} ${lname}</h3><p>Total: £${total}</p><p>Items: ${items}</p>`
+      html: `<h3>New Order from ${fname} ${lname}</h3><p>Total: £${total}</p><p>Items: ${items}</p><p>Postcode: ${postcode}</p>`
     });
 
     res.status(201).json({ message: 'Order processed successfully' });
   } catch (err) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
-// --- PUBLIC PRODUCT ROUTE (fallback — only hit if /api/products isn't routed to products.js) ---
+// --- PUBLIC PRODUCTS ---
 app.get('/api/products', async (req, res) => {
   try {
-    res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=86400');
+    res.set('Cache-Control', 'public, max-age=60');
     const result = await pool.query('SELECT * FROM products ORDER BY id ASC');
     res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- ADMIN: PRODUCT MANAGEMENT ---
+// --- ADMIN: PRODUCTS ---
 app.post('/api/admin/products', authenticateAdmin, async (req, res) => {
-  const { name, emoji, price, description, bg_color, badge, image_url } = req.body;
+  const { name, emoji, price, description, bg_color, badge, image_url, stock } = req.body;
   try {
     await pool.query(
-      `INSERT INTO products (name, emoji, price, description, bg_color, badge, image_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [name, emoji, price, description, bg_color, badge, image_url]
+      `INSERT INTO products (name, emoji, price, description, bg_color, badge, image_url, stock)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [name, emoji, price, description, bg_color, badge, image_url, stock || 0]
     );
     res.json({ message: 'Product added' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
-  const { name, emoji, price, description, bg_color, badge, image_url } = req.body;
+  const { name, emoji, price, description, bg_color, badge, image_url, stock } = req.body;
   try {
     await pool.query(
-      `UPDATE products SET name=$1, emoji=$2, price=$3, description=$4, bg_color=$5, badge=$6, image_url=$7
-       WHERE id=$8`,
-      [name, emoji, price, description, bg_color, badge, image_url, req.params.id]
+      `UPDATE products SET name=$1, emoji=$2, price=$3, description=$4, bg_color=$5, badge=$6, image_url=$7, stock=$8
+       WHERE id=$9`,
+      [name, emoji, price, description, bg_color, badge, image_url, stock, req.params.id]
     );
     res.json({ message: 'Product updated' });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -146,7 +235,7 @@ app.delete('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- ADMIN: ORDER MANAGEMENT ---
+// --- ADMIN: ORDERS ---
 app.get('/api/admin/orders', authenticateAdmin, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM orders ORDER BY created_at DESC');
@@ -162,7 +251,7 @@ app.put('/api/admin/orders/:id', authenticateAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- ADMIN: INGREDIENT MANAGEMENT ---
+// --- ADMIN: INGREDIENTS ---
 app.get('/api/admin/ingredients', authenticateAdmin, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM ingredients ORDER BY id ASC');
@@ -196,9 +285,33 @@ app.delete('/api/admin/ingredients/:id', authenticateAdmin, async (req, res) => 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- WRAPPER: release event loop immediately so Netlify doesn't wait for DB sockets to close ---
-const serverlessHandler = serverless(app);
+// --- ADMIN: PROMO CODES ---
+app.get('/api/admin/promos', authenticateAdmin, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM promo_codes ORDER BY created_at DESC');
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
+app.post('/api/admin/promos', authenticateAdmin, async (req, res) => {
+  const { code, discount_percent, max_uses } = req.body;
+  try {
+    await pool.query(
+      'INSERT INTO promo_codes (code, discount_percent, max_uses) VALUES ($1, $2, $3)',
+      [code.toUpperCase(), discount_percent || 10, max_uses || null]
+    );
+    res.json({ message: 'Promo code created' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/admin/promos/:id', authenticateAdmin, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM promo_codes WHERE id = $1', [req.params.id]);
+    res.json({ message: 'Promo code deleted' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+const serverlessHandler = serverless(app);
 exports.handler = async (event, context) => {
   context.callbackWaitsForEmptyEventLoop = false;
   return serverlessHandler(event, context);
