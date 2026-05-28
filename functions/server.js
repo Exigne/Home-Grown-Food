@@ -1,9 +1,9 @@
 require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const { Pool } = require('pg');
-const jwt = require('jsonwebtoken');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const express    = require('express');
+const cors       = require('cors');
+const { Pool }   = require('pg');
+const jwt        = require('jsonwebtoken');
+const stripe     = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const nodemailer = require('nodemailer');
 const serverless = require('serverless-http');
 
@@ -31,23 +31,22 @@ const ADMIN_USER = process.env.ADMIN_USER;
 const ADMIN_PASS = process.env.ADMIN_PASS;
 const JWT_SECRET = process.env.JWT_SECRET;
 
-// --- AUTH MIDDLEWARE ---
+// ─── AUTH MIDDLEWARE ──────────────────────────────────────────────────────────
 const authenticateAdmin = (req, res, next) => {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
-
     jwt.verify(token, JWT_SECRET, (err) => {
         if (err) return res.status(403).json({ error: 'Invalid token' });
         next();
     });
 };
 
-// --- PUBLIC CONFIG ---
+// ─── PUBLIC CONFIG ────────────────────────────────────────────────────────────
 app.get('/api/config', (req, res) => {
     res.json({ stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY });
 });
 
-// --- AUTH ---
+// ─── AUTH ─────────────────────────────────────────────────────────────────────
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
     if (username === ADMIN_USER && password === ADMIN_PASS) {
@@ -58,7 +57,7 @@ app.post('/api/login', (req, res) => {
     }
 });
 
-// --- PROMO VALIDATION ---
+// ─── PROMO VALIDATION ─────────────────────────────────────────────────────────
 app.post('/api/validate-promo', async (req, res) => {
     const { code, email } = req.body;
     if (!code || !email) return res.status(400).json({ error: 'Code and email required' });
@@ -73,8 +72,9 @@ app.post('/api/validate-promo', async (req, res) => {
         }
 
         const promo = codeResult.rows[0];
+
         if (promo.max_uses !== null && promo.used_count >= promo.max_uses) {
-            return res.json({ valid: false, message: 'Promo code expired' });
+            return res.json({ valid: false, message: 'This promo code has expired' });
         }
 
         const usedResult = await pool.query(
@@ -87,55 +87,79 @@ app.post('/api/validate-promo', async (req, res) => {
 
         res.json({ valid: true, discount: promo.discount_percent });
     } catch (err) {
+        console.error('Promo validation error:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
-// --- STRIPE PAYMENT INTENT (SECURED) ---
+// ─── STRIPE PAYMENT INTENT ────────────────────────────────────────────────────
 app.post('/api/create-payment-intent', async (req, res) => {
-    const { cartItems, pickup, receipt_email, metadata, postcode } = req.body;
-    
+    const { cartItems, pickup, receipt_email, metadata, postcode, promoCode } = req.body;
+
     if (!cartItems || cartItems.length === 0) {
         return res.status(400).json({ error: 'Cart is empty' });
     }
 
     const client = await pool.connect();
     try {
-        let totalCents = 0;
+        let subtotalCents = 0;
+
         for (const item of cartItems) {
             const result = await client.query('SELECT price FROM products WHERE id = $1', [item.id]);
             if (result.rows.length === 0) throw new Error(`Product ID ${item.id} not found.`);
-            totalCents += Math.round(parseFloat(result.rows[0].price) * 100) * item.qty;
+            subtotalCents += Math.round(parseFloat(result.rows[0].price) * 100) * item.qty;
         }
 
-        // --- SECURE SHEFFIELD DELIVERY LOGIC ---
+        // Apply promo discount server-side
+        let discountCents = 0;
+        if (promoCode) {
+            const promoResult = await client.query(
+                'SELECT discount_percent, max_uses, used_count FROM promo_codes WHERE code = $1 AND active = true',
+                [promoCode.toUpperCase()]
+            );
+            if (promoResult.rows.length > 0) {
+                const promo = promoResult.rows[0];
+                if (promo.max_uses === null || promo.used_count < promo.max_uses) {
+                    discountCents = Math.round(subtotalCents * (promo.discount_percent / 100));
+                }
+            }
+        }
+
+        // Sheffield-only delivery
+        let shippingCents = 0;
         if (!pickup) {
             const cleanPostcode = (postcode || '').trim().toUpperCase();
             if (!cleanPostcode.startsWith('S')) {
                 return res.status(400).json({ error: 'Delivery is only available for Sheffield (S) postcodes.' });
             }
-            totalCents += 200; // Add exactly £2.00 for Sheffield delivery
+            shippingCents = 200; // £2.00
         }
 
+        const totalCents = Math.max(50, subtotalCents - discountCents + shippingCents); // Stripe min 50p
+
         const paymentIntent = await stripe.paymentIntents.create({
-            amount: totalCents,
+            amount:   totalCents,
             currency: 'gbp',
             receipt_email,
             metadata,
-            automatic_payment_methods: { enabled: true },
+            automatic_payment_methods: { enabled: true }
         });
-        
+
         res.json({ clientSecret: paymentIntent.client_secret });
     } catch (error) {
+        console.error('Payment intent error:', error);
         res.status(500).json({ error: error.message });
     } finally {
         client.release();
     }
 });
 
-// --- ORDERS & INVENTORY (SECURED) ---
+// ─── ORDERS ───────────────────────────────────────────────────────────────────
 app.post('/api/orders', async (req, res) => {
-    const { id, fname, lname, email, address, status, date, paymentIntentId, postcode, pickup, cartItems, promoCode } = req.body;
+    const {
+        id, fname, lname, email, address, status, date,
+        paymentIntentId, postcode, pickup, cartItems, promoCode
+    } = req.body;
 
     if (!cartItems || cartItems.length === 0) {
         return res.status(400).json({ error: 'Order must contain items' });
@@ -145,6 +169,7 @@ app.post('/api/orders', async (req, res) => {
     try {
         await client.query('BEGIN');
 
+        // Verify Stripe payment if payment intent provided
         if (paymentIntentId) {
             const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
             if (intent.status !== 'succeeded') {
@@ -153,25 +178,24 @@ app.post('/api/orders', async (req, res) => {
             }
         }
 
-        let generatedItemsText = [];
-        let calculatedTotal = 0;
-
-        // --- SECURE SHEFFIELD DELIVERY LOGIC ---
+        // Validate delivery postcode server-side
         if (!pickup) {
             const cleanPostcode = (postcode || '').trim().toUpperCase();
             if (!cleanPostcode.startsWith('S')) {
                 await client.query('ROLLBACK');
                 return res.status(400).json({ error: 'Delivery is only available for Sheffield (S) postcodes.' });
             }
-            calculatedTotal += 2.00; // Base total starts at £2.00 for delivery
         }
+
+        let generatedItemsText = [];
+        let subtotal           = 0;
 
         for (const item of cartItems) {
             const stockRes = await client.query(
                 'SELECT id, name, price, stock FROM products WHERE id = $1 FOR UPDATE',
                 [item.id]
             );
-            
+
             if (stockRes.rows.length === 0) {
                 await client.query('ROLLBACK');
                 return res.status(400).json({ error: `Product ID ${item.id} not found.` });
@@ -179,7 +203,7 @@ app.post('/api/orders', async (req, res) => {
 
             const product = stockRes.rows[0];
 
-            if (product.stock < item.qty) {
+            if (product.stock !== null && product.stock < item.qty) {
                 await client.query('ROLLBACK');
                 return res.status(400).json({ error: `Not enough stock for ${product.name}.` });
             }
@@ -190,18 +214,35 @@ app.post('/api/orders', async (req, res) => {
             );
 
             generatedItemsText.push(`${product.name} × ${item.qty}`);
-            calculatedTotal += parseFloat(product.price) * item.qty;
+            subtotal += parseFloat(product.price) * item.qty;
         }
 
-        const itemsString = generatedItemsText.join(', ');
+        // Apply promo discount server-side
+        let discount = 0;
+        if (promoCode) {
+            const promoResult = await client.query(
+                'SELECT discount_percent, max_uses, used_count FROM promo_codes WHERE code = $1 AND active = true',
+                [promoCode.toUpperCase()]
+            );
+            if (promoResult.rows.length > 0) {
+                const promo = promoResult.rows[0];
+                if (promo.max_uses === null || promo.used_count < promo.max_uses) {
+                    discount = subtotal * (promo.discount_percent / 100);
+                }
+            }
+        }
+
+        const shipping          = pickup ? 0 : 2.00;
+        const calculatedTotal   = Math.max(0, subtotal - discount + shipping);
+        const itemsString       = generatedItemsText.join(', ');
 
         await client.query(
-            `INSERT INTO orders (id, fname, lname, email, address, items, total, status, date, postcode)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-            [id, fname, lname, email, address, itemsString, calculatedTotal.toFixed(2), status, date, postcode]
+            `INSERT INTO orders (id, fname, lname, email, address, items, total, status, date, postcode, pickup)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            [id, fname, lname, email, address, itemsString, calculatedTotal.toFixed(2), status, date, postcode, pickup || false]
         );
 
-        // Record Promo Usage (if applicable)
+        // Record promo usage
         if (promoCode) {
             await client.query(
                 'INSERT INTO promo_uses (email, code) VALUES ($1, $2) ON CONFLICT DO NOTHING',
@@ -215,33 +256,59 @@ app.post('/api/orders', async (req, res) => {
 
         await client.query('COMMIT');
 
-        // Send Email
+        // Notify admin by email
+        const pickupLabel = pickup ? '🏠 Home Pickup' : `🚚 Delivery to ${postcode}`;
         await transporter.sendMail({
-            from: process.env.EMAIL_USER,
-            to: process.env.EMAIL_USER,
-            subject: `📦 Order ${id} Confirmed`,
-            html: `<h3>New Order from ${fname} ${lname}</h3><p>Total: £${calculatedTotal.toFixed(2)}</p><p>Items: ${itemsString}</p><p>Postcode: ${postcode}</p>`
-        });
+            from:    process.env.EMAIL_USER,
+            to:      process.env.EMAIL_USER,
+            subject: `📦 New Order ${id} — £${calculatedTotal.toFixed(2)}`,
+            html:    `
+                <h2>New Order from ${fname} ${lname}</h2>
+                <p><strong>Order ID:</strong> ${id}</p>
+                <p><strong>Email:</strong> ${email}</p>
+                <p><strong>Address:</strong> ${address}</p>
+                <p><strong>Fulfilment:</strong> ${pickupLabel}</p>
+                <p><strong>Items:</strong> ${itemsString}</p>
+                ${promoCode ? `<p><strong>Promo Used:</strong> ${promoCode}</p>` : ''}
+                <p><strong>Total:</strong> £${calculatedTotal.toFixed(2)}</p>
+            `
+        }).catch(err => console.warn('Admin email failed:', err));
 
         res.status(201).json({ message: 'Order processed successfully' });
     } catch (err) {
         await client.query('ROLLBACK');
+        console.error('Order processing error:', err);
         res.status(500).json({ error: err.message });
     } finally {
         client.release();
     }
 });
 
-// --- PUBLIC PRODUCTS ---
+// ─── PUBLIC PRODUCTS ──────────────────────────────────────────────────────────
 app.get('/api/products', async (req, res) => {
     try {
         res.set('Cache-Control', 'public, max-age=60');
         const result = await pool.query('SELECT * FROM products ORDER BY id ASC');
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        console.error('Get products error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// --- ADMIN: PRODUCTS ---
+// ─── ADMIN: PRODUCTS ──────────────────────────────────────────────────────────
+
+// FIX: This GET route was previously missing — admin panel couldn't load products
+app.get('/api/admin/products', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM products ORDER BY id ASC');
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Admin get products error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.post('/api/admin/products', authenticateAdmin, async (req, res) => {
     const { name, emoji, price, description, bg_color, badge, image_url, stock } = req.body;
     try {
@@ -251,21 +318,24 @@ app.post('/api/admin/products', authenticateAdmin, async (req, res) => {
             [name, emoji, price, description, bg_color, badge, image_url, stock || 0]
         );
         res.json({ message: 'Product added' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        console.error('Add product error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.put('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
     const { name, emoji, price, description, bg_color, badge, image_url, stock } = req.body;
     try {
         await pool.query(
-            `UPDATE products SET name=$1, emoji=$2, price=$3, description=$4, bg_color=$5, badge=$6, image_url=$7, stock=$8
-             WHERE id=$9`,
+            `UPDATE products SET name=$1, emoji=$2, price=$3, description=$4,
+             bg_color=$5, badge=$6, image_url=$7, stock=$8 WHERE id=$9`,
             [name, emoji, price, description, bg_color, badge, image_url, stock !== undefined ? stock : 0, req.params.id]
         );
         res.json({ message: 'Product updated' });
-    } catch (err) { 
-        console.error('Product update error:', err);
-        res.status(500).json({ error: err.message }); 
+    } catch (err) {
+        console.error('Update product error:', err);
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -273,15 +343,21 @@ app.delete('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
     try {
         await pool.query('DELETE FROM products WHERE id = $1', [req.params.id]);
         res.json({ message: 'Product deleted' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        console.error('Delete product error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// --- ADMIN: ORDERS ---
+// ─── ADMIN: ORDERS ────────────────────────────────────────────────────────────
 app.get('/api/admin/orders', authenticateAdmin, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM orders ORDER BY created_at DESC');
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        console.error('Get orders error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.put('/api/admin/orders/:id', authenticateAdmin, async (req, res) => {
@@ -289,15 +365,21 @@ app.put('/api/admin/orders/:id', authenticateAdmin, async (req, res) => {
         const { status } = req.body;
         await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, req.params.id]);
         res.json({ message: 'Order updated' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        console.error('Update order error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// --- ADMIN: INGREDIENTS ---
+// ─── ADMIN: INGREDIENTS ───────────────────────────────────────────────────────
 app.get('/api/admin/ingredients', authenticateAdmin, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM ingredients ORDER BY id ASC');
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        console.error('Get ingredients error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.post('/api/admin/ingredients', authenticateAdmin, async (req, res) => {
@@ -308,7 +390,10 @@ app.post('/api/admin/ingredients', authenticateAdmin, async (req, res) => {
             [name, unit, stock, min_stock, max_stock]
         );
         res.json({ message: 'Ingredient added' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        console.error('Add ingredient error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.put('/api/admin/ingredients/:id', authenticateAdmin, async (req, res) => {
@@ -316,22 +401,31 @@ app.put('/api/admin/ingredients/:id', authenticateAdmin, async (req, res) => {
         const { stock } = req.body;
         await pool.query('UPDATE ingredients SET stock = $1 WHERE id = $2', [stock, req.params.id]);
         res.json({ message: 'Stock updated' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        console.error('Update ingredient error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.delete('/api/admin/ingredients/:id', authenticateAdmin, async (req, res) => {
     try {
         await pool.query('DELETE FROM ingredients WHERE id = $1', [req.params.id]);
         res.json({ message: 'Ingredient removed' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        console.error('Delete ingredient error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// --- ADMIN: PROMO CODES ---
+// ─── ADMIN: PROMO CODES ───────────────────────────────────────────────────────
 app.get('/api/admin/promos', authenticateAdmin, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM promo_codes ORDER BY created_at DESC');
         res.json(result.rows);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        console.error('Get promos error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.post('/api/admin/promos', authenticateAdmin, async (req, res) => {
@@ -342,16 +436,23 @@ app.post('/api/admin/promos', authenticateAdmin, async (req, res) => {
             [code.toUpperCase(), discount_percent || 10, max_uses || null]
         );
         res.json({ message: 'Promo code created' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        console.error('Add promo error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.delete('/api/admin/promos/:id', authenticateAdmin, async (req, res) => {
     try {
         await pool.query('DELETE FROM promo_codes WHERE id = $1', [req.params.id]);
         res.json({ message: 'Promo code deleted' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        console.error('Delete promo error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
+// ─── SERVERLESS EXPORT ────────────────────────────────────────────────────────
 const serverlessHandler = serverless(app);
 exports.handler = async (event, context) => {
     context.callbackWaitsForEmptyEventLoop = false;
