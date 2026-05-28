@@ -27,7 +27,7 @@ const DEMO_PRODUCTS = [
 
 // --- CACHE HELPERS ---
 const CACHE_KEY     = 'hg_products_cache';
-const CACHE_MAX_AGE = 1000 * 60 * 5; // 5 minutes
+const CACHE_MAX_AGE = 1000 * 60 * 60 * 24; // 24 hours
 
 function getCachedProducts() {
     try {
@@ -588,7 +588,7 @@ function updateCheckoutTotals() {
         // Delivery — Sheffield only
         if (postcode.length === 0) {
             shipping      = 0;
-            shippingLabel = 'Delivery (enter postcode above)';
+            shippingLabel = 'Delivery (enter postcode below)';
             btn.disabled  = false;
             msgEl.textContent = '';
         } else if (postcode.startsWith('S')) {
@@ -973,9 +973,6 @@ async function saveProduct() {
             const errData = await res.json().catch(() => ({}));
             throw new Error(errData.error || `Server returned ${res.status}`);
         }
-
-        // ✅ Clear the shop cache so updated stock shows immediately
-        localStorage.removeItem(CACHE_KEY);
 
         showToast(id ? '✓ Product updated!' : '✓ Product added!');
         resetProductForm();
