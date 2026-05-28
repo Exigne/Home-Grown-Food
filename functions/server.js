@@ -132,7 +132,7 @@ app.post('/api/create-payment-intent', async (req, res) => {
             if (!cleanPostcode.startsWith('S')) {
                 return res.status(400).json({ error: 'Delivery is only available for Sheffield (S) postcodes.' });
             }
-            shippingCents = 200; // £2.00
+            shippingCents = 300; // £3.00
         }
 
         const totalCents = Math.max(50, subtotalCents - discountCents + shippingCents); // Stripe min 50p
@@ -232,7 +232,7 @@ app.post('/api/orders', async (req, res) => {
             }
         }
 
-        const shipping          = pickup ? 0 : 2.00;
+        const shipping          = pickup ? 0 : 3.00;
         const calculatedTotal   = Math.max(0, subtotal - discount + shipping);
         const itemsString       = generatedItemsText.join(', ');
 
