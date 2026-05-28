@@ -27,7 +27,7 @@ const DEMO_PRODUCTS = [
 
 // --- CACHE HELPERS ---
 const CACHE_KEY     = 'hg_products_cache';
-const CACHE_MAX_AGE = 1000 * 60 * 60 * 24; // 24 hours
+const CACHE_MAX_AGE = 1000 * 60 * 5; // 5 minutes
 
 function getCachedProducts() {
     try {
@@ -973,6 +973,9 @@ async function saveProduct() {
             const errData = await res.json().catch(() => ({}));
             throw new Error(errData.error || `Server returned ${res.status}`);
         }
+
+        // ✅ Clear the shop cache so updated stock shows immediately
+        localStorage.removeItem(CACHE_KEY);
 
         showToast(id ? '✓ Product updated!' : '✓ Product added!');
         resetProductForm();
