@@ -592,8 +592,8 @@ function updateCheckoutTotals() {
             btn.disabled  = false;
             msgEl.textContent = '';
         } else if (postcode.startsWith('S')) {
-            shipping      = 2.00;
-            shippingLabel = '🚚 Sheffield Delivery (+£2.00)';
+            shipping      = 3.00;
+            shippingLabel = '🚚 Sheffield Delivery (+£3.00)';
             btn.disabled  = false;
             msgEl.style.color = 'var(--green-mid)';
             msgEl.textContent = '✓ We deliver to your area!';
@@ -772,7 +772,7 @@ async function processPayment() {
 
     const subtotal       = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
     const discount       = appliedPromo ? subtotal * (appliedPromo.discount / 100) : 0;
-    const shipping       = isPickup ? 0 : (customer.postcode.startsWith('S') ? 2.00 : 0);
+    const shipping       = isPickup ? 0 : (customer.postcode.startsWith('S') ? 3.00 : 0);
     const total          = Math.max(0, subtotal - discount + shipping).toFixed(2);
     const oid            = 'HG-' + Date.now().toString().slice(-6);
     const secureCartItems = cart.map(i => ({ id: i.id, qty: i.qty }));
