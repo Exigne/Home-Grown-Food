@@ -131,13 +131,8 @@ input, select, textarea { font-family: var(--font-body); }
 }
 .product-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-4px); border-color: var(--green-leaf); }
 
-.product-card.out-of-stock {
-  opacity: 0.6;
-  pointer-events: none;
-}
-.product-card.out-of-stock .product-img {
-  filter: grayscale(0.8);
-}
+.product-card.out-of-stock { opacity: 0.6; pointer-events: none; }
+.product-card.out-of-stock .product-img { filter: grayscale(0.8); }
 
 .product-img {
   height: 175px; display: flex; align-items: center; justify-content: center;
@@ -260,7 +255,7 @@ input, select, textarea { font-family: var(--font-body); }
   padding: 1.5rem 2rem; background: var(--green-dark);
   display: flex; align-items: center; justify-content: space-between;
   border-radius: calc(var(--radius-xl) - 3px) calc(var(--radius-xl) - 3px) 0 0;
-  position: sticky; top: 0;
+  position: sticky; top: 0; z-index: 1;
 }
 .modal-head h2 { color: var(--yellow); font-family: var(--font-brand); font-size: 1.5rem; }
 
@@ -439,16 +434,16 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
   font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
   white-space: nowrap;
 }
-.badge-pending   { background: #FFF9C4; color: #827717; }
-.badge-processing{ background: #E3F2FD; color: #1565C0; }
-.badge-shipped   { background: var(--green-pale); color: var(--green-dark); }
-.badge-delivered { background: #E8F5E9; color: #1B5E20; }
-.badge-cancelled { background: #FFEBEE; color: #B71C1C; }
-.badge-ok        { background: var(--green-pale); color: var(--green-dark); }
-.badge-low       { background: #FFF9C4; color: #827717; }
-.badge-critical  { background: #FFEBEE; color: #B71C1C; }
-.badge-paid      { background: var(--green-pale); color: var(--success); }
-.badge-refunded  { background: #FFEBEE; color: #B71C1C; }
+.badge-pending    { background: #FFF9C4; color: #827717; }
+.badge-processing { background: #E3F2FD; color: #1565C0; }
+.badge-shipped    { background: var(--green-pale); color: var(--green-dark); }
+.badge-delivered  { background: #E8F5E9; color: #1B5E20; }
+.badge-cancelled  { background: #FFEBEE; color: #B71C1C; }
+.badge-ok         { background: var(--green-pale); color: var(--green-dark); }
+.badge-low        { background: #FFF9C4; color: #827717; }
+.badge-critical   { background: #FFEBEE; color: #B71C1C; }
+.badge-paid       { background: var(--green-pale); color: var(--success); }
+.badge-refunded   { background: #FFEBEE; color: #B71C1C; }
 
 /* ── ACTION BUTTONS ── */
 .action-btn {
@@ -482,8 +477,110 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
 .prog-critical { background: var(--danger); }
 
 /* ══════════════════════════════════════════════
-   PRODUCT MANAGEMENT
+   ADMIN — PRODUCT MANAGEMENT CARDS
 ══════════════════════════════════════════════ */
+.pmc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 2rem;
+}
+
+.pmc-card {
+  background: var(--white);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+}
+.pmc-card:hover {
+  border-color: var(--green-leaf);
+  box-shadow: var(--shadow);
+  transform: translateY(-2px);
+}
+
+.pmc-card-img {
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background-size: cover;
+  background-position: center;
+  flex-shrink: 0;
+}
+
+.pmc-card-body {
+  padding: 1rem 1.25rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 6px;
+}
+
+.pmc-card-name {
+  font-family: var(--font-brand);
+  font-size: 1.1rem;
+  color: var(--green-dark);
+  line-height: 1.2;
+}
+
+.pmc-card-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  font-weight: 600;
+  flex: 1;
+}
+
+.pmc-card-price {
+  font-family: var(--font-brand);
+  font-size: 1.4rem;
+  color: var(--green-mid);
+}
+
+.pmc-stock-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 4px 0;
+}
+
+.pmc-stock-label {
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  transition: color 0.3s;
+}
+
+.pmc-stock-track {
+  height: 6px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.pmc-stock-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.5s ease, background 0.3s;
+}
+
+.pmc-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.pmc-card-actions .action-btn {
+  flex: 1;
+  text-align: center;
+  margin-right: 0;
+}
+
+/* Legacy — kept for any older references */
 .product-mgmt-grid {
   display: grid; grid-template-columns: 1fr 1fr;
   gap: 1.25rem; margin-bottom: 2rem;
@@ -498,7 +595,7 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
   font-size: 2rem; width: 54px; height: 54px; border-radius: var(--radius);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.pmc-name { font-weight: 800; color: var(--green-dark); font-size: 0.95rem; }
+.pmc-name  { font-weight: 800; color: var(--green-dark); font-size: 0.95rem; }
 .pmc-stock { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; font-weight: 600; }
 .pmc-price { font-family: var(--font-brand); font-size: 1.3rem; color: var(--green-mid); margin-left: auto; padding-right: 8px; }
 
@@ -581,26 +678,11 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
   transform: translateX(-50%) translateY(80px);
   background: var(--green-dark); color: var(--yellow);
   padding: 12px 26px; border-radius: 999px;
-  font-size: 0.9rem; font-weight: 800; z-index: 999;
+  font-size: 0.9rem; font-weight: 800; z-index: 9999;
   transition: transform 0.3s ease; pointer-events: none;
   border: 2px solid var(--green-leaf); white-space: nowrap;
 }
 .toast.show { transform: translateX(-50%) translateY(0); }
-
-/* ══════════════════════════════════════════════
-   RESPONSIVE
-══════════════════════════════════════════════ */
-@media (max-width: 768px) {
-  .topbar { padding: 0 1rem; }
-  .brand-tagline { display: none; }
-  .nav-links { display: none; }
-  .shop-hero h1 { font-size: 2.5rem; }
-  .admin-layout { grid-template-columns: 1fr; }
-  .admin-sidebar { display: none; }
-  .form-row { grid-template-columns: 1fr; }
-  .product-mgmt-grid { grid-template-columns: 1fr; }
-  .stats-grid { grid-template-columns: 1fr 1fr; }
-}
 
 /* ══════════════════════════════════════════════
    CHECKOUT — HOME PICKUP
@@ -617,30 +699,30 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
   cursor: pointer;
   transition: all 0.2s ease;
 }
-
-.pickup-option:hover {
-  background: #e8f5e9;
-  border-color: #a5d6a7;
-}
-
+.pickup-option:hover { background: #e8f5e9; border-color: #a5d6a7; }
 .pickup-option input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  cursor: pointer;
-  accent-color: var(--green-dark);
-  flex-shrink: 0;
+  width: 20px; height: 20px;
+  cursor: pointer; accent-color: var(--green-dark); flex-shrink: 0;
 }
-
 .pickup-option label {
-  cursor: pointer;
-  font-weight: 700;
-  color: var(--green-dark);
-  font-size: 0.95rem;
-  line-height: 1.4;
-  user-select: none;
+  cursor: pointer; font-weight: 700; color: var(--green-dark);
+  font-size: 0.95rem; line-height: 1.4; user-select: none;
 }
+.pickup-option:has(input:checked) { background: #e8f5e9; border-color: var(--green-leaf); }
 
-.pickup-option:has(input:checked) {
-  background: #e8f5e9;
-  border-color: var(--green-leaf);
+/* ══════════════════════════════════════════════
+   RESPONSIVE
+══════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .topbar { padding: 0 1rem; }
+  .brand-tagline { display: none; }
+  .nav-links { display: none; }
+  .shop-hero h1 { font-size: 2.5rem; }
+  .admin-layout { grid-template-columns: 1fr; }
+  .admin-sidebar { display: none; }
+  .form-row { grid-template-columns: 1fr; }
+  .product-mgmt-grid { grid-template-columns: 1fr; }
+  .pmc-grid { grid-template-columns: 1fr; }
+  .stats-grid { grid-template-columns: 1fr 1fr; }
+  .modal { width: 100% !important; border-radius: var(--radius-lg); }
 }
