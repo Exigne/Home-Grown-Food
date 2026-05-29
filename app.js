@@ -216,7 +216,7 @@ function renderShop() {
         const addBtnText    = outOfStock ? 'Sold Out' : 'Add +';
 
         return `
-        <div class="product-card ${stockClass}" onclick="openProductModal(${p.id})">
+        <div class="product-card ${stockClass}" onclick="openProductDetail(${p.id})">
           <div class="product-img" style="background-color:${p.bg_color || '#FFFBE8'};${p.image_url ? `background-image:url('${p.image_url}');background-size:cover;background-position:center;` : ''}">
             ${p.image_url ? '' : `<span style="font-size:3.5rem;">${p.emoji || '🍪'}</span>`}
             ${p.badge ? `<span class="product-badge">${p.badge}</span>` : ''}
@@ -233,8 +233,8 @@ function renderShop() {
     }).join('');
 }
 
-// ─── PRODUCT DETAIL MODAL ─────────────────────────────────────────────────────
-function openProductModal(id) {
+// ─── PRODUCT DETAIL MODAL (shop) ─────────────────────────────────────────────
+function openProductDetail(id) {
     const p = products.find(x => x.id === id);
     if (!p) return;
 
@@ -257,16 +257,16 @@ function openProductModal(id) {
     if (p.badge) { badgeEl.textContent = p.badge; badgeEl.style.display = ''; }
     else { badgeEl.style.display = 'none'; }
 
-    document.getElementById('pm-add-btn').onclick = () => { addToCart(id); closeProductModal(); };
+    document.getElementById('pm-add-btn').onclick = () => { addToCart(id); closeProductDetail(); };
     document.getElementById('product-modal').classList.add('open');
 }
 
-function closeProductModal() {
+function closeProductDetail() {
     document.getElementById('product-modal').classList.remove('open');
 }
 
-function closeProductModalOnOverlay(e) {
-    if (e.target.id === 'product-modal') closeProductModal();
+function closeProductDetailOnOverlay(e) {
+    if (e.target.id === 'product-modal') closeProductDetail();
 }
 
 // ─── RENDER ADMIN ─────────────────────────────────────────────────────────────
@@ -751,7 +751,7 @@ function updateCheckoutTotals() {
 
         if (!hasCity && !hasPostcode) {
             shipping          = 0;
-            shippingLabel     = 'Delivery (enter your city and postcode below)';
+            shippingLabel     = 'Delivery (enter your city and postcode above)';
             btn.disabled      = false;
             msgEl.textContent = '';
         } else if (isSheffieldDelivery()) {
