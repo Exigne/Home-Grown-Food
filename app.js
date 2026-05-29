@@ -196,6 +196,10 @@ function showAdminSection(s, el) {
         menuEl.classList.add('active');
     }
 
+    // Start real-time stock polling only on products section
+    if (s === 'products') startStockPolling();
+    else stopStockPolling();
+
     loadAdminData();
 }
 
@@ -459,23 +463,174 @@ function renderPayments() {
 
 function renderProductMgmt() {
     const grid = document.getElementById('product-mgmt-grid');
+    if (!grid) return;
     if (!products.length) {
-        grid.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem; font-weight:600; grid-column:1/-1;">No products yet. Add one above.</p>';
+        grid.innerHTML = `
+            <div style="grid-column:1/-1; text-align:center; padding:3rem; color:var(--text-muted);">
+                <div style="font-size:3rem; margin-bottom:1rem;">🍪</div>
+                <p style="font-weight:700; font-size:1rem;">No products yet.</p>
+                <button class="action-btn primary" onclick="openProductModal()" style="margin-top:1rem; padding:10px 24px;">+ Add Your First Product</button>
+            </div>`;
         return;
     }
-    grid.innerHTML = products.map(p => `
-        <div class="product-mgmt-card">
-          <div class="pmc-emoji" style="background:${p.bg_color || '#FFFBE8'};">${p.emoji || '🍪'}</div>
-          <div style="flex:1;">
-            <div class="pmc-name">${p.name}</div>
-            <div class="pmc-stock">${p.description ? p.description.substring(0, 45) + '…' : 'No description'}</div>
-            <div class="pmc-stock" style="margin-top:2px;">Stock: ${p.stock ?? '—'}</div>
+    grid.innerHTML = products.map(p => {
+        const stock      = p.stock ?? null;
+        const isLow      = stock !== null && stock > 0 && stock <= 5;
+        const isOut      = stock !== null && stock <= 0;
+        const stockColor = isOut ? 'var(--danger)' : isLow ? 'var(--warning)' : 'var(--success)';
+        const stockLabel = isOut ? 'Out of Stock' : isLow ? `Low — ${stock} left` : `${stock !== null ? stock : '∞'} in stock`;
+        const stockIcon  = isOut ? '🔴' : isLow ? '🟡' : '🟢';
+
+        return `
+        <div class="pmc-card" id="pmc-${p.id}">
+          <div class="pmc-card-img" style="background:${p.bg_color || '#FFFBE8'}; ${p.image_url ? `background-image:url('${p.image_url}'); background-size:cover; background-position:center;` : ''}">
+            ${p.image_url ? '' : `<span style="font-size:2.8rem;">${p.emoji || '🍪'}</span>`}
+            ${p.badge ? `<span class="product-badge" style="position:absolute; top:8px; right:8px;">${p.badge}</span>` : ''}
           </div>
-          <div class="pmc-price">£${Number(p.price).toFixed(2)}</div>
-          <button class="action-btn" onclick="editProduct(${p.id})" title="Edit">✏️</button>
-          <button class="action-btn danger" onclick="deleteProduct(${p.id})" title="Delete">🗑</button>
-        </div>`
-    ).join('');
+          <div class="pmc-card-body">
+            <div class="pmc-card-name">${p.name}</div>
+            <div class="pmc-card-desc">${p.description ? p.description.substring(0, 55) + (p.description.length > 55 ? '…' : '') : 'No description'}</div>
+            <div class="pmc-card-price">£${Number(p.price).toFixed(2)}</div>
+            <div class="pmc-stock-bar">
+              <span class="pmc-stock-label" style="color:${stockColor};">${stockIcon} ${stockLabel}</span>
+              ${stock !== null && stock > 0 ? `
+              <div class="pmc-stock-track">
+                <div class="pmc-stock-fill" style="width:${Math.min(100, (stock / Math.max(stock, 20)) * 100)}%; background:${stockColor};"></div>
+              </div>` : ''}
+            </div>
+            <div class="pmc-card-actions">
+              <button class="action-btn primary" onclick="openProductModal(${p.id})">✏️ Edit</button>
+              <button class="action-btn danger" onclick="deleteProduct(${p.id})">🗑 Delete</button>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+}
+
+// ─── PRODUCT MODAL (ADD / EDIT) ───────────────────────────────────────────────
+let productStockPollTimer = null;
+
+function openProductModal(id) {
+    const modal  = document.getElementById('product-edit-modal');
+    const isEdit = !!id;
+    document.getElementById('pem-title').textContent = isEdit ? 'Edit Product' : 'Add New Product';
+
+    if (isEdit) {
+        const p = products.find(x => x.id === id);
+        if (!p) return;
+        document.getElementById('pem-id').value          = p.id;
+        document.getElementById('pem-name').value        = p.name        || '';
+        document.getElementById('pem-price').value       = p.price       || '';
+        document.getElementById('pem-emoji').value       = p.emoji       || '';
+        document.getElementById('pem-badge').value       = p.badge       || '';
+        document.getElementById('pem-image').value       = p.image_url   || '';
+        document.getElementById('pem-desc').value        = p.description || '';
+        document.getElementById('pem-bg').value          = p.bg_color    || '#FFFBE8';
+        document.getElementById('pem-stock').value       = p.stock       ?? '';
+    } else {
+        document.getElementById('pem-id').value    = '';
+        document.getElementById('pem-name').value  = '';
+        document.getElementById('pem-price').value = '';
+        document.getElementById('pem-emoji').value = '';
+        document.getElementById('pem-badge').value = '';
+        document.getElementById('pem-image').value = '';
+        document.getElementById('pem-desc').value  = '';
+        document.getElementById('pem-bg').value    = '#FFFBE8';
+        document.getElementById('pem-stock').value = '';
+    }
+
+    modal.classList.add('open');
+}
+
+function closeProductModal() {
+    document.getElementById('product-edit-modal').classList.remove('open');
+}
+
+async function saveProductFromModal() {
+    const id   = document.getElementById('pem-id').value;
+    const name = document.getElementById('pem-name').value.trim();
+    if (!name) { showToast('Product name is required'); return; }
+
+    const payload = {
+        name,
+        price:       parseFloat(document.getElementById('pem-price').value)  || 0,
+        emoji:       document.getElementById('pem-emoji').value,
+        badge:       document.getElementById('pem-badge').value,
+        image_url:   document.getElementById('pem-image').value,
+        description: document.getElementById('pem-desc').value,
+        bg_color:    document.getElementById('pem-bg').value,
+        stock:       parseInt(document.getElementById('pem-stock').value)     || 0
+    };
+
+    const saveBtn = document.getElementById('pem-save-btn');
+    saveBtn.disabled    = true;
+    saveBtn.textContent = 'Saving…';
+
+    try {
+        const url    = id ? `${API_BASE}/admin/products/${id}` : `${API_BASE}/admin/products`;
+        const method = id ? 'PUT' : 'POST';
+        const res    = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+            body:    JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || `Server returned ${res.status}`);
+        }
+
+        localStorage.removeItem(CACHE_KEY);
+        showToast(id ? '✓ Product updated!' : '✓ Product added!');
+        closeProductModal();
+        await loadAdminData();
+    } catch (err) {
+        console.error('Save Product Error:', err);
+        showToast('Save failed: ' + err.message);
+    } finally {
+        saveBtn.disabled    = false;
+        saveBtn.textContent = '💾 Save Product';
+    }
+}
+
+// Poll stock levels every 20s when on products section
+function startStockPolling() {
+    stopStockPolling();
+    productStockPollTimer = setInterval(async () => {
+        try {
+            const res = await fetch(`${API_BASE}/admin/products`, {
+                headers: { 'Authorization': `Bearer ${adminToken}` }
+            });
+            if (res.ok) {
+                const fresh = await res.json();
+                // Update only stock counts in the UI without full re-render
+                fresh.forEach(p => {
+                    const existing = products.find(x => x.id === p.id);
+                    if (existing && existing.stock !== p.stock) {
+                        existing.stock = p.stock;
+                        // Update just this card's stock display
+                        const card = document.getElementById('pmc-' + p.id);
+                        if (card) {
+                            const isLow      = p.stock !== null && p.stock > 0 && p.stock <= 5;
+                            const isOut      = p.stock !== null && p.stock <= 0;
+                            const stockColor = isOut ? 'var(--danger)' : isLow ? 'var(--warning)' : 'var(--success)';
+                            const stockLabel = isOut ? 'Out of Stock' : isLow ? `Low — ${p.stock} left` : `${p.stock !== null ? p.stock : '∞'} in stock`;
+                            const stockIcon  = isOut ? '🔴' : isLow ? '🟡' : '🟢';
+                            const stockEl    = card.querySelector('.pmc-stock-label');
+                            if (stockEl) {
+                                stockEl.style.color = stockColor;
+                                stockEl.textContent = `${stockIcon} ${stockLabel}`;
+                            }
+                        }
+                    }
+                });
+            }
+        } catch (e) { /* silent fail — next poll will retry */ }
+    }, 20000);
+}
+
+function stopStockPolling() {
+    if (productStockPollTimer) { clearInterval(productStockPollTimer); productStockPollTimer = null; }
 }
 
 function renderPromos() {
@@ -565,10 +720,17 @@ function toggleCart() { document.getElementById('cart-overlay').classList.toggle
 function closeCartOnOverlay(e) { if (e.target.id === 'cart-overlay') toggleCart(); }
 
 // ─── CHECKOUT ─────────────────────────────────────────────────────────────────
+function isSheffieldDelivery() {
+    const city     = (document.getElementById('ch-city')?.value || '').trim().toLowerCase();
+    const postcode = (document.getElementById('ch-postcode')?.value || '').trim().toUpperCase();
+    return city === 'sheffield' && postcode.startsWith('S');
+}
+
 function updateCheckoutTotals() {
     const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
     const isPickup = document.getElementById('pickup-check')?.checked || false;
     const postcode = (document.getElementById('ch-postcode')?.value || '').trim().toUpperCase();
+    const city     = (document.getElementById('ch-city')?.value || '').trim().toLowerCase();
     const btn      = document.getElementById('pay-btn');
     const msgEl    = document.getElementById('delivery-message');
     const errEl    = document.getElementById('card-errors');
@@ -577,33 +739,46 @@ function updateCheckoutTotals() {
     let shippingLabel = '';
 
     if (isPickup) {
-        // Home pickup — free, no postcode restriction
-        shipping      = 0;
-        shippingLabel = '🏠 Home Pickup';
-        btn.disabled  = false;
+        shipping          = 0;
+        shippingLabel     = '🏠 Home Pickup';
+        btn.disabled      = false;
         msgEl.style.color = 'var(--green-mid)';
         msgEl.textContent = '✓ Great! We\'ll have your order ready for collection.';
         if (errEl) errEl.textContent = '';
     } else {
-        // Delivery — Sheffield only
-        if (postcode.length === 0) {
-            shipping      = 0;
-            shippingLabel = 'Delivery (enter postcode below)';
-            btn.disabled  = false;
+        const hasCity     = city.length > 0;
+        const hasPostcode = postcode.length > 0;
+
+        if (!hasCity && !hasPostcode) {
+            shipping          = 0;
+            shippingLabel     = 'Delivery (enter your city and postcode below)';
+            btn.disabled      = false;
             msgEl.textContent = '';
-        } else if (postcode.startsWith('S')) {
-            shipping      = 3.00;
-            shippingLabel = '🚚 Sheffield Delivery (+£3.00)';
-            btn.disabled  = false;
+        } else if (isSheffieldDelivery()) {
+            shipping          = 3.00;
+            shippingLabel     = '🚚 Sheffield Delivery (+£3.00)';
+            btn.disabled      = false;
             msgEl.style.color = 'var(--green-mid)';
-            msgEl.textContent = '✓ We deliver to your area!';
+            msgEl.textContent = '✓ Great news — we deliver to your area!';
             if (errEl) errEl.textContent = '';
-        } else {
-            shipping      = 0;
-            shippingLabel = '<span style="color:var(--danger);">Delivery unavailable</span>';
-            btn.disabled  = true;
+        } else if (postcode.startsWith('S') && hasCity && city !== 'sheffield') {
+            shipping          = 0;
+            shippingLabel     = '<span style="color:var(--danger);">Delivery unavailable</span>';
+            btn.disabled      = true;
             msgEl.style.color = 'var(--danger)';
-            msgEl.textContent = '✗ Sorry, we only deliver to Sheffield (S) postcodes. Please select Home Pickup instead.';
+            msgEl.textContent = '✗ Sorry, we only deliver within Sheffield. Your city must be Sheffield to qualify.';
+        } else if (city === 'sheffield' && hasPostcode && !postcode.startsWith('S')) {
+            shipping          = 0;
+            shippingLabel     = '<span style="color:var(--danger);">Delivery unavailable</span>';
+            btn.disabled      = true;
+            msgEl.style.color = 'var(--danger)';
+            msgEl.textContent = '✗ That postcode doesn\'t look like a Sheffield postcode (should start with S).';
+        } else {
+            shipping          = 0;
+            shippingLabel     = '<span style="color:var(--danger);">Delivery unavailable</span>';
+            btn.disabled      = true;
+            msgEl.style.color = 'var(--danger)';
+            msgEl.textContent = '✗ Sorry, we only deliver to Sheffield. Please select Home Pickup instead.';
         }
     }
 
@@ -772,7 +947,7 @@ async function processPayment() {
 
     const subtotal       = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
     const discount       = appliedPromo ? subtotal * (appliedPromo.discount / 100) : 0;
-    const shipping       = isPickup ? 0 : (customer.postcode.startsWith('S') ? 3.00 : 0);
+    const shipping       = isPickup ? 0 : (isSheffieldDelivery() ? 3.00 : 0);
     const total          = Math.max(0, subtotal - discount + shipping).toFixed(2);
     const oid            = 'HG-' + Date.now().toString().slice(-6);
     const secureCartItems = cart.map(i => ({ id: i.id, qty: i.qty }));
