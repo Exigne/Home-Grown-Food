@@ -370,27 +370,55 @@
 
 <!-- ══ PRODUCT ADD / EDIT MODAL ══ -->
 <div class="modal-overlay" id="product-edit-modal" onclick="if(event.target.id==='product-edit-modal') closeProductModal()">
-  <div class="modal" style="width:560px;">
+  <div class="modal" style="width:580px;">
     <div class="modal-head">
       <h2 id="pem-title">Add New Product</h2>
       <button class="close-btn" onclick="closeProductModal()">✕</button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="pem-id">
+
+      <!-- IMAGE UPLOAD -->
+      <div class="form-group">
+        <label>Product Photo</label>
+        <div class="pem-upload-area">
+          <!-- Hidden file input -->
+          <input type="file" id="pem-file-input" accept="image/*" style="display:none;" onchange="uploadToCloudinary()">
+          <!-- Image preview -->
+          <div id="pem-img-preview-box" style="display:none; margin-bottom:10px;">
+            <img id="pem-img-preview" src="" alt="Preview"
+              style="width:100%; max-height:200px; object-fit:cover; border-radius:var(--radius); border:2px solid var(--border);">
+            <button type="button" class="action-btn danger" onclick="document.getElementById('pem-image').value=''; updateImagePreview('');"
+              style="margin-top:6px; width:100%;">🗑 Remove Photo</button>
+          </div>
+          <!-- Upload button -->
+          <button type="button" id="pem-upload-btn" class="action-btn primary"
+            onclick="document.getElementById('pem-file-input').click()"
+            style="width:100%; padding:12px; font-size:0.9rem;">
+            📷 Upload Photo
+          </button>
+          <!-- Hidden URL field (populated by upload) -->
+          <input type="hidden" id="pem-image">
+        </div>
+      </div>
+
       <div class="form-row">
         <div class="form-group"><label>Product Name *</label><input type="text" id="pem-name" placeholder="e.g. Honey Oat Clusters"></div>
         <div class="form-group"><label>Price (£) *</label><input type="number" id="pem-price" placeholder="5.50" step="0.01" min="0"></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>Emoji</label><input type="text" id="pem-emoji" placeholder="🍯" style="font-size:1.3rem;"></div>
+        <div class="form-group"><label>Emoji (used if no photo)</label><input type="text" id="pem-emoji" placeholder="🍯" style="font-size:1.3rem;"></div>
         <div class="form-group"><label>Stock Quantity</label><input type="number" id="pem-stock" placeholder="10" min="0" step="1"></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>Badge Text</label><input type="text" id="pem-badge" placeholder="e.g. Best Seller"></div>
         <div class="form-group"><label>Card Colour</label><input type="color" id="pem-bg" value="#FFFBE8" style="height:48px; cursor:pointer; width:100%;"></div>
       </div>
-      <div class="form-group"><label>Image URL (optional — leave blank to use emoji)</label><input type="text" id="pem-image" placeholder="https://…"></div>
-      <div class="form-group"><label>Description</label><textarea id="pem-desc" rows="3" placeholder="A short description of the product…" style="resize:vertical;"></textarea></div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="pem-desc" rows="5" placeholder="Write a description — use new lines to break up the text. Each line break will be shown in the shop." style="resize:vertical; line-height:1.6;"></textarea>
+        <span style="font-size:0.75rem; color:var(--text-muted); font-weight:600; margin-top:4px;">Line breaks are preserved in the shop.</span>
+      </div>
       <div style="display:flex; gap:10px; margin-top:1.5rem;">
         <button class="pay-btn" id="pem-save-btn" onclick="saveProductFromModal()" style="margin-top:0; flex:1;">💾 Save Product</button>
         <button class="action-btn" onclick="closeProductModal()" style="padding:14px 20px; font-size:1rem;">Cancel</button>
