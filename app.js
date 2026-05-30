@@ -224,21 +224,25 @@ function renderShop() {
     grid.innerHTML = products.map(p => {
         const outOfStock = (p.stock !== undefined && p.stock !== null && p.stock <= 0);
         const stockClass = outOfStock ? 'out-of-stock' : '';
-        const addBtnText = outOfStock ? 'Sold Out' : 'Add to Basket';
 
         return `
         <div class="product-card ${stockClass}" onclick="openProductDetail(${p.id})">
           <div class="product-img" style="background-color:${p.bg_color || '#FFFBE8'};${p.image_url ? `background-image:url('${p.image_url}');background-size:cover;background-position:center;` : ''}">
-            ${p.image_url ? '' : `<span style="font-size:4rem;">${p.emoji || '🍪'}</span>`}
+            ${!p.image_url ? `<span class="product-emoji">${p.emoji || '🍪'}</span>` : ''}
             ${p.badge ? `<span class="product-badge">${p.badge}</span>` : ''}
+            ${outOfStock ? `<div class="product-sold-out-overlay">Sold Out</div>` : ''}
           </div>
-          <div class="product-info">
+          <div class="product-body">
             <div class="product-name">${p.name}</div>
             <div class="product-desc">${formatDesc(p.description)}</div>
-            <div class="product-meta">
-              <span class="product-price">£${Number(p.price).toFixed(2)}</span>
-              <button class="add-btn" id="add-btn-${p.id}" onclick="event.stopPropagation(); addToCart(${p.id})" ${outOfStock ? 'disabled' : ''}>${addBtnText}</button>
-            </div>
+          </div>
+          <div class="product-footer">
+            <span class="product-price">£${Number(p.price).toFixed(2)}</span>
+            <button class="add-btn" id="add-btn-${p.id}"
+              onclick="event.stopPropagation(); addToCart(${p.id})"
+              ${outOfStock ? 'disabled' : ''}>
+              ${outOfStock ? 'Sold Out' : '+ Add to Basket'}
+            </button>
           </div>
         </div>`;
     }).join('');
