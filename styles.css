@@ -134,19 +134,21 @@ input, select, textarea { font-family: var(--font-body); }
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  transition: transform 0.22s ease, box-shadow 0.22s ease;
+  /* Added a bouncy cubic-bezier transition for a more playful feel */
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease;
   box-shadow: 6px 6px 0px var(--green-dark);
+  position: relative;
 }
 .product-card:hover {
-  transform: translate(-3px, -3px);
-  box-shadow: 9px 9px 0px var(--green-dark);
+  transform: translate(-4px, -4px);
+  box-shadow: 10px 10px 0px var(--green-dark);
 }
 .product-card.out-of-stock {
-  opacity: 0.5;
+  opacity: 0.65; /* Slightly increased opacity for better readability */
   pointer-events: none;
 }
 .product-card.out-of-stock .product-img {
-  filter: grayscale(1);
+  filter: grayscale(1) opacity(0.8);
 }
 
 /* ── IMAGE AREA ── */
@@ -156,95 +158,130 @@ input, select, textarea { font-family: var(--font-body); }
   align-items: center;
   justify-content: center;
   position: relative;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
+  /* Added a soft radial gradient to make the emojis pop */
+  background: radial-gradient(circle, var(--yellow-pale) 0%, var(--yellow-soft) 100%);
   flex-shrink: 0;
   border-bottom: 3px solid var(--green-dark);
+  overflow: hidden;
 }
 .product-emoji {
-  font-size: 6rem;
+  font-size: 6.5rem; /* Slightly larger */
   line-height: 1;
-  filter: drop-shadow(0 6px 12px rgba(0,0,0,0.15));
+  transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  filter: drop-shadow(0 8px 16px rgba(22,74,46,0.15));
+}
+/* Emoji scales and tilts slightly when the card is hovered */
+.product-card:hover .product-emoji {
+  transform: scale(1.15) rotate(5deg);
 }
 .product-badge {
   position: absolute;
-  top: 14px; left: 14px;
+  top: 16px; left: 16px;
   background: var(--yellow);
   color: var(--green-dark);
-  font-size: 0.72rem; font-weight: 800;
-  letter-spacing: 0.06em; text-transform: uppercase;
-  padding: 6px 14px;
+  font-size: 0.75rem; 
+  font-weight: 800;
+  letter-spacing: 0.08em; 
+  text-transform: uppercase;
+  padding: 6px 16px;
   border-radius: 999px;
   border: 2px solid var(--green-dark);
+  /* Added a mini neo-brutalist shadow to the badge */
+  box-shadow: 2px 2px 0px var(--green-dark);
+  z-index: 2;
 }
 .product-sold-out-overlay {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(14,48,25,0.55);
+  background: rgba(14,48,25,0.7); /* Slightly darker for better text contrast */
   color: var(--yellow);
   font-family: var(--font-brand);
-  font-size: 2rem;
+  font-size: 2.2rem;
   letter-spacing: 0.08em;
+  text-transform: uppercase;
+  backdrop-filter: blur(2px); /* Adds a modern frosted glass effect */
+  z-index: 3;
 }
 
 /* ── CARD BODY ── */
 .product-body {
-  padding: 1.4rem 1.6rem 1.2rem;
+  padding: 1.5rem 1.6rem;
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   background: var(--white);
 }
 .product-name {
   font-family: var(--font-brand);
-  font-size: 1.5rem;
+  font-size: 1.6rem;
   color: var(--green-dark);
   line-height: 1.2;
 }
 .product-desc {
-  font-size: 0.88rem;
+  font-size: 0.95rem; /* Increased readability */
   color: var(--text-muted);
-  line-height: 1.8;
+  line-height: 1.6;
   font-weight: 600;
 }
 
-/* ── CARD FOOTER — dark green band ── */
+/* ── CARD FOOTER ── */
 .product-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 1rem 1.6rem;
+  padding: 1.25rem 1.6rem;
   background: var(--green-dark);
   border-top: 3px solid var(--green-dark);
   flex-shrink: 0;
 }
 .product-price {
   font-family: var(--font-brand);
-  font-size: 1.9rem;
+  font-size: 2rem; /* Made the price a bit more prominent */
   color: var(--yellow);
   line-height: 1;
 }
+
+/* Upgraded button to look more tactile and pushable */
 .add-btn {
   background: var(--yellow);
   color: var(--green-dark);
   border: 2px solid var(--yellow);
-  border-radius: 8px;
-  padding: 10px 22px;
+  border-radius: 12px;
+  padding: 12px 24px;
   font-family: var(--font-brand);
-  font-size: 1rem;
+  font-size: 1.05rem;
   font-weight: 400;
   cursor: pointer;
-  transition: all 0.18s;
+  transition: all 0.15s ease;
   white-space: nowrap;
   letter-spacing: 0.02em;
+  box-shadow: 0 4px 0px var(--yellow-deep);
 }
-.add-btn:hover  { background: var(--yellow-deep); border-color: var(--yellow-deep); transform: scale(1.04); }
-.add-btn:active { transform: scale(0.97); }
-.add-btn.added  { background: var(--green-leaf); border-color: var(--green-leaf); color: var(--green-dark); }
-.add-btn:disabled { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.2); color: rgba(255,255,255,0.5); cursor: not-allowed; transform: none; }
+.add-btn:hover { 
+  background: var(--yellow);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 0px var(--yellow-deep);
+}
+.add-btn:active { 
+  transform: translateY(4px); 
+  box-shadow: 0 0px 0px var(--yellow-deep);
+}
+.add-btn.added { 
+  background: var(--green-leaf); 
+  border-color: var(--green-leaf); 
+  color: var(--green-dark);
+  box-shadow: 0 4px 0px var(--green-mid);
+}
+.add-btn:disabled { 
+  background: rgba(255,255,255,0.15); 
+  border-color: transparent; 
+  color: rgba(255,255,255,0.5); 
+  cursor: not-allowed; 
+  transform: none; 
+  box-shadow: none;
+}
 
 /* ── CLOUDINARY UPLOAD AREA ── */
 .pem-upload-area {
