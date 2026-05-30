@@ -203,6 +203,17 @@ function showAdminSection(s, el) {
     loadAdminData();
 }
 
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+// Safely converts plain text with line breaks to HTML, preventing XSS
+function formatDesc(text) {
+    if (!text) return '';
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>');
+}
+
 // ─── RENDER SHOP ──────────────────────────────────────────────────────────────
 function renderShop() {
     const grid = document.getElementById('products-grid');
@@ -211,19 +222,19 @@ function renderShop() {
         return;
     }
     grid.innerHTML = products.map(p => {
-        const outOfStock    = (p.stock !== undefined && p.stock !== null && p.stock <= 0);
-        const stockClass    = outOfStock ? 'out-of-stock' : '';
-        const addBtnText    = outOfStock ? 'Sold Out' : 'Add +';
+        const outOfStock = (p.stock !== undefined && p.stock !== null && p.stock <= 0);
+        const stockClass = outOfStock ? 'out-of-stock' : '';
+        const addBtnText = outOfStock ? 'Sold Out' : 'Add to Basket';
 
         return `
         <div class="product-card ${stockClass}" onclick="openProductDetail(${p.id})">
           <div class="product-img" style="background-color:${p.bg_color || '#FFFBE8'};${p.image_url ? `background-image:url('${p.image_url}');background-size:cover;background-position:center;` : ''}">
-            ${p.image_url ? '' : `<span style="font-size:3.5rem;">${p.emoji || '🍪'}</span>`}
+            ${p.image_url ? '' : `<span style="font-size:4rem;">${p.emoji || '🍪'}</span>`}
             ${p.badge ? `<span class="product-badge">${p.badge}</span>` : ''}
           </div>
           <div class="product-info">
             <div class="product-name">${p.name}</div>
-            <div class="product-desc">${p.description || ''}</div>
+            <div class="product-desc">${formatDesc(p.description)}</div>
             <div class="product-meta">
               <span class="product-price">£${Number(p.price).toFixed(2)}</span>
               <button class="add-btn" id="add-btn-${p.id}" onclick="event.stopPropagation(); addToCart(${p.id})" ${outOfStock ? 'disabled' : ''}>${addBtnText}</button>
@@ -238,9 +249,10 @@ function openProductDetail(id) {
     const p = products.find(x => x.id === id);
     if (!p) return;
 
-    document.getElementById('pm-name').textContent  = p.name;
+    document.getElementById('pm-name').textContent = p.name;
     document.getElementById('pm-price').textContent = '£' + Number(p.price).toFixed(2);
-    document.getElementById('pm-desc').textContent  = p.description || '';
+    // innerHTML so line breaks render properly
+    document.getElementById('pm-desc').innerHTML   = formatDesc(p.description);
     document.getElementById('pm-emoji').textContent = p.emoji || '🍪';
 
     const imgContainer = document.getElementById('pm-img-container');
@@ -510,6 +522,73 @@ function renderProductMgmt() {
 // ─── PRODUCT MODAL (ADD / EDIT) ───────────────────────────────────────────────
 let productStockPollTimer = null;
 
+// ── Cloudinary config — fill in your own values ──────────────────────────────
+// 1. Sign up free at https://cloudinary.com
+// 2. Go to Settings → Upload → Add upload preset, set to "Unsigned"
+// 3. Replace the two values below with your Cloud Name and Preset Name
+const CLOUDINARY_CLOUD_NAME   = 'dyitrwe5h';
+const CLOUDINARY_UPLOAD_PRESET = 'homegrownfoods';
+
+function updateImagePreview(url) {
+    const preview    = document.getElementById('pem-img-preview');
+    const previewBox = document.getElementById('pem-img-preview-box');
+    if (url) {
+        preview.src              = url;
+        previewBox.style.display = 'block';
+    } else {
+        preview.src              = '';
+        previewBox.style.display = 'none';
+    }
+}
+
+async function uploadToCloudinary() {
+    const fileInput = document.getElementById('pem-file-input');
+    const file      = fileInput.files[0];
+    if (!file) return;
+
+    if (!CLOUDINARY_CLOUD_NAME.startsWith('YOUR_')) {
+        // Real upload
+        const uploadBtn  = document.getElementById('pem-upload-btn');
+        uploadBtn.disabled    = true;
+        uploadBtn.textContent = '⏳ Uploading…';
+
+        try {
+            const formData = new FormData();
+            formData.append('file',         file);
+            formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+
+            const res  = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+                method: 'POST',
+                body:   formData
+            });
+
+            if (!res.ok) throw new Error('Upload failed');
+            const data = await res.json();
+
+            document.getElementById('pem-image').value = data.secure_url;
+            updateImagePreview(data.secure_url);
+            showToast('✓ Image uploaded!');
+        } catch (err) {
+            console.error('Cloudinary upload error:', err);
+            showToast('Upload failed — check your Cloudinary config');
+        } finally {
+            uploadBtn.disabled    = false;
+            uploadBtn.textContent = '📷 Upload Photo';
+            fileInput.value       = '';
+        }
+    } else {
+        // Demo mode — just show a local preview without uploading
+        const reader = new FileReader();
+        reader.onload = e => {
+            document.getElementById('pem-image').value = e.target.result;
+            updateImagePreview(e.target.result);
+            showToast('⚠️ Preview only — configure Cloudinary to save images');
+        };
+        reader.readAsDataURL(file);
+        fileInput.value = '';
+    }
+}
+
 function openProductModal(id) {
     const modal  = document.getElementById('product-edit-modal');
     const isEdit = !!id;
@@ -518,15 +597,16 @@ function openProductModal(id) {
     if (isEdit) {
         const p = products.find(x => x.id === id);
         if (!p) return;
-        document.getElementById('pem-id').value          = p.id;
-        document.getElementById('pem-name').value        = p.name        || '';
-        document.getElementById('pem-price').value       = p.price       || '';
-        document.getElementById('pem-emoji').value       = p.emoji       || '';
-        document.getElementById('pem-badge').value       = p.badge       || '';
-        document.getElementById('pem-image').value       = p.image_url   || '';
-        document.getElementById('pem-desc').value        = p.description || '';
-        document.getElementById('pem-bg').value          = p.bg_color    || '#FFFBE8';
-        document.getElementById('pem-stock').value       = p.stock       ?? '';
+        document.getElementById('pem-id').value    = p.id;
+        document.getElementById('pem-name').value  = p.name        || '';
+        document.getElementById('pem-price').value = p.price       || '';
+        document.getElementById('pem-emoji').value = p.emoji       || '';
+        document.getElementById('pem-badge').value = p.badge       || '';
+        document.getElementById('pem-image').value = p.image_url   || '';
+        document.getElementById('pem-desc').value  = p.description || '';
+        document.getElementById('pem-bg').value    = p.bg_color    || '#FFFBE8';
+        document.getElementById('pem-stock').value = p.stock       ?? '';
+        updateImagePreview(p.image_url || '');
     } else {
         document.getElementById('pem-id').value    = '';
         document.getElementById('pem-name').value  = '';
@@ -537,6 +617,7 @@ function openProductModal(id) {
         document.getElementById('pem-desc').value  = '';
         document.getElementById('pem-bg').value    = '#FFFBE8';
         document.getElementById('pem-stock').value = '';
+        updateImagePreview('');
     }
 
     modal.classList.add('open');
@@ -751,7 +832,7 @@ function updateCheckoutTotals() {
 
         if (!hasCity && !hasPostcode) {
             shipping          = 0;
-            shippingLabel     = 'Delivery (enter your city and postcode below)';
+            shippingLabel     = 'Delivery (enter your city and postcode above)';
             btn.disabled      = false;
             msgEl.textContent = '';
         } else if (isSheffieldDelivery()) {
