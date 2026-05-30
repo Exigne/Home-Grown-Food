@@ -120,8 +120,8 @@ input, select, textarea { font-family: var(--font-body); }
 
 .products-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 2rem;
 }
 
 .product-card {
@@ -129,33 +129,47 @@ input, select, textarea { font-family: var(--font-body); }
   border: 2px solid var(--border); overflow: hidden;
   transition: all 0.25s; cursor: pointer;
 }
-.product-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-4px); border-color: var(--green-leaf); }
+.product-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-5px); border-color: var(--green-leaf); }
 
 .product-card.out-of-stock { opacity: 0.6; pointer-events: none; }
 .product-card.out-of-stock .product-img { filter: grayscale(0.8); }
 
 .product-img {
-  height: 175px; display: flex; align-items: center; justify-content: center;
+  height: 240px; display: flex; align-items: center; justify-content: center;
   font-size: 4rem; position: relative; background-size: cover; background-position: center;
 }
 .product-badge {
-  position: absolute; top: 10px; right: 10px;
+  position: absolute; top: 12px; right: 12px;
   background: var(--yellow); color: var(--green-dark);
-  font-size: 0.7rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
-  padding: 4px 10px; border-radius: 999px; border: 2px solid var(--green-dark);
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 5px 12px; border-radius: 999px; border: 2px solid var(--green-dark);
 }
-.product-info { padding: 1rem 1.25rem 1.25rem; }
-.product-name { font-family: var(--font-brand); font-size: 1.1rem; color: var(--green-dark); margin-bottom: 4px; }
-.product-desc { font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 0.85rem; }
-.product-meta { display: flex; align-items: center; justify-content: space-between; }
-.product-price { font-size: 1.2rem; font-weight: 800; color: var(--green-mid); }
+.product-info { padding: 1.25rem 1.5rem 1.5rem; }
+.product-name { font-family: var(--font-brand); font-size: 1.3rem; color: var(--green-dark); margin-bottom: 8px; }
+.product-desc {
+  font-size: 0.88rem; color: var(--text-muted); line-height: 1.7;
+  margin-bottom: 1.25rem; min-height: 2.5rem;
+}
+.product-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.product-price { font-size: 1.4rem; font-weight: 800; color: var(--green-mid); }
 .add-btn {
   background: var(--green-dark); color: var(--yellow); border: none;
-  border-radius: var(--radius); padding: 8px 16px;
-  font-size: 0.82rem; font-weight: 800; cursor: pointer; transition: all 0.2s;
+  border-radius: var(--radius); padding: 10px 20px;
+  font-size: 0.88rem; font-weight: 800; cursor: pointer; transition: all 0.2s;
+  white-space: nowrap;
 }
-.add-btn:hover { background: var(--green-mid); transform: scale(1.05); }
+.add-btn:hover { background: var(--green-mid); transform: scale(1.04); }
 .add-btn.added { background: var(--green-leaf); color: var(--green-dark); }
+
+/* ── CLOUDINARY UPLOAD AREA ── */
+.pem-upload-area {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  background: var(--yellow-pale);
+  transition: border-color 0.2s;
+}
+.pem-upload-area:hover { border-color: var(--green-leaf); }
 
 /* ══════════════════════════════════════════════
    CART DRAWER
