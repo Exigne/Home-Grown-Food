@@ -715,44 +715,74 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
 .pmc-price { font-family: var(--font-brand); font-size: 1.3rem; color: var(--green-mid); margin-left: auto; padding-right: 8px; }
 
 /* ══════════════════════════════════════════════
-   SHIPPING / TRACKING
+   SHIPPING ROWS
 ══════════════════════════════════════════════ */
-.tracking-card {
-  background: var(--white); border: 2px solid var(--border);
-  border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 1.5rem;
+.shipping-row {
+  background: var(--white);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1rem;
+  transition: border-color 0.2s;
 }
-.tracking-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
-.tracking-header .order-id { font-family: var(--font-brand); font-size: 1.15rem; color: var(--green-dark); }
+.shipping-row:hover { border-color: var(--green-leaf); }
+.shipping-row-done {
+  opacity: 0.65;
+  background: var(--green-pale);
+  border-color: var(--border);
+}
 
-.tracking-steps { display: flex; margin-top: 1.25rem; }
-.tracking-step { flex: 1; text-align: center; position: relative; }
-.tracking-step::before {
-  content: ''; position: absolute; top: 14px; left: -50%; right: 50%;
-  height: 3px; background: var(--border); z-index: 0;
+.shipping-row-main {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
 }
-.tracking-step:first-child::before { display: none; }
-.tracking-step.done::before { background: var(--green-leaf); }
+.shipping-row-info { flex: 1; min-width: 200px; }
+.shipping-row-id   { font-family: var(--font-brand); font-size: 1.1rem; color: var(--green-dark); margin-bottom: 4px; }
+.shipping-row-name { font-weight: 800; font-size: 1rem; color: var(--text); margin-bottom: 4px; }
+.shipping-row-address { font-size: 0.88rem; font-weight: 700; color: var(--text-muted); margin-bottom: 4px; }
+.shipping-row-items { font-size: 0.82rem; color: var(--text-muted); font-weight: 600; }
 
-.ts-dot {
-  width: 30px; height: 30px; border-radius: 50%;
-  background: var(--yellow-pale); border: 3px solid var(--border);
-  margin: 0 auto 8px; display: flex; align-items: center; justify-content: center;
-  font-size: 0.7rem; position: relative; z-index: 1; transition: all 0.3s; font-weight: 800;
+.shipping-row-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 130px;
+  text-align: right;
 }
-.tracking-step.done    .ts-dot { background: var(--green-leaf); border-color: var(--green-leaf); color: white; }
-.tracking-step.current .ts-dot { background: var(--yellow); border-color: var(--green-dark); color: var(--green-dark); }
-.ts-label { font-size: 0.72rem; font-weight: 700; color: var(--text-muted); }
-.tracking-step.done    .ts-label,
-.tracking-step.current .ts-label { color: var(--green-dark); }
 
-.tracking-actions { display: flex; gap: 8px; margin-top: 1.25rem; align-items: center; flex-wrap: wrap; }
-.tracking-input {
-  flex: 1; min-width: 180px; padding: 7px 12px;
-  border: 2px solid var(--border); border-radius: var(--radius);
-  font-size: 0.85rem; font-family: var(--font-body);
-  background: var(--yellow-pale); color: var(--text); font-weight: 600;
+/* ── Delivered checkbox ── */
+.shipping-delivered-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+  width: fit-content;
 }
-.tracking-input:focus { outline: none; border-color: var(--green-leaf); }
+.shipping-delivered-check input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--green-dark);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.shipping-delivered-check span {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--green-mid);
+  user-select: none;
+}
+.shipping-delivered-check-done span {
+  color: var(--success);
+}
+.shipping-delivered-check input:disabled {
+  cursor: not-allowed;
+}
 
 /* ══════════════════════════════════════════════
    PAYMENTS / CHART
