@@ -353,38 +353,141 @@ function renderOrdersTable() {
 }
 
 function renderShipping() {
-    const el     = document.getElementById('shipping-cards');
-    const active = orders.filter(o => ['processing', 'shipped'].includes(o.status));
-    if (!active.length) {
-        el.innerHTML = '<p style="color:var(--text-muted); font-weight:600;">No active shipments. Orders in Processing or Shipped status appear here.</p>';
+    const el = document.getElementById('shipping-cards');
+
+    // Only delivery orders (not pickups), exclude cancelled
+    const deliveryOrders = orders.filter(o =>
+        !o.pickup && o.status !== 'cancelled'
+    );
+
+    if (!deliveryOrders.length) {
+        el.innerHTML = '<p style="color:var(--text-muted); font-weight:600;">No delivery orders yet. Home pickup orders are excluded from this view.</p>';
         return;
     }
-    const steps = ['Ordered', 'Processing', 'Dispatched', 'In Transit', 'Delivered'];
-    el.innerHTML = active.map(o => {
-        const stepIdx = o.status === 'processing' ? 1 : o.status === 'shipped' ? 3 : 4;
-        return `
-        <div class="tracking-card">
-          <div class="tracking-header">
-            <span class="order-id">${o.id}</span>
-            <span class="badge badge-${o.status}">${o.status}</span>
-            ${o.pickup ? '<span class="badge" style="background:#E8F5E9;color:#1B5E20;">🏠 Pickup</span>' : ''}
-            <span style="color:var(--text-muted); font-size:0.85rem; font-weight:600; margin-left:auto;">${o.fname || ''} ${o.lname || ''} — ${o.address || ''}</span>
-          </div>
-          <div style="font-size:0.82rem; color:var(--text-muted); font-weight:600; margin-bottom:0.5rem;">${o.items || ''}</div>
-          <div class="tracking-steps">
-            ${steps.map((s, i) => `
-              <div class="tracking-step ${i < stepIdx ? 'done' : ''} ${i === stepIdx ? 'current' : ''}">
-                <div class="ts-dot">${i < stepIdx ? '✓' : i + 1}</div>
-                <div class="ts-label">${s}</div>
-              </div>`).join('')}
-          </div>
-          <div class="tracking-actions">
-            ${o.status === 'processing' ? `<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','shipped')">Mark as Shipped</button>` : ''}
-            ${o.status === 'shipped'    ? `<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','delivered')">Mark Delivered</button>` : ''}
-            <input class="tracking-input" type="text" placeholder="Enter tracking number…">
-          </div>
+
+    // Split into active (not delivered) and recently delivered
+    const active    = deliveryOrders.filter(o => o.status !== 'delivered');
+    const delivered = deliveryOrders.filter(o => o.status === 'delivered');
+
+    let html = '';
+
+    // ── Active delivery orders ──
+    if (active.length) {
+        html += active.map(o => {
+            const statusColour = o.status === 'pending'    ? 'var(--warning)'
+                               : o.status === 'processing' ? '#1565C0'
+                               : o.status === 'shipped'    ? 'var(--success)'
+                               : 'var(--text-muted)';
+            return `
+            <div class="shipping-row" id="ship-${o.id}">
+              <div class="shipping-row-main">
+                <div class="shipping-row-info">
+                  <div class="shipping-row-id">${o.id}</div>
+                  <div class="shipping-row-name">${o.fname || ''} ${o.lname || ''}</div>
+                  <div class="shipping-row-address">📍 ${o.address || 'No address'}</div>
+                  <div class="shipping-row-items">${o.items || ''}</div>
+                </div>
+                <div class="shipping-row-meta">
+                  <span class="badge badge-${o.status}" style="margin-bottom:8px;">${o.status}</span>
+                  <div style="font-weight:800; font-size:1rem; color:var(--green-dark);">£${parseFloat(o.total).toFixed(2)}</div>
+                  <div style="font-size:0.78rem; color:var(--text-muted); font-weight:600; margin-top:4px;">${o.date || ''}</div>
+                  ${o.status === 'pending' ? `<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','processing')" style="margin-top:8px; width:100%;">Process</button>` : ''}
+                  ${o.status === 'processing' ? `<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','shipped')" style="margin-top:8px; width:100%;">Mark Shipped</button>` : ''}
+                </div>
+              </div>
+              <label class="shipping-delivered-check">
+                <input type="checkbox" onchange="markDelivered('${o.id}', this)">
+                <span>Mark as Delivered</span>
+              </label>
+            </div>`;
+        }).join('');
+    }
+
+    // ── Delivered orders ──
+    if (delivered.length) {
+        html += `
+        <div style="margin-top:2rem; margin-bottom:1rem; font-size:0.8rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-muted); display:flex; align-items:center; gap:12px;">
+          <span>✓ Delivered</span>
+          <div style="flex:1; height:2px; background:var(--border);"></div>
         </div>`;
-    }).join('');
+
+        html += delivered.map(o => `
+            <div class="shipping-row shipping-row-done" id="ship-${o.id}">
+              <div class="shipping-row-main">
+                <div class="shipping-row-info">
+                  <div class="shipping-row-id">${o.id}</div>
+                  <div class="shipping-row-name">${o.fname || ''} ${o.lname || ''}</div>
+                  <div class="shipping-row-address">📍 ${o.address || 'No address'}</div>
+                  <div class="shipping-row-items">${o.items || ''}</div>
+                </div>
+                <div class="shipping-row-meta">
+                  <span class="badge badge-delivered" style="margin-bottom:8px;">Delivered</span>
+                  <div style="font-weight:800; font-size:1rem; color:var(--green-dark);">£${parseFloat(o.total).toFixed(2)}</div>
+                  <div style="font-size:0.78rem; color:var(--text-muted); font-weight:600; margin-top:4px;">${o.date || ''}</div>
+                </div>
+              </div>
+              <label class="shipping-delivered-check shipping-delivered-check-done">
+                <input type="checkbox" checked disabled>
+                <span>Delivered ✓</span>
+              </label>
+            </div>`
+        ).join('');
+    }
+
+    el.innerHTML = html;
+}
+
+async function markDelivered(id, checkbox) {
+    // Optimistically check the box, disable it to prevent double-click
+    checkbox.disabled = true;
+    try {
+        await updateOrderStatus(id, 'delivered');
+        // updateOrderStatus calls loadAdminData which re-renders, so no extra work needed
+    } catch (e) {
+        checkbox.checked  = false;
+        checkbox.disabled = false;
+        showToast('Could not mark as delivered — please try again');
+    }
+}
+
+// ─── EXPORT SHIPPING CSV ──────────────────────────────────────────────────────
+function exportShippingCSV() {
+    const deliveryOrders = orders.filter(o => !o.pickup && o.status !== 'cancelled');
+
+    if (!deliveryOrders.length) {
+        showToast('No delivery orders to export');
+        return;
+    }
+
+    const headers = ['Order ID', 'First Name', 'Last Name', 'Email', 'Address', 'Items', 'Total', 'Status', 'Date'];
+
+    const rows = deliveryOrders.map(o => [
+        o.id,
+        o.fname || '',
+        o.lname || '',
+        o.email || '',
+        (o.address || '').replace(/,/g, ' '),   // avoid comma clash in CSV
+        (o.items  || '').replace(/,/g, ' '),
+        '£' + parseFloat(o.total).toFixed(2),
+        o.status,
+        o.date || ''
+    ]);
+
+    const csvContent = [headers, ...rows]
+        .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href     = url;
+    link.download = `homegrown-deliveries-${new Date().toLocaleDateString('en-GB').replace(/\//g, '-')}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    showToast(`✓ Exported ${deliveryOrders.length} orders to CSV`);
 }
 
 function renderIngredients() {
