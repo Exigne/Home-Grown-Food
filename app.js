@@ -112,6 +112,11 @@ function showView(v, e) {
         if (btn.classList.contains('nav-btn')) btn.classList.add('active');
     }
 
+    // Always re-render shop with latest in-memory product data when navigating to it
+    if (v === 'shop' && products.length) {
+        renderShop();
+    }
+
     if (v === 'admin') {
         if (adminToken) {
             document.getElementById('admin-login-screen').style.display = 'none';
@@ -772,6 +777,8 @@ async function saveProductFromModal() {
         showToast(id ? '✓ Product updated!' : '✓ Product added!');
         closeProductModal();
         await loadAdminData();
+        // Re-render shop immediately so price/stock changes are visible
+        renderShop();
     } catch (err) {
         console.error('Save Product Error:', err);
         showToast('Save failed: ' + err.message);
