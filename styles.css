@@ -134,20 +134,19 @@ input, select, textarea { font-family: var(--font-body); }
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease;
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
   box-shadow: 6px 6px 0px var(--green-dark);
-  position: relative;
 }
 .product-card:hover {
-  transform: translate(-4px, -4px);
-  box-shadow: 10px 10px 0px var(--green-dark);
+  transform: translate(-3px, -3px);
+  box-shadow: 9px 9px 0px var(--green-dark);
 }
 .product-card.out-of-stock {
-  opacity: 0.65;
+  opacity: 0.5;
   pointer-events: none;
 }
 .product-card.out-of-stock .product-img {
-  filter: grayscale(1) opacity(0.8);
+  filter: grayscale(1);
 }
 
 /* ── IMAGE AREA ── */
@@ -157,146 +156,110 @@ input, select, textarea { font-family: var(--font-body); }
   align-items: center;
   justify-content: center;
   position: relative;
-  background: radial-gradient(circle, var(--yellow-pale) 0%, var(--yellow-soft) 100%);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   flex-shrink: 0;
   border-bottom: 3px solid var(--green-dark);
-  overflow: hidden;
 }
-
-/* ── UPLOADED IMAGES ── */
-/* This is the fix: actual <img> tags now fill the image area properly */
-.product-img img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-  display: block;
-  transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-.product-card:hover .product-img img {
-  transform: scale(1.08);
-}
-
-/* ── EMOJI FALLBACK ── */
 .product-emoji {
-  font-size: 6.5rem;
+  font-size: 6rem;
   line-height: 1;
-  transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  filter: drop-shadow(0 8px 16px rgba(22,74,46,0.15));
-  position: relative;
-  z-index: 1;
+  filter: drop-shadow(0 6px 12px rgba(0,0,0,0.15));
 }
-.product-card:hover .product-emoji {
-  transform: scale(1.15) rotate(5deg);
-}
-
 .product-badge {
   position: absolute;
-  top: 16px; left: 16px;
+  top: 14px; left: 14px;
   background: var(--yellow);
   color: var(--green-dark);
-  font-size: 0.75rem; 
-  font-weight: 800;
-  letter-spacing: 0.08em; 
-  text-transform: uppercase;
-  padding: 6px 16px;
+  font-size: 0.72rem; font-weight: 800;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 6px 14px;
   border-radius: 999px;
   border: 2px solid var(--green-dark);
-  box-shadow: 2px 2px 0px var(--green-dark);
-  z-index: 2;
 }
 .product-sold-out-overlay {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(14,48,25,0.7);
+  background: rgba(14,48,25,0.55);
   color: var(--yellow);
   font-family: var(--font-brand);
-  font-size: 2.2rem;
+  font-size: 2rem;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
-  backdrop-filter: blur(2px);
-  z-index: 3;
 }
 
 /* ── CARD BODY ── */
 .product-body {
-  padding: 1.5rem 1.6rem;
+  padding: 1.4rem 1.6rem 1.2rem;
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   background: var(--white);
 }
 .product-name {
   font-family: var(--font-brand);
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   color: var(--green-dark);
   line-height: 1.2;
 }
 .product-desc {
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   color: var(--text-muted);
-  line-height: 1.6;
+  line-height: 1.8;
   font-weight: 600;
 }
 
-/* ── CARD FOOTER ── */
+/* ── CARD FOOTER — dark green band ── */
 .product-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 1.25rem 1.6rem;
+  padding: 1rem 1.6rem;
   background: var(--green-dark);
   border-top: 3px solid var(--green-dark);
   flex-shrink: 0;
 }
 .product-price {
   font-family: var(--font-brand);
-  font-size: 2rem;
+  font-size: 1.9rem;
   color: var(--yellow);
   line-height: 1;
 }
-
 .add-btn {
   background: var(--yellow);
   color: var(--green-dark);
   border: 2px solid var(--yellow);
-  border-radius: 12px;
-  padding: 12px 24px;
+  border-radius: 8px;
+  padding: 10px 22px;
   font-family: var(--font-brand);
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-weight: 400;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.18s;
   white-space: nowrap;
   letter-spacing: 0.02em;
-  box-shadow: 0 4px 0px var(--yellow-deep);
 }
-.add-btn:hover { 
-  background: var(--yellow);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 0px var(--yellow-deep);
+.add-btn:hover  { background: var(--yellow-deep); border-color: var(--yellow-deep); transform: scale(1.04); }
+.add-btn:active { transform: scale(0.97); }
+.add-btn.added  { background: var(--green-leaf); border-color: var(--green-leaf); color: var(--green-dark); }
+.add-btn:disabled { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.2); color: rgba(255,255,255,0.5); cursor: not-allowed; transform: none; }
+
+/* ── PRODUCT DETAIL MODAL ── */
+.product-detail-modal {
+  width: 500px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* outer container clips, inner sections scroll */
 }
-.add-btn:active { 
-  transform: translateY(4px); 
-  box-shadow: 0 0px 0px var(--yellow-deep);
-}
-.add-btn.added { 
-  background: var(--green-leaf); 
-  border-color: var(--green-leaf); 
-  color: var(--green-dark);
-  box-shadow: 0 4px 0px var(--green-mid);
-}
-.add-btn:disabled { 
-  background: rgba(255,255,255,0.15); 
-  border-color: transparent; 
-  color: rgba(255,255,255,0.5); 
-  cursor: not-allowed; 
-  transform: none; 
-  box-shadow: none;
+.product-detail-modal .modal-body {
+  flex: 1;
+  min-height: 0; /* allows flex children to scroll */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── CLOUDINARY UPLOAD AREA ── */
@@ -875,6 +838,6 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
   .form-row { grid-template-columns: 1fr; }
   .product-mgmt-grid { grid-template-columns: 1fr; }
   .pmc-grid { grid-template-columns: 1fr; }
-  .stats-grid { grid-template-columns: 1fr 2fr; }
+  .stats-grid { grid-template-columns: 1fr 1fr; }
   .modal { width: 100% !important; border-radius: var(--radius-lg); }
 }
