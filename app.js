@@ -1140,7 +1140,7 @@ We'll be in touch if anything changes.`
             color: '#0D47A1',
             html: `<strong>Delivery Details</strong><br>
 Your order will be delivered on:<br>
-📅 <strong>Thursday ${thursday}</strong><br>
+📅 <strong>${thursday}</strong><br>
 🕕 Between <strong>6pm and 8pm</strong><br><br>
 Please make sure someone is home to receive it.`
         };
