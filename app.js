@@ -1127,7 +1127,7 @@ function getFulfilmentMessage(isPickup) {
             color: '#1B5E20',
             html: `<strong>Collection Details</strong><br>
 Your order will be ready for collection on:<br>
-📅 <strong>Friday ${friday}</strong> or <strong>Saturday ${saturday}</strong><br>
+📅 <strong>${friday}</strong> or <strong>${saturday}</strong><br>
 🕙 Between <strong>10am and 1pm</strong><br><br>
 We'll be in touch if anything changes.`
         };
