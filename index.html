@@ -347,22 +347,25 @@
 
 <!-- ══ PRODUCT DETAIL MODAL ══ -->
 <div class="modal-overlay" id="product-modal" onclick="closeProductDetailOnOverlay(event)">
-  <div class="modal" style="width:480px; overflow:hidden;">
+  <div class="modal product-detail-modal">
     <div class="modal-head">
       <h2 id="pm-name">Product Name</h2>
       <button class="close-btn" onclick="closeProductDetail()">✕</button>
     </div>
-    <div class="modal-body" style="padding:0;">
-      <div id="pm-img-container" style="height:260px; display:flex; align-items:center; justify-content:center; font-size:6rem; background-size:cover; background-position:center; border-bottom:2px solid var(--border);">
+    <div class="modal-body" style="padding:0; display:flex; flex-direction:column;">
+      <div id="pm-img-container" style="height:200px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:6rem; background-size:cover; background-position:center; border-bottom:3px solid var(--green-dark);">
         <span id="pm-emoji"></span>
       </div>
-      <div style="padding:1.5rem 2rem 2rem;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-          <h3 style="font-family:var(--font-brand); color:var(--green-dark); font-size:1.8rem;" id="pm-price">£0.00</h3>
+      <div style="padding:1.25rem 1.75rem 1.5rem; flex:1; overflow-y:auto;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+          <h3 style="font-family:var(--font-brand); color:var(--yellow); font-size:2rem; background:var(--green-dark); padding:6px 16px; border-radius:var(--radius);" id="pm-price">£0.00</h3>
           <span id="pm-badge" class="product-badge" style="position:static; display:none;"></span>
         </div>
-        <p id="pm-desc" style="color:var(--text-muted); line-height:1.6; font-size:1rem; font-weight:600; margin-bottom:2rem;"></p>
-        <button class="pay-btn" id="pm-add-btn" style="width:100%; margin-top:0;">Add to Basket</button>
+        <p id="pm-desc" style="color:var(--text-muted); line-height:1.75; font-size:0.95rem; font-weight:600;"></p>
+      </div>
+      <!-- Sticky footer so button is always visible -->
+      <div style="padding:1rem 1.75rem; border-top:3px solid var(--green-dark); background:var(--green-dark); flex-shrink:0;">
+        <button class="pay-btn" id="pm-add-btn" style="width:100%; margin-top:0; background:var(--yellow); color:var(--green-dark); border-color:var(--yellow);">+ Add to Basket</button>
       </div>
     </div>
   </div>
