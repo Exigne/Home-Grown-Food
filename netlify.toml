@@ -1,34 +1,44 @@
-# ─── NETLIFY CACHE CONTROL ────────────────────────────────────────────────────
+[build]
+  functions = "functions"
 
-# HTML — never cache so deploys show immediately
-[[headers]]
-  for = "/*.html"
-  [headers.values]
-    Cache-Control = "no-cache, no-store, must-revalidate"
+# ─── REDIRECTS ────────────────────────────────────────────────────────────────
+# Products uses its own separate function
+[[redirects]]
+  from = "/api/products"
+  to = "/.netlify/functions/products"
+  status = 200
 
+# Everything else routes through the main server function
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/server/api/:splat"
+  status = 200
+
+# ─── CACHE HEADERS ────────────────────────────────────────────────────────────
+# HTML — never cache so deploys are visible immediately without a private window
 [[headers]]
   for = "/"
   [headers.values]
     Cache-Control = "no-cache, no-store, must-revalidate"
 
-# Static JS files only (not API functions)
 [[headers]]
-  for = "/app.js"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
-
-[[headers]]
-  for = "/styles.css"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
-
-# Netlify functions — never cache API responses
-[[headers]]
-  for = "/.netlify/functions/*"
+  for = "/*.html"
   [headers.values]
     Cache-Control = "no-cache, no-store, must-revalidate"
 
+# CSS & JS — long cache, safe because index.html uses ?v=N to bust on deploy
 [[headers]]
-  for = "/api/*"
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Netlify functions — always fresh, never cached
+[[headers]]
+  for = "/.netlify/functions/*"
   [headers.values]
     Cache-Control = "no-cache, no-store, must-revalidate"
