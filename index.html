@@ -148,10 +148,15 @@
 
       <!-- SHIPPING -->
       <section class="admin-section" id="section-shipping">
-        <h1 class="admin-heading">Shipping</h1>
-        <p class="admin-sub">Track and dispatch active shipments.</p>
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; margin-bottom:0.3rem;">
+          <h1 class="admin-heading" style="margin:0;">Shipping</h1>
+          <button class="action-btn primary" onclick="exportShippingCSV()" style="padding:10px 20px; font-size:0.88rem;">
+            ⬇️ Export to CSV
+          </button>
+        </div>
+        <p class="admin-sub">Delivery orders only — home pickups are excluded. Check the box when an order has been delivered.</p>
         <div id="shipping-cards">
-          <p style="color:var(--text-muted); font-weight:600;">No active shipments. Orders in Processing or Shipped status appear here.</p>
+          <p style="color:var(--text-muted); font-weight:600;">No delivery orders yet.</p>
         </div>
       </section>
 
