@@ -12,10 +12,13 @@ exports.handler = async (event, context) => {
   context.callbackWaitsForEmptyEventLoop = false;
 
   const headers = {
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin':  '*',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Cache-Control': 'public, max-age=300, stale-while-revalidate=86400'
+    // No CDN caching — always fetch fresh from DB so admin price/stock
+    // changes appear in the shop immediately without needing a hard refresh.
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma':        'no-cache'
   };
 
   if (event.httpMethod === 'OPTIONS') {
