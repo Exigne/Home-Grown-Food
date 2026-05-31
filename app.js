@@ -836,7 +836,7 @@ function updateCheckoutTotals() {
 
         if (!hasCity && !hasPostcode) {
             shipping          = 0;
-            shippingLabel     = 'Delivery (enter your city and postcode above)';
+            shippingLabel     = 'Delivery (enter your city and postcode below)';
             btn.disabled      = false;
             msgEl.textContent = '';
         } else if (isSheffieldDelivery()) {
