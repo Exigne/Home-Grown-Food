@@ -27,7 +27,7 @@ const DEMO_PRODUCTS = [
 
 // --- CACHE HELPERS ---
 const CACHE_KEY     = 'hg_products_cache';
-const CACHE_MAX_AGE = 1000 * 60 * 60 * 24; // 24 hours
+const CACHE_MAX_AGE = 1000 * 60 * 5; // 5 minutes
 
 function getCachedProducts() {
     try {
@@ -530,8 +530,8 @@ let productStockPollTimer = null;
 // 1. Sign up free at https://cloudinary.com
 // 2. Go to Settings → Upload → Add upload preset, set to "Unsigned"
 // 3. Replace the two values below with your Cloud Name and Preset Name
-const CLOUDINARY_CLOUD_NAME   = 'dyitrwe5h';
-const CLOUDINARY_UPLOAD_PRESET = 'homegrownfoods';
+const CLOUDINARY_CLOUD_NAME   = 'YOUR_CLOUD_NAME';
+const CLOUDINARY_UPLOAD_PRESET = 'YOUR_UPLOAD_PRESET';
 
 function updateImagePreview(url) {
     const preview    = document.getElementById('pem-img-preview');
@@ -836,7 +836,7 @@ function updateCheckoutTotals() {
 
         if (!hasCity && !hasPostcode) {
             shipping          = 0;
-            shippingLabel     = 'Delivery (enter your city and postcode below)';
+            shippingLabel     = 'Delivery (enter your city and postcode above)';
             btn.disabled      = false;
             msgEl.textContent = '';
         } else if (isSheffieldDelivery()) {
