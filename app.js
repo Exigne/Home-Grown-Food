@@ -1098,6 +1098,48 @@ async function applyPromo() {
     }
 }
 
+// ─── FULFILMENT DATE HELPERS ──────────────────────────────────────────────────
+// Returns the next occurrence of a weekday (0=Sun…6=Sat) at least minDays ahead
+function nextWeekday(targetDay, minDaysAhead = 1) {
+    const today = new Date();
+    let daysUntil = targetDay - today.getDay();
+    if (daysUntil <= minDaysAhead) daysUntil += 7;
+    const d = new Date(today);
+    d.setDate(today.getDate() + daysUntil);
+    return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+function getFulfilmentMessage(isPickup) {
+    if (isPickup) {
+        const friday   = nextWeekday(5, 1); // next Friday
+        const saturday = nextWeekday(6, 1); // next Saturday
+        return {
+            icon: '🏠',
+            bg:   '#E8F5E9',
+            border: '#A5D6A7',
+            color: '#1B5E20',
+            html: `<strong>Collection Details</strong><br>
+Your order will be ready for collection on:<br>
+📅 <strong>Friday ${friday}</strong> or <strong>Saturday ${saturday}</strong><br>
+🕙 Between <strong>10am and 1pm</strong><br><br>
+We'll be in touch if anything changes.`
+        };
+    } else {
+        const thursday = nextWeekday(4, 1); // next Thursday
+        return {
+            icon: '🚚',
+            bg:   '#E3F2FD',
+            border: '#90CAF9',
+            color: '#0D47A1',
+            html: `<strong>Delivery Details</strong><br>
+Your order will be delivered on:<br>
+📅 <strong>Thursday ${thursday}</strong><br>
+🕕 Between <strong>6pm and 8pm</strong><br><br>
+Please make sure someone is home to receive it.`
+        };
+    }
+}
+
 // ─── PROCESS PAYMENT ──────────────────────────────────────────────────────────
 async function processPayment() {
     const fields = [
@@ -1220,6 +1262,17 @@ async function processPayment() {
         await sendConfirmationEmail(orderPayload, customer, total);
 
         document.getElementById('success-order-num').textContent = 'Order Reference: ' + oid;
+
+        // Show collection or delivery details
+        const msg    = getFulfilmentMessage(isPickup);
+        const msgEl  = document.getElementById('success-fulfilment-msg');
+        if (msgEl) {
+            msgEl.style.background   = msg.bg;
+            msgEl.style.border       = `2px solid ${msg.border}`;
+            msgEl.style.color        = msg.color;
+            msgEl.innerHTML          = msg.html;
+        }
+
         document.getElementById('checkout-content').style.display = 'none';
         document.getElementById('success-content').style.display  = 'block';
         cart         = [];
