@@ -676,8 +676,8 @@ let productStockPollTimer = null;
 // 1. Sign up free at https://cloudinary.com
 // 2. Go to Settings → Upload → Add upload preset, set to "Unsigned"
 // 3. Replace the two values below with your Cloud Name and Preset Name
-const CLOUDINARY_CLOUD_NAME   = 'YOUR_CLOUD_NAME';
-const CLOUDINARY_UPLOAD_PRESET = 'YOUR_UPLOAD_PRESET';
+const CLOUDINARY_CLOUD_NAME   = 'dyitrwe5h';
+const CLOUDINARY_UPLOAD_PRESET = 'homegrownfoods';
 
 function updateImagePreview(url) {
     const preview    = document.getElementById('pem-img-preview');
