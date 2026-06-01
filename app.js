@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════
-//  HOME GROWN — app.js  (v6 — payment recovery fix)
+//  HOME GROWN — app.js  (v5 — fully fixed)
 // ═══════════════════════════════════════════════
 
 // --- CONFIGURATION & STATE ---
@@ -16,41 +16,6 @@ let cardElement = null;
 
 // Promo state
 let appliedPromo = null; // { code, discount } or null
-
-// ── Pending-order recovery (payment succeeded but server failed to save) ──
-function getPendingOrders() {
-    try { return JSON.parse(localStorage.getItem('hg_pending_orders') || '[]'); }
-    catch (e) { return []; }
-}
-function savePendingOrder(order) {
-    const pending = getPendingOrders();
-    pending.push(order);
-    localStorage.setItem('hg_pending_orders', JSON.stringify(pending));
-}
-async function retryPendingOrders() {
-    const pending = getPendingOrders();
-    if (!pending.length) return;
-    const stillPending = [];
-    for (const order of pending) {
-        try {
-            const res = await fetch(`${API_BASE}/orders`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(order)
-            });
-            if (res.ok) {
-                console.info('Recovered pending order:', order.id);
-                continue; // successfully saved, drop from queue
-            }
-            stillPending.push(order);
-        } catch (e) {
-            stillPending.push(order);
-        }
-    }
-    if (stillPending.length !== pending.length) {
-        localStorage.setItem('hg_pending_orders', JSON.stringify(stillPending));
-    }
-}
 
 // --- DEMO FALLBACK DATA ---
 const DEMO_PRODUCTS = [
@@ -132,9 +97,6 @@ async function initApp() {
             renderShop();
         }
     }
-
-    // 4. Silently retry any orders that were saved locally but failed to reach the server
-    await retryPendingOrders();
 
     updateCartUI();
 }
@@ -495,42 +457,49 @@ async function markDelivered(id, checkbox) {
 
 // ─── EXPORT SHIPPING CSV ──────────────────────────────────────────────────────
 function exportShippingCSV() {
-    const deliveryOrders = orders.filter(o => !o.pickup && o.status !== 'cancelled');
+    // Handle pickup stored as boolean true/false OR string "true"/"false" from DB
+    const deliveryOrders = orders.filter(o => {
+        const isPickup = o.pickup === true || o.pickup === 'true';
+        return !isPickup && o.status !== 'cancelled';
+    });
 
     if (!deliveryOrders.length) {
         showToast('No delivery orders to export');
         return;
     }
 
-    const headers = ['Order ID', 'First Name', 'Last Name', 'Email', 'Address', 'Items', 'Total', 'Status', 'Date'];
+    const csvHeaders = ['Order ID', 'First Name', 'Last Name', 'Email', 'Address', 'Items', 'Total', 'Status', 'Date'];
 
-    const rows = deliveryOrders.map(o => [
-        o.id,
+    const csvRows = deliveryOrders.map(o => [
+        o.id    || '',
         o.fname || '',
         o.lname || '',
         o.email || '',
-        (o.address || '').replace(/,/g, ' '),   // avoid comma clash in CSV
-        (o.items  || '').replace(/,/g, ' '),
-        '£' + parseFloat(o.total).toFixed(2),
-        o.status,
-        o.date || ''
-    ]);
+        o.address || '',
+        o.items   || '',
+        '£' + parseFloat(o.total || 0).toFixed(2),
+        o.status || '',
+        o.date   || ''
+    ].map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','));
 
-    const csvContent = [headers, ...rows]
-        .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-        .join('\n');
+    const csvContent = [
+        csvHeaders.map(h => `"${h}"`).join(','),
+        ...csvRows
+    ].join('\n');
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url  = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href     = url;
-    link.download = `homegrown-deliveries-${new Date().toLocaleDateString('en-GB').replace(/\//g, '-')}.csv`;
+    const filename = `homegrown-deliveries-${new Date().toLocaleDateString('en-GB').replace(/\//g, '-')}.csv`;
+
+    // Use data URI — more compatible across browsers than Blob + createObjectURL
+    const dataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent);
+    const link    = document.createElement('a');
+    link.setAttribute('href',     dataUri);
+    link.setAttribute('download', filename);
+    link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
 
-    showToast(`✓ Exported ${deliveryOrders.length} orders to CSV`);
+    showToast(`✓ Exported ${deliveryOrders.length} order${deliveryOrders.length !== 1 ? 's' : ''} to CSV`);
 }
 
 function renderIngredients() {
@@ -676,7 +645,7 @@ let productStockPollTimer = null;
 // 1. Sign up free at https://cloudinary.com
 // 2. Go to Settings → Upload → Add upload preset, set to "Unsigned"
 // 3. Replace the two values below with your Cloud Name and Preset Name
-const CLOUDINARY_CLOUD_NAME   = 'dyitrwe5h';
+const CLOUDINARY_CLOUD_NAME    = 'dyitrwe5h';
 const CLOUDINARY_UPLOAD_PRESET = 'homegrownfoods';
 
 function updateImagePreview(url) {
@@ -1144,39 +1113,60 @@ async function applyPromo() {
 }
 
 // ─── FULFILMENT DATE HELPERS ──────────────────────────────────────────────────
-// Returns the next occurrence of a weekday (0=Sun…6=Sat) at least minDays ahead
-function nextWeekday(targetDay, minDaysAhead = 1) {
-    const today = new Date();
-    let daysUntil = targetDay - today.getDay();
-    if (daysUntil <= minDaysAhead) daysUntil += 7;
-    const d = new Date(today);
-    d.setDate(today.getDate() + daysUntil);
+// Returns the date of the next slot, respecting the Wed / Thu-before-10am cutoff:
+// - Orders placed Wednesday (any time) → can use this week's Thu/Fri/Sat slots
+// - Orders placed Thursday before 10am → can still use Thu delivery + Fri/Sat collection this week
+// - Everything else → next week's slots
+function nextSlotDate(targetDay) {
+    const now         = new Date();
+    const currentDay  = now.getDay();   // 0=Sun … 6=Sat
+    const currentHour = now.getHours();
+
+    // Is the order early enough to use this week?
+    const isWednesday          = currentDay === 3;
+    const isThursdayBeforeCutoff = currentDay === 4 && currentHour < 10;
+    const canUseThisWeek       = isWednesday || isThursdayBeforeCutoff;
+
+    let daysUntil = targetDay - currentDay;
+
+    if (canUseThisWeek && daysUntil >= 0) {
+        // This week's slot is still ahead (or today for same-day Thursday delivery)
+        // daysUntil is correct as-is
+    } else {
+        // Push to next occurrence of this weekday
+        if (daysUntil <= 0) daysUntil += 7;
+        // Thursday after cutoff ordering Thursday delivery → force next week
+        if (!canUseThisWeek && currentDay === 4 && targetDay === 4) daysUntil = 7;
+    }
+
+    const d = new Date(now);
+    d.setDate(now.getDate() + daysUntil);
     return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
 function getFulfilmentMessage(isPickup) {
     if (isPickup) {
-        const friday   = nextWeekday(5, 1); // next Friday
-        const saturday = nextWeekday(6, 1); // next Saturday
+        const friday   = nextSlotDate(5); // Friday collection
+        const saturday = nextSlotDate(6); // Saturday collection
         return {
-            icon: '🏠',
-            bg:   '#E8F5E9',
+            icon:   '🏠',
+            bg:     '#E8F5E9',
             border: '#A5D6A7',
-            color: '#1B5E20',
-            html: `<strong>Collection Details</strong><br>
+            color:  '#1B5E20',
+            html:   `<strong>Collection Details</strong><br>
 Your order will be ready for collection on:<br>
 📅 <strong>${friday}</strong> or <strong>${saturday}</strong><br>
 🕙 Between <strong>10am and 1pm</strong><br><br>
 We'll be in touch if anything changes.`
         };
     } else {
-        const thursday = nextWeekday(4, 1); // next Thursday
+        const thursday = nextSlotDate(4); // Thursday delivery
         return {
-            icon: '🚚',
-            bg:   '#E3F2FD',
+            icon:   '🚚',
+            bg:     '#E3F2FD',
             border: '#90CAF9',
-            color: '#0D47A1',
-            html: `<strong>Delivery Details</strong><br>
+            color:  '#0D47A1',
+            html:   `<strong>Delivery Details</strong><br>
 Your order will be delivered on:<br>
 📅 <strong>${thursday}</strong><br>
 🕕 Between <strong>6pm and 8pm</strong><br><br>
@@ -1227,10 +1217,9 @@ async function processPayment() {
     const oid            = 'HG-' + Date.now().toString().slice(-6);
     const secureCartItems = cart.map(i => ({ id: i.id, qty: i.qty }));
 
-    let paymentIntentId = null;
-
     try {
-        // ─── 1. STRIPE PAYMENT ───────────────────────────────────────────
+        let paymentIntentId = null;
+
         if (STRIPE_PUBLISHABLE_KEY && stripeInstance && cardElement) {
             const res = await fetch(`${API_BASE}/create-payment-intent`, {
                 method:  'POST',
@@ -1278,7 +1267,6 @@ async function processPayment() {
             await new Promise(r => setTimeout(r, 700));
         }
 
-        // ─── 2. BUILD ORDER PAYLOAD ────────────────────────────────────
         const orderPayload = {
             id:              oid,
             fname:           customer.fname,
@@ -1295,68 +1283,22 @@ async function processPayment() {
             promoCode:       appliedPromo ? appliedPromo.code : null
         };
 
-        // ─── 3. SAVE ORDER (with retries) ──────────────────────────────
-        let orderSaved = false;
-        let lastOrderError = null;
+        const orderRes = await fetch(`${API_BASE}/orders`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(orderPayload)
+        });
 
-        for (let attempt = 1; attempt <= 3; attempt++) {
-            try {
-                const orderRes = await fetch(`${API_BASE}/orders`, {
-                    method:  'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body:    JSON.stringify(orderPayload)
-                });
-
-                if (orderRes.ok) {
-                    orderSaved = true;
-                    break;
-                } else {
-                    const errData = await orderRes.json().catch(() => ({}));
-                    lastOrderError = errData.error || `Server returned ${orderRes.status}`;
-                    if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
-                }
-            } catch (networkErr) {
-                lastOrderError = networkErr.message;
-                if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
-            }
+        if (!orderRes.ok) {
+            const errData = await orderRes.json().catch(() => ({}));
+            throw new Error(errData.error || 'Order backend processing failed');
         }
 
-        // ─── 4. HANDLE OUTCOMES ────────────────────────────────────────
-        if (!orderSaved) {
-            // CRITICAL: Payment succeeded but order failed to persist
-            savePendingOrder({ ...orderPayload, _paymentIntentId: paymentIntentId, _savedAt: Date.now() });
-
-            // Show "success" screen with a prominent warning so the customer knows not to pay again
-            document.getElementById('success-order-num').textContent = 'Order Reference: ' + oid + ' (PENDING)';
-            const msgEl = document.getElementById('success-fulfilment-msg');
-            if (msgEl) {
-                msgEl.style.background   = '#FFF9C4';
-                msgEl.style.border       = '2px solid var(--warning)';
-                msgEl.style.color        = '#5C4A00';
-                msgEl.innerHTML          = `
-                    <strong>⚠️ Payment Received — Order Pending</strong><br><br>
-                    We successfully received your payment of <strong>£${total}</strong>, but we had a temporary problem saving your order details.<br><br>
-                    <strong>Your Order Reference:</strong> ${oid}<br>
-                    ${paymentIntentId ? `<strong>Payment ID:</strong> ${paymentIntentId}<br>` : ''}
-                    <strong>Email:</strong> ${customer.email}<br><br>
-                    Please contact us at <strong>hello@homegrown.co.uk</strong> with your Order Reference so we can process your order manually.<br><br>
-                    <strong>Do not attempt to pay again.</strong> Your payment has been received safely.`;
-            }
-
-            document.getElementById('checkout-content').style.display = 'none';
-            document.getElementById('success-content').style.display  = 'block';
-            cart         = [];
-            appliedPromo = null;
-            updateCartUI();
-            showToast('⚠️ Payment received — order pending verification');
-            return;
-        }
-
-        // ─── 5. FULL SUCCESS ───────────────────────────────────────────
         await sendConfirmationEmail(orderPayload, customer, total);
 
         document.getElementById('success-order-num').textContent = 'Order Reference: ' + oid;
 
+        // Show collection or delivery details
         const msg    = getFulfilmentMessage(isPickup);
         const msgEl  = document.getElementById('success-fulfilment-msg');
         if (msgEl) {
@@ -1374,8 +1316,6 @@ async function processPayment() {
         showToast('🎉 Order placed! Confirmation email sent.');
 
     } catch (e) {
-        // This catch block now only handles PAYMENT errors (or intent creation errors)
-        // Order-save failures are handled above without throwing
         document.getElementById('card-errors').textContent = e.message;
     } finally {
         btn.disabled  = false;
