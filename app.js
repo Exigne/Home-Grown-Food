@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════
-//  HOME GROWN — app.js  (v5 — fully fixed)
+//  HOME GROWN — app.js  (v6 — payment recovery fix)
 // ═══════════════════════════════════════════════
 
 // --- CONFIGURATION & STATE ---
@@ -16,6 +16,41 @@ let cardElement = null;
 
 // Promo state
 let appliedPromo = null; // { code, discount } or null
+
+// ── Pending-order recovery (payment succeeded but server failed to save) ──
+function getPendingOrders() {
+    try { return JSON.parse(localStorage.getItem('hg_pending_orders') || '[]'); }
+    catch (e) { return []; }
+}
+function savePendingOrder(order) {
+    const pending = getPendingOrders();
+    pending.push(order);
+    localStorage.setItem('hg_pending_orders', JSON.stringify(pending));
+}
+async function retryPendingOrders() {
+    const pending = getPendingOrders();
+    if (!pending.length) return;
+    const stillPending = [];
+    for (const order of pending) {
+        try {
+            const res = await fetch(`${API_BASE}/orders`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(order)
+            });
+            if (res.ok) {
+                console.info('Recovered pending order:', order.id);
+                continue; // successfully saved, drop from queue
+            }
+            stillPending.push(order);
+        } catch (e) {
+            stillPending.push(order);
+        }
+    }
+    if (stillPending.length !== pending.length) {
+        localStorage.setItem('hg_pending_orders', JSON.stringify(stillPending));
+    }
+}
 
 // --- DEMO FALLBACK DATA ---
 const DEMO_PRODUCTS = [
@@ -97,6 +132,9 @@ async function initApp() {
             renderShop();
         }
     }
+
+    // 4. Silently retry any orders that were saved locally but failed to reach the server
+    await retryPendingOrders();
 
     updateCartUI();
 }
@@ -1189,9 +1227,10 @@ async function processPayment() {
     const oid            = 'HG-' + Date.now().toString().slice(-6);
     const secureCartItems = cart.map(i => ({ id: i.id, qty: i.qty }));
 
-    try {
-        let paymentIntentId = null;
+    let paymentIntentId = null;
 
+    try {
+        // ─── 1. STRIPE PAYMENT ───────────────────────────────────────────
         if (STRIPE_PUBLISHABLE_KEY && stripeInstance && cardElement) {
             const res = await fetch(`${API_BASE}/create-payment-intent`, {
                 method:  'POST',
@@ -1239,6 +1278,7 @@ async function processPayment() {
             await new Promise(r => setTimeout(r, 700));
         }
 
+        // ─── 2. BUILD ORDER PAYLOAD ────────────────────────────────────
         const orderPayload = {
             id:              oid,
             fname:           customer.fname,
@@ -1255,22 +1295,68 @@ async function processPayment() {
             promoCode:       appliedPromo ? appliedPromo.code : null
         };
 
-        const orderRes = await fetch(`${API_BASE}/orders`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify(orderPayload)
-        });
+        // ─── 3. SAVE ORDER (with retries) ──────────────────────────────
+        let orderSaved = false;
+        let lastOrderError = null;
 
-        if (!orderRes.ok) {
-            const errData = await orderRes.json().catch(() => ({}));
-            throw new Error(errData.error || 'Order backend processing failed');
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                const orderRes = await fetch(`${API_BASE}/orders`, {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify(orderPayload)
+                });
+
+                if (orderRes.ok) {
+                    orderSaved = true;
+                    break;
+                } else {
+                    const errData = await orderRes.json().catch(() => ({}));
+                    lastOrderError = errData.error || `Server returned ${orderRes.status}`;
+                    if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
+                }
+            } catch (networkErr) {
+                lastOrderError = networkErr.message;
+                if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
+            }
         }
 
+        // ─── 4. HANDLE OUTCOMES ────────────────────────────────────────
+        if (!orderSaved) {
+            // CRITICAL: Payment succeeded but order failed to persist
+            savePendingOrder({ ...orderPayload, _paymentIntentId: paymentIntentId, _savedAt: Date.now() });
+
+            // Show "success" screen with a prominent warning so the customer knows not to pay again
+            document.getElementById('success-order-num').textContent = 'Order Reference: ' + oid + ' (PENDING)';
+            const msgEl = document.getElementById('success-fulfilment-msg');
+            if (msgEl) {
+                msgEl.style.background   = '#FFF9C4';
+                msgEl.style.border       = '2px solid var(--warning)';
+                msgEl.style.color        = '#5C4A00';
+                msgEl.innerHTML          = `
+                    <strong>⚠️ Payment Received — Order Pending</strong><br><br>
+                    We successfully received your payment of <strong>£${total}</strong>, but we had a temporary problem saving your order details.<br><br>
+                    <strong>Your Order Reference:</strong> ${oid}<br>
+                    ${paymentIntentId ? `<strong>Payment ID:</strong> ${paymentIntentId}<br>` : ''}
+                    <strong>Email:</strong> ${customer.email}<br><br>
+                    Please contact us at <strong>hello@homegrown.co.uk</strong> with your Order Reference so we can process your order manually.<br><br>
+                    <strong>Do not attempt to pay again.</strong> Your payment has been received safely.`;
+            }
+
+            document.getElementById('checkout-content').style.display = 'none';
+            document.getElementById('success-content').style.display  = 'block';
+            cart         = [];
+            appliedPromo = null;
+            updateCartUI();
+            showToast('⚠️ Payment received — order pending verification');
+            return;
+        }
+
+        // ─── 5. FULL SUCCESS ───────────────────────────────────────────
         await sendConfirmationEmail(orderPayload, customer, total);
 
         document.getElementById('success-order-num').textContent = 'Order Reference: ' + oid;
 
-        // Show collection or delivery details
         const msg    = getFulfilmentMessage(isPickup);
         const msgEl  = document.getElementById('success-fulfilment-msg');
         if (msgEl) {
@@ -1288,6 +1374,8 @@ async function processPayment() {
         showToast('🎉 Order placed! Confirmation email sent.');
 
     } catch (e) {
+        // This catch block now only handles PAYMENT errors (or intent creation errors)
+        // Order-save failures are handled above without throwing
         document.getElementById('card-errors').textContent = e.message;
     } finally {
         btn.disabled  = false;
