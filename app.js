@@ -209,14 +209,24 @@ function showAdminSection(s, el) {
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
-// Safely converts plain text with line breaks to HTML, preventing XSS
+// If text already contains HTML tags (from the rich text editor), render directly.
+// Otherwise treat as legacy plain text and convert \n → <br> safely.
 function formatDesc(text) {
     if (!text) return '';
+    if (/<[a-z][\s\S]*>/i.test(text)) return text; // already HTML
     return text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/\n/g, '<br>');
+}
+
+// ─── RICH TEXT EDITOR ─────────────────────────────────────────────────────────
+function rteCmd(cmd) {
+    const editor = document.getElementById('pem-desc');
+    if (!editor) return;
+    editor.focus();
+    document.execCommand(cmd, false, null);
 }
 
 // ─── RENDER SHOP ──────────────────────────────────────────────────────────────
@@ -226,7 +236,17 @@ function renderShop() {
         grid.innerHTML = '<p style="color:var(--text-muted); font-weight:700;">No products available.</p>';
         return;
     }
-    grid.innerHTML = products.map(p => {
+
+    // Always show in-stock products first, out-of-stock last
+    const sorted = [...products].sort((a, b) => {
+        const aOut = a.stock !== undefined && a.stock !== null && a.stock <= 0;
+        const bOut = b.stock !== undefined && b.stock !== null && b.stock <= 0;
+        if (aOut && !bOut) return 1;
+        if (!aOut && bOut) return -1;
+        return 0;
+    });
+
+    grid.innerHTML = sorted.map(p => {
         const outOfStock = (p.stock !== undefined && p.stock !== null && p.stock <= 0);
         const stockClass = outOfStock ? 'out-of-stock' : '';
 
@@ -722,7 +742,8 @@ function openProductModal(id) {
         document.getElementById('pem-emoji').value = p.emoji       || '';
         document.getElementById('pem-badge').value = p.badge       || '';
         document.getElementById('pem-image').value = p.image_url   || '';
-        document.getElementById('pem-desc').value  = p.description || '';
+        // Rich text editor uses innerHTML
+        document.getElementById('pem-desc').innerHTML = formatDesc(p.description || '');
         document.getElementById('pem-bg').value    = p.bg_color    || '#FFFBE8';
         document.getElementById('pem-stock').value = p.stock       ?? '';
         updateImagePreview(p.image_url || '');
@@ -733,7 +754,7 @@ function openProductModal(id) {
         document.getElementById('pem-emoji').value = '';
         document.getElementById('pem-badge').value = '';
         document.getElementById('pem-image').value = '';
-        document.getElementById('pem-desc').value  = '';
+        document.getElementById('pem-desc').innerHTML = '';
         document.getElementById('pem-bg').value    = '#FFFBE8';
         document.getElementById('pem-stock').value = '';
         updateImagePreview('');
@@ -757,7 +778,7 @@ async function saveProductFromModal() {
         emoji:       document.getElementById('pem-emoji').value,
         badge:       document.getElementById('pem-badge').value,
         image_url:   document.getElementById('pem-image').value,
-        description: document.getElementById('pem-desc').value,
+        description: document.getElementById('pem-desc').innerHTML.trim(),
         bg_color:    document.getElementById('pem-bg').value,
         stock:       parseInt(document.getElementById('pem-stock').value)     || 0
     };
@@ -947,6 +968,17 @@ function updateCheckoutTotals() {
         msgEl.style.color = 'var(--green-mid)';
         msgEl.textContent = '✓ Great! We\'ll have your order ready for collection.';
         if (errEl) errEl.textContent = '';
+
+        // Show collection date info
+        const msg = getFulfilmentMessage(true);
+        const infoEl = document.getElementById('checkout-fulfilment-info');
+        if (infoEl) {
+            infoEl.style.display     = 'block';
+            infoEl.style.background  = msg.bg;
+            infoEl.style.borderColor = msg.border;
+            infoEl.style.color       = msg.color;
+            infoEl.innerHTML         = msg.html;
+        }
     } else {
         const hasCity     = city.length > 0;
         const hasPostcode = postcode.length > 0;
@@ -956,6 +988,8 @@ function updateCheckoutTotals() {
             shippingLabel     = 'Delivery (enter your city and postcode above)';
             btn.disabled      = false;
             msgEl.textContent = '';
+            const infoEl = document.getElementById('checkout-fulfilment-info');
+            if (infoEl) infoEl.style.display = 'none';
         } else if (isSheffieldDelivery()) {
             shipping          = 3.00;
             shippingLabel     = '🚚 Sheffield Delivery (+£3.00)';
@@ -963,24 +997,41 @@ function updateCheckoutTotals() {
             msgEl.style.color = 'var(--green-mid)';
             msgEl.textContent = '✓ Great news — we deliver to your area!';
             if (errEl) errEl.textContent = '';
+
+            // Show delivery date info
+            const msg = getFulfilmentMessage(false);
+            const infoEl = document.getElementById('checkout-fulfilment-info');
+            if (infoEl) {
+                infoEl.style.display     = 'block';
+                infoEl.style.background  = msg.bg;
+                infoEl.style.borderColor = msg.border;
+                infoEl.style.color       = msg.color;
+                infoEl.innerHTML         = msg.html;
+            }
         } else if (postcode.startsWith('S') && hasCity && city !== 'sheffield') {
             shipping          = 0;
             shippingLabel     = '<span style="color:var(--danger);">Delivery unavailable</span>';
             btn.disabled      = true;
             msgEl.style.color = 'var(--danger)';
             msgEl.textContent = '✗ Sorry, we only deliver within Sheffield. Your city must be Sheffield to qualify.';
+            const infoEl = document.getElementById('checkout-fulfilment-info');
+            if (infoEl) infoEl.style.display = 'none';
         } else if (city === 'sheffield' && hasPostcode && !postcode.startsWith('S')) {
             shipping          = 0;
             shippingLabel     = '<span style="color:var(--danger);">Delivery unavailable</span>';
             btn.disabled      = true;
             msgEl.style.color = 'var(--danger)';
             msgEl.textContent = '✗ That postcode doesn\'t look like a Sheffield postcode (should start with S).';
+            const infoEl2 = document.getElementById('checkout-fulfilment-info');
+            if (infoEl2) infoEl2.style.display = 'none';
         } else {
             shipping          = 0;
             shippingLabel     = '<span style="color:var(--danger);">Delivery unavailable</span>';
             btn.disabled      = true;
             msgEl.style.color = 'var(--danger)';
             msgEl.textContent = '✗ Sorry, we only deliver to Sheffield. Please select Home Pickup instead.';
+            const infoEl3 = document.getElementById('checkout-fulfilment-info');
+            if (infoEl3) infoEl3.style.display = 'none';
         }
     }
 
@@ -1028,6 +1079,10 @@ function openCheckout() {
     // Reset pickup checkbox
     const pickupCheck = document.getElementById('pickup-check');
     if (pickupCheck) pickupCheck.checked = false;
+
+    // Hide fulfilment info until user picks delivery/pickup option
+    const infoEl = document.getElementById('checkout-fulfilment-info');
+    if (infoEl) infoEl.style.display = 'none';
 
     document.getElementById('checkout-content').style.display = 'block';
     document.getElementById('success-content').style.display  = 'none';
