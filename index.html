@@ -13,7 +13,6 @@
 </head>
 <body>
 
-<!-- TOP NAV -->
 <nav class="topbar">
   <a class="brand" href="#" onclick="showView('shop',event); return false;">
     <svg class="brand-logo" viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -39,7 +38,6 @@
   </button>
 </nav>
 
-<!-- ══ SHOP ══ -->
 <div class="view active" id="view-shop">
   <div class="shop-hero">
     <svg class="hero-leaves" viewBox="0 0 1200 320" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
@@ -59,10 +57,8 @@
   </div>
 </div>
 
-<!-- ══ ADMIN ══ -->
 <div class="view" id="view-admin">
 
-  <!-- Login Screen -->
   <div id="admin-login-screen" class="admin-login-screen">
     <div class="login-card">
       <h2>🌿 Admin Access</h2>
@@ -79,7 +75,6 @@
     </div>
   </div>
 
-  <!-- Admin Panel -->
   <div class="admin-layout" id="admin-layout" style="display:none;">
     <aside class="admin-sidebar">
       <div class="sidebar-brand">
@@ -100,7 +95,6 @@
 
     <main class="admin-content">
 
-      <!-- DASHBOARD -->
       <section class="admin-section active" id="section-dashboard">
         <h1 class="admin-heading">Dashboard</h1>
         <p class="admin-sub">Here's what's growing with your business today.</p>
@@ -121,7 +115,6 @@
         </div>
       </section>
 
-      <!-- ORDERS -->
       <section class="admin-section" id="section-orders">
         <h1 class="admin-heading">Orders</h1>
         <p class="admin-sub">Manage and process customer orders.</p>
@@ -146,7 +139,6 @@
         </div>
       </section>
 
-      <!-- SHIPPING -->
       <section class="admin-section" id="section-shipping">
         <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem; margin-bottom:0.3rem;">
           <h1 class="admin-heading" style="margin:0;">Shipping</h1>
@@ -160,7 +152,6 @@
         </div>
       </section>
 
-      <!-- INGREDIENTS -->
       <section class="admin-section" id="section-ingredients">
         <h1 class="admin-heading">Ingredients</h1>
         <p class="admin-sub">Monitor and restock your ingredient inventory.</p>
@@ -187,7 +178,6 @@
         </div>
       </section>
 
-      <!-- PAYMENTS -->
       <section class="admin-section" id="section-payments">
         <h1 class="admin-heading">Payments</h1>
         <p class="admin-sub">Revenue overview and Stripe transaction history.</p>
@@ -212,7 +202,6 @@
         </div>
       </section>
 
-      <!-- PRODUCTS -->
       <section class="admin-section" id="section-products">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.3rem; flex-wrap:wrap; gap:1rem;">
           <h1 class="admin-heading" style="margin:0;">Products</h1>
@@ -226,7 +215,6 @@
         </div>
       </section>
 
-      <!-- PROMO CODES -->
       <section class="admin-section" id="section-promos">
         <h1 class="admin-heading">Promo Codes</h1>
         <p class="admin-sub">Create and manage discount codes.</p>
@@ -255,7 +243,6 @@
   </div>
 </div>
 
-<!-- ══ CART DRAWER ══ -->
 <div class="cart-overlay" id="cart-overlay" onclick="closeCartOnOverlay(event)">
   <div class="cart-drawer">
     <div class="cart-header">
@@ -275,7 +262,6 @@
   </div>
 </div>
 
-<!-- ══ CHECKOUT MODAL ══ -->
 <div class="modal-overlay" id="checkout-modal">
   <div class="modal">
     <div class="modal-head">
@@ -306,7 +292,6 @@
           <div class="form-group"><label>Postcode</label><input type="text" id="ch-postcode" placeholder="S1 2AB" autocomplete="postal-code" oninput="updateCheckoutTotals()"></div>
         </div>
 
-        <!-- DELIVERY / PICKUP CHOICE -->
         <div class="pickup-option" onclick="document.getElementById('pickup-check').click()">
           <input type="checkbox" id="pickup-check" onclick="event.stopPropagation(); updateCheckoutTotals()">
           <label for="pickup-check">
@@ -315,10 +300,8 @@
         </div>
         <div id="delivery-message" style="font-weight:700; font-size:0.88rem; margin-bottom:0.5rem; min-height:1.4rem; color:var(--green-mid);"></div>
 
-        <!-- Live fulfilment date info shown while customer fills in form -->
         <div id="checkout-fulfilment-info" style="display:none; margin-bottom:1rem; padding:0.85rem 1rem; border-radius:var(--radius); font-size:0.88rem; font-weight:700; line-height:1.6; border-width:2px; border-style:solid;"></div>
 
-        <!-- PROMO CODE -->
         <div class="promo-section" style="margin:1rem 0; padding:1rem; background:#f8f9fa; border-radius:var(--radius); border:2px solid var(--border);">
           <label style="font-size:0.78rem; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:var(--green-mid); display:block; margin-bottom:8px;">Promo Code</label>
           <div style="display:flex; gap:8px; align-items:center;">
@@ -363,7 +346,6 @@
   </div>
 </div>
 
-<!-- ══ PRODUCT DETAIL MODAL ══ -->
 <div class="modal-overlay" id="product-modal" onclick="closeProductDetailOnOverlay(event)">
   <div class="modal product-detail-modal">
     <div class="modal-head">
@@ -381,7 +363,6 @@
         </div>
         <p id="pm-desc" style="color:var(--text-muted); line-height:1.75; font-size:0.95rem; font-weight:600;"></p>
       </div>
-      <!-- Sticky footer so button is always visible -->
       <div style="padding:1rem 1.75rem; border-top:3px solid var(--green-dark); background:var(--green-dark); flex-shrink:0;">
         <button class="pay-btn" id="pm-add-btn" style="width:100%; margin-top:0; background:var(--yellow); color:var(--green-dark); border-color:var(--yellow);">+ Add to Basket</button>
       </div>
@@ -389,7 +370,6 @@
   </div>
 </div>
 
-<!-- ══ PRODUCT ADD / EDIT MODAL ══ -->
 <div class="modal-overlay" id="product-edit-modal" onclick="if(event.target.id==='product-edit-modal') closeProductModal()">
   <div class="modal" style="width:580px;">
     <div class="modal-head">
@@ -399,26 +379,21 @@
     <div class="modal-body">
       <input type="hidden" id="pem-id">
 
-      <!-- IMAGE UPLOAD -->
       <div class="form-group">
         <label>Product Photo</label>
         <div class="pem-upload-area">
-          <!-- Hidden file input -->
           <input type="file" id="pem-file-input" accept="image/*" style="display:none;" onchange="uploadToCloudinary()">
-          <!-- Image preview -->
           <div id="pem-img-preview-box" style="display:none; margin-bottom:10px;">
             <img id="pem-img-preview" src="" alt="Preview"
               style="width:100%; max-height:200px; object-fit:cover; border-radius:var(--radius); border:2px solid var(--border);">
             <button type="button" class="action-btn danger" onclick="document.getElementById('pem-image').value=''; updateImagePreview('');"
               style="margin-top:6px; width:100%;">🗑 Remove Photo</button>
           </div>
-          <!-- Upload button -->
           <button type="button" id="pem-upload-btn" class="action-btn primary"
             onclick="document.getElementById('pem-file-input').click()"
             style="width:100%; padding:12px; font-size:0.9rem;">
             📷 Upload Photo
           </button>
-          <!-- Hidden URL field (populated by upload) -->
           <input type="hidden" id="pem-image">
         </div>
       </div>
@@ -435,17 +410,17 @@
         <div class="form-group"><label>Badge Text</label><input type="text" id="pem-badge" placeholder="e.g. Best Seller"></div>
         <div class="form-group"><label>Card Colour</label><input type="color" id="pem-bg" value="#FFFBE8" style="height:48px; cursor:pointer; width:100%;"></div>
       </div>
-      <div class="form-group">
+      <div class="form-group full">
         <label>Description</label>
         <div class="rte-toolbar">
-          <button type="button" class="rte-btn" onclick="rteCmd('bold')"                title="Bold"><strong>B</strong></button>
-          <button type="button" class="rte-btn rte-italic" onclick="rteCmd('italic')"   title="Italic"><em>I</em></button>
-          <button type="button" class="rte-btn rte-under"  onclick="rteCmd('underline')" title="Underline"><u>U</u></button>
+          <button type="button" class="rte-btn" onclick="document.execCommand('bold',false,null)" title="Bold"><strong>B</strong></button>
+          <button type="button" class="rte-btn rte-italic" onclick="document.execCommand('italic',false,null)" title="Italic"><em>I</em></button>
+          <button type="button" class="rte-btn rte-under" onclick="document.execCommand('underline',false,null)" title="Underline"><u>U</u></button>
           <span class="rte-divider"></span>
-          <button type="button" class="rte-btn" onclick="rteCmd('insertUnorderedList')" title="Bullet list">• List</button>
-          <button type="button" class="rte-btn" onclick="rteCmd('insertOrderedList')"   title="Numbered list">1. List</button>
+          <button type="button" class="rte-btn" onclick="document.execCommand('insertUnorderedList',false,null)" title="Bullet list">• List</button>
+          <button type="button" class="rte-btn" onclick="document.execCommand('insertOrderedList',false,null)" title="Numbered list">1. List</button>
           <span class="rte-divider"></span>
-          <button type="button" class="rte-btn rte-clear" onclick="rteCmd('removeFormat')" title="Clear formatting">✕ Clear</button>
+          <button type="button" class="rte-btn rte-clear" onclick="document.execCommand('removeFormat',false,null); document.getElementById('pem-desc').innerHTML='';" title="Clear formatting">✕ Clear</button>
         </div>
         <div id="pem-desc"
              contenteditable="true"
