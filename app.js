@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════
-//  HOME GROWN — app.js  (v5 — fully fixed)
+//  HOME GROWN — app.js  (v6.1 — logic fixes applied)
 // ═══════════════════════════════════════════════
 
 // --- CONFIGURATION & STATE ---
@@ -512,7 +512,7 @@ function exportShippingCSV() {
     // Use data URI — more compatible across browsers than Blob + createObjectURL
     const dataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent);
     const link    = document.createElement('a');
-    link.setAttribute('href',     dataUri);
+    link.setAttribute('href',      dataUri);
     link.setAttribute('download', filename);
     link.style.display = 'none';
     document.body.appendChild(link);
@@ -780,7 +780,7 @@ async function saveProductFromModal() {
         image_url:   document.getElementById('pem-image').value,
         description: document.getElementById('pem-desc').innerHTML.trim(),
         bg_color:    document.getElementById('pem-bg').value,
-        stock:       parseInt(document.getElementById('pem-stock').value)     || 0
+        stock:       parseInt(document.getElementById('pem-stock').value)      || 0
     };
 
     const saveBtn = document.getElementById('pem-save-btn');
@@ -946,7 +946,9 @@ function closeCartOnOverlay(e) { if (e.target.id === 'cart-overlay') toggleCart(
 function isSheffieldDelivery() {
     const city     = (document.getElementById('ch-city')?.value || '').trim().toLowerCase();
     const postcode = (document.getElementById('ch-postcode')?.value || '').trim().toUpperCase();
-    return city === 'sheffield' && postcode.startsWith('S');
+    // Validates S1, S10, etc., but rejects SA1, SG1
+    const isSheffieldCode = /^S\d/.test(postcode); 
+    return city === 'sheffield' && isSheffieldCode;
 }
 
 function updateCheckoutTotals() {
@@ -1168,30 +1170,42 @@ async function applyPromo() {
 }
 
 // ─── FULFILMENT DATE HELPERS ──────────────────────────────────────────────────
-// Returns the date of the next slot, respecting the Wed / Thu-before-10am cutoff:
-// - Orders placed Wednesday (any time) → can use this week's Thu/Fri/Sat slots
-// - Orders placed Thursday before 10am → can still use Thu delivery + Fri/Sat collection this week
-// - Everything else → next week's slots
-function nextSlotDate(targetDay) {
-    const now         = new Date();
-    const currentDay  = now.getDay();   // 0=Sun … 6=Sat
+// Returns the date of the next available slot.
+//  • Delivery (Thursday):  cutoff is Thursday 13:00 (1:00 pm)
+//  • Pickup  (Fri / Sat):  cutoff is Friday 10:30
+// Orders placed after the relevant cutoff always roll over to the following week.
+function nextSlotDate(targetDay, type) {
+    // Use UK time explicitly to prevent timezone cutoff bugs
+    const nowString   = new Date().toLocaleString("en-US", {timeZone: "Europe/London"});
+    const now         = new Date(nowString);
+    const currentDay  = now.getDay();      // 0 = Sun … 6 = Sat
     const currentHour = now.getHours();
+    const currentMin  = now.getMinutes();
 
-    // Is the order early enough to use this week?
-    const isWednesday          = currentDay === 3;
-    const isThursdayBeforeCutoff = currentDay === 4 && currentHour < 10;
-    const canUseThisWeek       = isWednesday || isThursdayBeforeCutoff;
+    let canUseThisWeek = false;
+
+    if (type === 'delivery') {
+        // Delivery cutoff = Thursday 13:00 (1 pm)
+        const isBeforeThursday = currentDay < 4;                       // Sun–Wed
+        const isThursdayBefore1pm = currentDay === 4 && currentHour < 13;
+        canUseThisWeek = isBeforeThursday || isThursdayBefore1pm;
+    } else if (type === 'pickup') {
+        // Pickup cutoff = Friday 10:30
+        const isBeforeFriday = currentDay < 5;                         // Sun–Thu
+        const isFridayBefore1030 = currentDay === 5 &&
+            (currentHour < 10 || (currentHour === 10 && currentMin < 30));
+        canUseThisWeek = isBeforeFriday || isFridayBefore1030;
+    }
 
     let daysUntil = targetDay - currentDay;
+    const isThisWeek = daysUntil >= 0;
 
-    if (canUseThisWeek && daysUntil >= 0) {
-        // This week's slot is still ahead (or today for same-day Thursday delivery)
-        // daysUntil is correct as-is
-    } else {
-        // Push to next occurrence of this weekday
-        if (daysUntil <= 0) daysUntil += 7;
-        // Thursday after cutoff ordering Thursday delivery → force next week
-        if (!canUseThisWeek && currentDay === 4 && targetDay === 4) daysUntil = 7;
+    if (!isThisWeek) {
+        daysUntil += 7;          // target already passed this week → jump to next
+    }
+
+    if (!canUseThisWeek && isThisWeek) {
+        daysUntil += 7;          // cutoff passed for this week's slot → jump to following week
     }
 
     const d = new Date(now);
@@ -1201,8 +1215,8 @@ function nextSlotDate(targetDay) {
 
 function getFulfilmentMessage(isPickup) {
     if (isPickup) {
-        const friday   = nextSlotDate(5); // Friday collection
-        const saturday = nextSlotDate(6); // Saturday collection
+        const friday   = nextSlotDate(5, 'pickup');   // Friday collection
+        const saturday = nextSlotDate(6, 'pickup');   // Saturday collection
         return {
             icon:   '🏠',
             bg:     '#E8F5E9',
@@ -1215,7 +1229,7 @@ Your order will be ready for collection on:<br>
 We'll be in touch if anything changes.`
         };
     } else {
-        const thursday = nextSlotDate(4); // Thursday delivery
+        const thursday = nextSlotDate(4, 'delivery'); // Thursday delivery
         return {
             icon:   '🚚',
             bg:     '#E3F2FD',
@@ -1269,6 +1283,15 @@ async function processPayment() {
     const discount       = appliedPromo ? subtotal * (appliedPromo.discount / 100) : 0;
     const shipping       = isPickup ? 0 : (isSheffieldDelivery() ? 3.00 : 0);
     const total          = Math.max(0, subtotal - discount + shipping).toFixed(2);
+
+    // GUARD: Stop processing if not pickup and not a valid Sheffield delivery
+    if (!isPickup && !isSheffieldDelivery()) {
+        showToast('Delivery is only available in Sheffield. Please select pickup or update your address.');
+        btn.disabled = false;
+        btn.innerHTML = `🌿 Place Order — <span id="pay-amount">£${total}</span>`;
+        return;
+    }
+
     const oid            = 'HG-' + Date.now().toString().slice(-6);
     const secureCartItems = cart.map(i => ({ id: i.id, qty: i.qty }));
 
@@ -1280,16 +1303,16 @@ async function processPayment() {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body:    JSON.stringify({
-                    cartItems:     secureCartItems,
-                    pickup:        isPickup,
-                    postcode:      customer.postcode,
-                    receipt_email: customer.email,
-                    promoCode:     appliedPromo ? appliedPromo.code : null,
+                    cartItems:      secureCartItems,
+                    pickup:         isPickup,
+                    postcode:       customer.postcode,
+                    receipt_email:  customer.email,
+                    promoCode:      appliedPromo ? appliedPromo.code : null,
                     metadata: {
-                        order_id:      oid,
-                        customer_name: customer.name,
-                        email:         customer.email,
-                        address:       fullAddress
+                        order_id:       oid,
+                        customer_name:  customer.name,
+                        email:          customer.email,
+                        address:        fullAddress
                     }
                 })
             });
@@ -1607,7 +1630,7 @@ async function addPromo() {
     const disc = parseInt(document.getElementById('promo-new-discount').value);
     const max  = document.getElementById('promo-new-max').value ? parseInt(document.getElementById('promo-new-max').value) : null;
 
-    if (!code)                              { showToast('Please enter a promo code'); return; }
+    if (!code)                                      { showToast('Please enter a promo code'); return; }
     if (isNaN(disc) || disc < 1 || disc > 100) { showToast('Please enter a valid discount (1-100%)'); return; }
 
     try {
