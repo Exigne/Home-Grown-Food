@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════
-//  HOME GROWN — app.js  (v6.1 — logic fixes applied)
+//  HOME GROWN — app.js  (v7.0 — Ntfy Push added)
 // ═══════════════════════════════════════════════
 
 // --- CONFIGURATION & STATE ---
@@ -53,7 +53,6 @@ function fetchWithTimeout(url, options = {}, timeout = 8000) {
 
 // ─── INITIALIZE ──────────────────────────────────────────────────────────────
 async function initApp() {
-    // 1. Render from cache instantly if available
     const cached = getCachedProducts();
     if (cached && cached.length) {
         products = cached;
@@ -62,7 +61,6 @@ async function initApp() {
         renderShop();
     }
 
-    // 2. Fetch config in background (non-blocking)
     try {
         const res = await fetchWithTimeout(`${API_BASE}/config`, {}, 5000);
         if (res.ok) {
@@ -73,7 +71,6 @@ async function initApp() {
         console.warn('Config fetch failed — running in demo mode');
     }
 
-    // 3. Fetch fresh products
     try {
         const res = await fetchWithTimeout(`${API_BASE}/products`, {}, 8000);
         if (res.ok) {
@@ -112,7 +109,6 @@ function showView(v, e) {
         if (btn.classList.contains('nav-btn')) btn.classList.add('active');
     }
 
-    // Always re-render shop with latest in-memory product data when navigating to it
     if (v === 'shop' && products.length) {
         renderShop();
     }
@@ -201,7 +197,6 @@ function showAdminSection(s, el) {
         menuEl.classList.add('active');
     }
 
-    // Start real-time stock polling only on products section
     if (s === 'products') startStockPolling();
     else stopStockPolling();
 
@@ -209,11 +204,9 @@ function showAdminSection(s, el) {
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
-// If text already contains HTML tags (from the rich text editor), render directly.
-// Otherwise treat as legacy plain text and convert \n → <br> safely.
 function formatDesc(text) {
     if (!text) return '';
-    if (/<[a-z][\s\S]*>/i.test(text)) return text; // already HTML
+    if (/<[a-z][\s\S]*>/i.test(text)) return text; 
     return text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -221,7 +214,6 @@ function formatDesc(text) {
         .replace(/\n/g, '<br>');
 }
 
-// ─── RICH TEXT EDITOR ─────────────────────────────────────────────────────────
 function rteCmd(cmd) {
     const editor = document.getElementById('pem-desc');
     if (!editor) return;
@@ -237,7 +229,6 @@ function renderShop() {
         return;
     }
 
-    // Always show in-stock products first, out-of-stock last
     const sorted = [...products].sort((a, b) => {
         const aOut = a.stock !== undefined && a.stock !== null && a.stock <= 0;
         const bOut = b.stock !== undefined && b.stock !== null && b.stock <= 0;
@@ -280,7 +271,6 @@ function openProductDetail(id) {
 
     document.getElementById('pm-name').textContent = p.name;
     document.getElementById('pm-price').textContent = '£' + Number(p.price).toFixed(2);
-    // innerHTML so line breaks render properly
     document.getElementById('pm-desc').innerHTML   = formatDesc(p.description);
     document.getElementById('pm-emoji').textContent = p.emoji || '🍪';
 
@@ -379,24 +369,18 @@ function renderOrdersTable() {
 
 function renderShipping() {
     const el = document.getElementById('shipping-cards');
-
-    // Only delivery orders (not pickups), exclude cancelled
-    const deliveryOrders = orders.filter(o =>
-        !o.pickup && o.status !== 'cancelled'
-    );
+    const deliveryOrders = orders.filter(o => !o.pickup && o.status !== 'cancelled');
 
     if (!deliveryOrders.length) {
         el.innerHTML = '<p style="color:var(--text-muted); font-weight:600;">No delivery orders yet. Home pickup orders are excluded from this view.</p>';
         return;
     }
 
-    // Split into active (not delivered) and recently delivered
     const active    = deliveryOrders.filter(o => o.status !== 'delivered');
     const delivered = deliveryOrders.filter(o => o.status === 'delivered');
 
     let html = '';
 
-    // ── Active delivery orders ──
     if (active.length) {
         html += active.map(o => {
             const statusColour = o.status === 'pending'    ? 'var(--warning)'
@@ -428,7 +412,6 @@ function renderShipping() {
         }).join('');
     }
 
-    // ── Delivered orders ──
     if (delivered.length) {
         html += `
         <div style="margin-top:2rem; margin-bottom:1rem; font-size:0.8rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-muted); display:flex; align-items:center; gap:12px;">
@@ -463,11 +446,9 @@ function renderShipping() {
 }
 
 async function markDelivered(id, checkbox) {
-    // Optimistically check the box, disable it to prevent double-click
     checkbox.disabled = true;
     try {
         await updateOrderStatus(id, 'delivered');
-        // updateOrderStatus calls loadAdminData which re-renders, so no extra work needed
     } catch (e) {
         checkbox.checked  = false;
         checkbox.disabled = false;
@@ -475,9 +456,7 @@ async function markDelivered(id, checkbox) {
     }
 }
 
-// ─── EXPORT SHIPPING CSV ──────────────────────────────────────────────────────
 function exportShippingCSV() {
-    // Handle pickup stored as boolean true/false OR string "true"/"false" from DB
     const deliveryOrders = orders.filter(o => {
         const isPickup = o.pickup === true || o.pickup === 'true';
         return !isPickup && o.status !== 'cancelled';
@@ -509,7 +488,6 @@ function exportShippingCSV() {
 
     const filename = `homegrown-deliveries-${new Date().toLocaleDateString('en-GB').replace(/\//g, '-')}.csv`;
 
-    // Use data URI — more compatible across browsers than Blob + createObjectURL
     const dataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent);
     const link    = document.createElement('a');
     link.setAttribute('href',      dataUri);
@@ -661,10 +639,6 @@ function renderProductMgmt() {
 // ─── PRODUCT MODAL (ADD / EDIT) ───────────────────────────────────────────────
 let productStockPollTimer = null;
 
-// ── Cloudinary config — fill in your own values ──────────────────────────────
-// 1. Sign up free at https://cloudinary.com
-// 2. Go to Settings → Upload → Add upload preset, set to "Unsigned"
-// 3. Replace the two values below with your Cloud Name and Preset Name
 const CLOUDINARY_CLOUD_NAME    = 'dyitrwe5h';
 const CLOUDINARY_UPLOAD_PRESET = 'homegrownfoods';
 
@@ -686,7 +660,6 @@ async function uploadToCloudinary() {
     if (!file) return;
 
     if (!CLOUDINARY_CLOUD_NAME.startsWith('YOUR_')) {
-        // Real upload
         const uploadBtn  = document.getElementById('pem-upload-btn');
         uploadBtn.disabled    = true;
         uploadBtn.textContent = '⏳ Uploading…';
@@ -716,7 +689,6 @@ async function uploadToCloudinary() {
             fileInput.value       = '';
         }
     } else {
-        // Demo mode — just show a local preview without uploading
         const reader = new FileReader();
         reader.onload = e => {
             document.getElementById('pem-image').value = e.target.result;
@@ -742,7 +714,6 @@ function openProductModal(id) {
         document.getElementById('pem-emoji').value = p.emoji       || '';
         document.getElementById('pem-badge').value = p.badge       || '';
         document.getElementById('pem-image').value = p.image_url   || '';
-        // Rich text editor uses innerHTML
         document.getElementById('pem-desc').innerHTML = formatDesc(p.description || '');
         document.getElementById('pem-bg').value    = p.bg_color    || '#FFFBE8';
         document.getElementById('pem-stock').value = p.stock       ?? '';
@@ -805,7 +776,6 @@ async function saveProductFromModal() {
         showToast(id ? '✓ Product updated!' : '✓ Product added!');
         closeProductModal();
         await loadAdminData();
-        // Re-render shop immediately so price/stock changes are visible
         renderShop();
     } catch (err) {
         console.error('Save Product Error:', err);
@@ -816,7 +786,6 @@ async function saveProductFromModal() {
     }
 }
 
-// Poll stock levels every 20s when on products section
 function startStockPolling() {
     stopStockPolling();
     productStockPollTimer = setInterval(async () => {
@@ -826,12 +795,10 @@ function startStockPolling() {
             });
             if (res.ok) {
                 const fresh = await res.json();
-                // Update only stock counts in the UI without full re-render
                 fresh.forEach(p => {
                     const existing = products.find(x => x.id === p.id);
                     if (existing && existing.stock !== p.stock) {
                         existing.stock = p.stock;
-                        // Update just this card's stock display
                         const card = document.getElementById('pmc-' + p.id);
                         if (card) {
                             const isLow      = p.stock !== null && p.stock > 0 && p.stock <= 5;
@@ -848,7 +815,7 @@ function startStockPolling() {
                     }
                 });
             }
-        } catch (e) { /* silent fail — next poll will retry */ }
+        } catch (e) { }
     }, 20000);
 }
 
@@ -863,7 +830,6 @@ function renderPromos() {
         tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:2rem;">No active promo codes.</td></tr>';
         return;
     }
-    // Fixed: thead has 4 cols (Code, Discount, Used, Actions) — matches server data
     tbody.innerHTML = promos.map(p => `
         <tr>
           <td><strong>${p.code}</strong></td>
@@ -946,7 +912,6 @@ function closeCartOnOverlay(e) { if (e.target.id === 'cart-overlay') toggleCart(
 function isSheffieldDelivery() {
     const city     = (document.getElementById('ch-city')?.value || '').trim().toLowerCase();
     const postcode = (document.getElementById('ch-postcode')?.value || '').trim().toUpperCase();
-    // Validates S1, S10, etc., but rejects SA1, SG1
     const isSheffieldCode = /^S\d/.test(postcode); 
     return city === 'sheffield' && isSheffieldCode;
 }
@@ -971,7 +936,6 @@ function updateCheckoutTotals() {
         msgEl.textContent = '✓ Great! We\'ll have your order ready for collection.';
         if (errEl) errEl.textContent = '';
 
-        // Show collection date info
         const msg = getFulfilmentMessage(true);
         const infoEl = document.getElementById('checkout-fulfilment-info');
         if (infoEl) {
@@ -1000,7 +964,6 @@ function updateCheckoutTotals() {
             msgEl.textContent = '✓ Great news — we deliver to your area!';
             if (errEl) errEl.textContent = '';
 
-            // Show delivery date info
             const msg = getFulfilmentMessage(false);
             const infoEl = document.getElementById('checkout-fulfilment-info');
             if (infoEl) {
@@ -1037,7 +1000,6 @@ function updateCheckoutTotals() {
         }
     }
 
-    // Apply promo discount to subtotal
     let discount      = 0;
     let discountLabel = '';
     if (appliedPromo) {
@@ -1047,7 +1009,6 @@ function updateCheckoutTotals() {
 
     const total = Math.max(0, subtotal - discount + shipping);
 
-    // Build summary HTML
     let html = cart.map(i => `
         <div class="os-item">
           <span>${i.emoji || ''} ${i.name} ×${i.qty}</span>
@@ -1071,18 +1032,15 @@ function updateCheckoutTotals() {
 function openCheckout() {
     if (cart.length === 0) return;
 
-    // Reset promo state each time checkout opens
     appliedPromo = null;
     const promoMsgEl = document.getElementById('promo-message');
     const promoInput = document.getElementById('promo-input');
     if (promoMsgEl) promoMsgEl.textContent = '';
     if (promoInput) promoInput.value = '';
 
-    // Reset pickup checkbox
     const pickupCheck = document.getElementById('pickup-check');
     if (pickupCheck) pickupCheck.checked = false;
 
-    // Hide fulfilment info until user picks delivery/pickup option
     const infoEl = document.getElementById('checkout-fulfilment-info');
     if (infoEl) infoEl.style.display = 'none';
 
@@ -1092,7 +1050,6 @@ function openCheckout() {
 
     updateCheckoutTotals();
 
-    // Setup Stripe
     if (STRIPE_PUBLISHABLE_KEY) {
         document.getElementById('stripe-alert').style.display        = 'none';
         document.getElementById('stripe-card-section').style.display = 'block';
@@ -1170,15 +1127,10 @@ async function applyPromo() {
 }
 
 // ─── FULFILMENT DATE HELPERS ──────────────────────────────────────────────────
-// Returns the date of the next available slot.
-//  • Delivery (Thursday):  cutoff is Thursday 13:00 (1:00 pm)
-//  • Pickup  (Fri / Sat):  cutoff is Friday 10:30
-// Orders placed after the relevant cutoff always roll over to the following week.
 function nextSlotDate(targetDay, type) {
-    // Use UK time explicitly to prevent timezone cutoff bugs
     const nowString   = new Date().toLocaleString("en-US", {timeZone: "Europe/London"});
     const now         = new Date(nowString);
-    const currentDay  = now.getDay();      // 0 = Sun … 6 = Sat
+    const currentDay  = now.getDay();      
     const currentHour = now.getHours();
     const currentMin  = now.getMinutes();
 
@@ -1186,26 +1138,25 @@ function nextSlotDate(targetDay, type) {
 
     if (type === 'delivery') {
         // Delivery cutoff = Thursday 13:00 (1 pm)
-        const isBeforeThursday = currentDay < 4;                       // Sun–Wed
+        const isBeforeThursday = currentDay < 4;                       
         const isThursdayBefore1pm = currentDay === 4 && currentHour < 13;
         canUseThisWeek = isBeforeThursday || isThursdayBefore1pm;
     } else if (type === 'pickup') {
-        // Pickup cutoff = Friday 10:30
-        const isBeforeFriday = currentDay < 5;                         // Sun–Thu
-        const isFridayBefore1030 = currentDay === 5 &&
-            (currentHour < 10 || (currentHour === 10 && currentMin < 30));
-        canUseThisWeek = isBeforeFriday || isFridayBefore1030;
+        // NEW: Pickup cutoff = Friday 17:00 (5 pm)
+        const isBeforeFriday = currentDay < 5;                         
+        const isFridayBefore5pm = currentDay === 5 && currentHour < 17;
+        canUseThisWeek = isBeforeFriday || isFridayBefore5pm;
     }
 
     let daysUntil = targetDay - currentDay;
     const isThisWeek = daysUntil >= 0;
 
     if (!isThisWeek) {
-        daysUntil += 7;          // target already passed this week → jump to next
+        daysUntil += 7;          
     }
 
     if (!canUseThisWeek && isThisWeek) {
-        daysUntil += 7;          // cutoff passed for this week's slot → jump to following week
+        daysUntil += 7;          
     }
 
     const d = new Date(now);
@@ -1215,8 +1166,8 @@ function nextSlotDate(targetDay, type) {
 
 function getFulfilmentMessage(isPickup) {
     if (isPickup) {
-        const friday   = nextSlotDate(5, 'pickup');   // Friday collection
-        const saturday = nextSlotDate(6, 'pickup');   // Saturday collection
+        const friday   = nextSlotDate(5, 'pickup');   
+        const saturday = nextSlotDate(6, 'pickup');   
         return {
             icon:   '🏠',
             bg:     '#E8F5E9',
@@ -1229,7 +1180,7 @@ Your order will be ready for collection on:<br>
 We'll be in touch if anything changes.`
         };
     } else {
-        const thursday = nextSlotDate(4, 'delivery'); // Thursday delivery
+        const thursday = nextSlotDate(4, 'delivery'); 
         return {
             icon:   '🚚',
             bg:     '#E3F2FD',
@@ -1284,7 +1235,6 @@ async function processPayment() {
     const shipping       = isPickup ? 0 : (isSheffieldDelivery() ? 3.00 : 0);
     const total          = Math.max(0, subtotal - discount + shipping).toFixed(2);
 
-    // GUARD: Stop processing if not pickup and not a valid Sheffield delivery
     if (!isPickup && !isSheffieldDelivery()) {
         showToast('Delivery is only available in Sheffield. Please select pickup or update your address.');
         btn.disabled = false;
@@ -1341,7 +1291,6 @@ async function processPayment() {
             if (error) throw new Error(error.message);
             paymentIntentId = paymentIntent.id;
         } else {
-            // Demo mode — simulate a short delay
             await new Promise(r => setTimeout(r, 700));
         }
 
@@ -1372,11 +1321,12 @@ async function processPayment() {
             throw new Error(errData.error || 'Order backend processing failed');
         }
 
+        // TRIGGER ALL NOTIFICATIONS
         await sendConfirmationEmail(orderPayload, customer, total);
+        await sendNtfyNotification(orderPayload, customer, total);
 
         document.getElementById('success-order-num').textContent = 'Order Reference: ' + oid;
 
-        // Show collection or delivery details
         const msg    = getFulfilmentMessage(isPickup);
         const msgEl  = document.getElementById('success-fulfilment-msg');
         if (msgEl) {
@@ -1398,6 +1348,39 @@ async function processPayment() {
     } finally {
         btn.disabled  = false;
         btn.innerHTML = `🌿 Place Order — <span id="pay-amount">£${total}</span>`;
+    }
+}
+
+// ─── NTFY PUSH NOTIFICATION ───────────────────────────────────────────────────
+async function sendNtfyNotification(order, customer, total) {
+    // ⚠️ CRITICAL: Change this string to something incredibly random so nobody guesses it!
+    const NTFY_TOPIC = 'homegrownfoods-orders' 
+    
+    // Prevent accidentally sending to a generic test topic if you forget to change it
+    if (NTFY_TOPIC === 'YOUR_SECRET_NTFY_TOPIC_NAME') {
+        console.warn('Ntfy notification skipped: Topic name not configured.');
+        return;
+    }
+
+    const typeLabel = order.pickup ? '🏠 PICKUP' : '🚚 DELIVERY';
+    const title = `🌿 £${total} — New Order (${typeLabel})`;
+    
+    const itemsList = cart.map(i => `${i.qty}x ${i.name}`).join('\n');
+    const message = `Customer: ${customer.name}\n\nItems:\n${itemsList}`;
+
+    try {
+        await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+            method: 'POST',
+            headers: {
+                'Title': title,
+                'Tags': 'tada,package',
+                'Priority': 'default'
+            },
+            body: message
+        });
+        console.info('✓ Push notification sent successfully');
+    } catch (err) {
+        console.warn('Ntfy notification failed:', err);
     }
 }
 
