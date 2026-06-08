@@ -172,10 +172,6 @@ app.post('/api/orders', async (req, res) => {
         return res.status(400).json({ error: 'Order must contain items' });
     }
 
-    // ── SECURITY: Stripe payment verification is mandatory ────────────────────
-    // Stock is NEVER reduced without a confirmed Stripe payment.
-    // This prevents cart additions, failed payments or crafted requests
-    // from draining stock.
     if (!paymentIntentId) {
         return res.status(400).json({ error: 'Payment verification required. No order processed.' });
     }
@@ -184,26 +180,18 @@ app.post('/api/orders', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // Verify payment succeeded with Stripe before touching stock
         const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
         if (intent.status !== 'succeeded') {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: 'Payment not completed — please try again.' });
         }
 
-        // Prevent replay: check this payment intent hasn't already been used
-        const duplicate = await client.query(
-            `SELECT id FROM orders WHERE id LIKE '%' AND items IS NOT NULL 
-             LIMIT 1` // lightweight existence check; full replay prevention below
-        );
-        // More robust: check Stripe metadata order_id matches
         const metaOrderId = intent.metadata?.order_id;
         if (metaOrderId && metaOrderId !== id) {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: 'Payment intent mismatch.' });
         }
 
-        // Validate Sheffield delivery postcode server-side
         if (!pickup) {
             const cleanPostcode = (postcode || '').trim().toUpperCase();
             if (!cleanPostcode.startsWith('S')) {
@@ -233,7 +221,6 @@ app.post('/api/orders', async (req, res) => {
                 return res.status(400).json({ error: `Sorry, not enough stock for ${product.name}. Please refresh and try again.` });
             }
 
-            // Only reduce stock here — after payment is verified
             await client.query(
                 'UPDATE products SET stock = stock - $1 WHERE id = $2',
                 [item.qty, item.id]
@@ -243,7 +230,6 @@ app.post('/api/orders', async (req, res) => {
             subtotal += parseFloat(product.price) * item.qty;
         }
 
-        // Apply promo discount server-side
         let discount = 0;
         if (promoCode) {
             const promoResult = await client.query(
@@ -268,7 +254,6 @@ app.post('/api/orders', async (req, res) => {
             [id, fname, lname, email, address, itemsString, calculatedTotal.toFixed(2), status, date, postcode, pickup || false]
         );
 
-        // Record promo usage
         if (promoCode) {
             await client.query(
                 'INSERT INTO promo_uses (email, code) VALUES ($1, $2) ON CONFLICT DO NOTHING',
@@ -282,7 +267,7 @@ app.post('/api/orders', async (req, res) => {
 
         await client.query('COMMIT');
 
-        // Notify admin by email
+        // ─── EMAIL NOTIFICATION ───────────────────────────────────────────────
         const pickupLabel = pickup ? '🏠 Home Pickup' : `🚚 Delivery to ${postcode}`;
         await transporter.sendMail({
             from:    process.env.EMAIL_USER,
@@ -299,6 +284,28 @@ app.post('/api/orders', async (req, res) => {
                 <p><strong>Total:</strong> £${calculatedTotal.toFixed(2)}</p>
             `
         }).catch(err => console.warn('Admin email failed:', err));
+
+        // ─── NTFY PUSH NOTIFICATION ───────────────────────────────────────────
+        try {
+            // 👇 Make sure this matches your Ntfy app subscription EXACTLY
+            const NTFY_TOPIC = 'homegrownfoods-orders'; 
+            const typeLabel = pickup ? '🏠 PICKUP' : '🚚 DELIVERY';
+            
+            await fetch('https://ntfy.sh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    topic: NTFY_TOPIC,
+                    title: `🌿 £${calculatedTotal.toFixed(2)} — New Order (${typeLabel})`,
+                    message: `Customer: ${fname} ${lname}\n\nItems:\n${itemsString.replace(/, /g, '\n')}`,
+                    tags: ['tada', 'package'],
+                    priority: 3
+                })
+            });
+            console.log('✓ Ntfy push sent successfully');
+        } catch (ntfyErr) {
+            console.warn('Ntfy push failed:', ntfyErr);
+        }
 
         res.status(201).json({ message: 'Order processed successfully' });
     } catch (err) {
