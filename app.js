@@ -1323,7 +1323,6 @@ async function processPayment() {
 
         // TRIGGER ALL NOTIFICATIONS
         await sendConfirmationEmail(orderPayload, customer, total);
-        await sendNtfyNotification(orderPayload, customer, total);
 
         document.getElementById('success-order-num').textContent = 'Order Reference: ' + oid;
 
@@ -1348,39 +1347,6 @@ async function processPayment() {
     } finally {
         btn.disabled  = false;
         btn.innerHTML = `🌿 Place Order — <span id="pay-amount">£${total}</span>`;
-    }
-}
-
-// ─── NTFY PUSH NOTIFICATION ───────────────────────────────────────────────────
-async function sendNtfyNotification(order, customer, total) {
-    // ⚠️ CRITICAL: Change this string to something incredibly random so nobody guesses it!
-    const NTFY_TOPIC = 'homegrownfoods-orders' 
-    
-    // Prevent accidentally sending to a generic test topic if you forget to change it
-    if (NTFY_TOPIC === 'YOUR_SECRET_NTFY_TOPIC_NAME') {
-        console.warn('Ntfy notification skipped: Topic name not configured.');
-        return;
-    }
-
-    const typeLabel = order.pickup ? '🏠 PICKUP' : '🚚 DELIVERY';
-    const title = `🌿 £${total} — New Order (${typeLabel})`;
-    
-    const itemsList = cart.map(i => `${i.qty}x ${i.name}`).join('\n');
-    const message = `Customer: ${customer.name}\n\nItems:\n${itemsList}`;
-
-    try {
-        await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
-            method: 'POST',
-            headers: {
-                'Title': title,
-                'Tags': 'tada,package',
-                'Priority': 'default'
-            },
-            body: message
-        });
-        console.info('✓ Push notification sent successfully');
-    } catch (err) {
-        console.warn('Ntfy notification failed:', err);
     }
 }
 
