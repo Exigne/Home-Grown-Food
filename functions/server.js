@@ -1,10 +1,10 @@
 require('dotenv').config();
-const express    = require('express');
-const cors       = require('cors');
-const { Pool }   = require('pg');
-const jwt        = require('jsonwebtoken');
-const stripe     = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const nodemailer = require('nodemailer');
+const express = require('express');
+const cors = require('cors');
+const { Pool } = require('pg');
+const jwt = require('jsonwebtoken');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const { Resend } = require('resend');
 const serverless = require('serverless-http');
 
 const app = express();
@@ -19,16 +19,13 @@ const pool = new Pool({
     connectionTimeoutMillis: 5000
 });
 
-const transporter = nodemailer.createTransport({
-    host:   'smtp-mail.outlook.com',
-    port:   587,
-    secure: false,
-    auth: {
-        user: process.env.EMAIL_USER,  // your Hotmail address
-        pass: process.env.EMAIL_PASS   // your Hotmail password
-    },
-    tls: { ciphers: 'SSLv3' }
-});
+// Initialize Resend
+const resend = new Resend('re_VE9CuboL_74hzNFaRDvjAmEEUyPCz3jzn');
+
+// Important: Resend requires a verified domain to send emails. 
+// You cannot send "from" a Hotmail/Gmail address. 
+// We are using 'hello@homegrownfoods.online' below as your sender address.
+const SENDER_EMAIL = 'hello@homegrownfoods.online'; 
 
 const ADMIN_USER = process.env.ADMIN_USER;
 const ADMIN_PASS = process.env.ADMIN_PASS;
@@ -145,7 +142,7 @@ app.post('/api/create-payment-intent', async (req, res) => {
         const totalCents = Math.max(50, subtotalCents - discountCents + shippingCents);
 
         const paymentIntent = await stripe.paymentIntents.create({
-            amount:   totalCents,
+            amount: totalCents,
             currency: 'gbp',
             receipt_email,
             metadata,
@@ -201,7 +198,7 @@ app.post('/api/orders', async (req, res) => {
         }
 
         let generatedItemsText = [];
-        let subtotal           = 0;
+        let subtotal = 0;
 
         for (const item of cartItems) {
             const stockRes = await client.query(
@@ -244,13 +241,13 @@ app.post('/api/orders', async (req, res) => {
             }
         }
 
-        const shipping        = pickup ? 0 : 3.00;
+        const shipping = pickup ? 0 : 3.00;
         const calculatedTotal = Math.max(0, subtotal - discount + shipping);
-        const itemsString     = generatedItemsText.join(', ');
+        const itemsString = generatedItemsText.join(', ');
 
         await client.query(
             `INSERT INTO orders (id, fname, lname, email, address, items, total, status, date, postcode, pickup)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
             [id, fname, lname, email, address, itemsString, calculatedTotal.toFixed(2), status, date, postcode, pickup || false]
         );
 
@@ -267,13 +264,13 @@ app.post('/api/orders', async (req, res) => {
 
         await client.query('COMMIT');
 
-        // ─── EMAIL NOTIFICATION ───────────────────────────────────────────────
+        // ─── EMAIL NOTIFICATION (RESEND) ──────────────────────────────────────
         const pickupLabel = pickup ? '🏠 Home Pickup' : `🚚 Delivery to ${postcode}`;
-        await transporter.sendMail({
-            from:    process.env.EMAIL_USER,
-            to:      process.env.EMAIL_USER,
+        const { error: emailError } = await resend.emails.send({
+            from: `Home Grown Orders <${SENDER_EMAIL}>`,
+            to: [process.env.EMAIL_USER], // Still sending to your personal inbox for notification
             subject: `📦 New Order ${id} — £${calculatedTotal.toFixed(2)}`,
-            html:    `
+            html: `
                 <h2>New Order from ${fname} ${lname}</h2>
                 <p><strong>Order ID:</strong> ${id}</p>
                 <p><strong>Email:</strong> ${email}</p>
@@ -283,20 +280,24 @@ app.post('/api/orders', async (req, res) => {
                 ${promoCode ? `<p><strong>Promo Used:</strong> ${promoCode}</p>` : ''}
                 <p><strong>Total:</strong> £${calculatedTotal.toFixed(2)}</p>
             `
-        }).catch(err => console.warn('Admin email failed:', err));
+        });
+        
+        if (emailError) {
+            console.warn('Admin email failed:', emailError);
+        }
 
         // ─── NTFY PUSH NOTIFICATION ───────────────────────────────────────────
         try {
             const NTFY_TOPIC = 'homegrownfoods-orders';
-            const typeLabel  = pickup ? '🏠 PICKUP' : '🚚 DELIVERY';
+            const typeLabel = pickup ? '🏠 PICKUP' : '🚚 DELIVERY';
             await fetch('https://ntfy.sh', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    topic:    NTFY_TOPIC,
-                    title:    `🌿 £${calculatedTotal.toFixed(2)} — New Order (${typeLabel})`,
-                    message:  `Customer: ${fname} ${lname}\n\nItems:\n${itemsString.replace(/, /g, '\n')}`,
-                    tags:     ['tada', 'package'],
+                    topic: NTFY_TOPIC,
+                    title: `🌿 £${calculatedTotal.toFixed(2)} — New Order (${typeLabel})`,
+                    message: `Customer: ${fname} ${lname}\n\nItems:\n${itemsString.replace(/, /g, '\n')}`,
+                    tags: ['tada', 'package'],
                     priority: 3
                 })
             });
@@ -341,7 +342,7 @@ app.post('/api/admin/products', authenticateAdmin, async (req, res) => {
     try {
         await pool.query(
             `INSERT INTO products (name, emoji, price, description, bg_color, badge, image_url, stock)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
             [name, emoji, price, description, bg_color, badge, image_url, stock || 0]
         );
         res.json({ message: 'Product added' });
@@ -355,7 +356,7 @@ app.put('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
     try {
         await pool.query(
             `UPDATE products SET name=$1, emoji=$2, price=$3, description=$4,
-             bg_color=$5, badge=$6, image_url=$7, stock=$8 WHERE id=$9`,
+            bg_color=$5, badge=$6, image_url=$7, stock=$8 WHERE id=$9`,
             [name, emoji, price, description, bg_color, badge, image_url, stock !== undefined ? stock : 0, req.params.id]
         );
         res.json({ message: 'Product updated' });
@@ -477,8 +478,8 @@ app.post('/api/wishlist', async (req, res) => {
     try {
         await pool.query(
             `INSERT INTO wishlist (product_id, email)
-             VALUES ($1, $2)
-             ON CONFLICT (product_id, email) DO NOTHING`,
+            VALUES ($1, $2)
+            ON CONFLICT (product_id, email) DO NOTHING`,
             [productId, email.toLowerCase().trim()]
         );
         res.status(201).json({ message: 'Added to wishlist' });
@@ -493,12 +494,12 @@ app.get('/api/admin/wishlist', authenticateAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT
-                w.id,
-                w.product_id,
-                w.email,
-                w.created_at,
-                TO_CHAR(w.created_at AT TIME ZONE 'Europe/London', 'DD Mon YYYY HH24:MI') AS date,
-                p.name AS product_name
+            w.id,
+            w.product_id,
+            w.email,
+            w.created_at,
+            TO_CHAR(w.created_at AT TIME ZONE 'Europe/London', 'DD Mon YYYY HH24:MI') AS date,
+            p.name AS product_name
             FROM wishlist w
             LEFT JOIN products p ON p.id = w.product_id
             ORDER BY w.created_at DESC
@@ -542,14 +543,14 @@ app.post('/api/chat', async (req, res) => {
     try {
         await pool.query(
             `INSERT INTO chat_messages (name, email, message, ts)
-             VALUES ($1, $2, $3, $4)`,
+            VALUES ($1, $2, $3, $4)`,
             [name.trim(), email.toLowerCase().trim(), message.trim(), ts || Date.now()]
         );
 
-        // Email notification to business owner
-        transporter.sendMail({
-            from:    process.env.EMAIL_USER,
-            to:      process.env.EMAIL_USER,
+        // Email notification to business owner (RESEND)
+        const { error: chatEmailError } = await resend.emails.send({
+            from: `Home Grown Chat <${SENDER_EMAIL}>`,
+            to: [process.env.EMAIL_USER], 
             subject: `💬 New Chat Message from ${name}`,
             html: `
                 <h2>New chat message on Home Grown</h2>
@@ -569,7 +570,11 @@ app.post('/api/chat', async (req, res) => {
                     or log in to the admin panel and use the Inbox section.
                 </p>
             `
-        }).catch(err => console.warn('Chat notification email failed:', err));
+        });
+
+        if (chatEmailError) {
+            console.warn('Chat notification email failed:', chatEmailError);
+        }
 
         // Ntfy push notification for new chat
         try {
@@ -577,10 +582,10 @@ app.post('/api/chat', async (req, res) => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    topic:    'homegrownfoods-orders',
-                    title:    `💬 New message from ${name}`,
-                    message:  message.substring(0, 200),
-                    tags:     ['speech_balloon'],
+                    topic: 'homegrownfoods-orders',
+                    title: `💬 New message from ${name}`,
+                    message: message.substring(0, 200),
+                    tags: ['speech_balloon'],
                     priority: 2
                 })
             });
@@ -600,15 +605,15 @@ app.get('/api/admin/chats', authenticateAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT
-                id,
-                name,
-                email,
-                message,
-                ts,
-                read,
-                replies,
-                TO_CHAR(created_at AT TIME ZONE 'Europe/London', 'DD Mon YYYY HH24:MI') AS date,
-                created_at
+            id,
+            name,
+            email,
+            message,
+            ts,
+            read,
+            replies,
+            TO_CHAR(created_at AT TIME ZONE 'Europe/London', 'DD Mon YYYY HH24:MI') AS date,
+            created_at
             FROM chat_messages
             ORDER BY created_at ASC
         `);
@@ -632,7 +637,7 @@ app.post('/api/admin/chat/reply', authenticateAdmin, async (req, res) => {
         const result = await pool.query(`
             UPDATE chat_messages
             SET replies = replies || $1::jsonb,
-                read    = true
+            read = true
             WHERE id = (
                 SELECT id FROM chat_messages
                 WHERE email = $2
@@ -646,11 +651,11 @@ app.post('/api/admin/chat/reply', authenticateAdmin, async (req, res) => {
             return res.status(404).json({ error: 'No messages found for that email' });
         }
 
-        // Send reply email to the customer via Nodemailer
-        await transporter.sendMail({
-            from:    `"Home Grown" <${process.env.EMAIL_USER}>`,
-            to:      email,
-            replyTo: process.env.EMAIL_USER,
+        // Send reply email to the customer via Resend
+        const { error: replyEmailError } = await resend.emails.send({
+            from: `Home Grown <${SENDER_EMAIL}>`,
+            to: [email],
+            replyTo: SENDER_EMAIL,
             subject: `Re: Your message to Home Grown 🌿`,
             html: `
                 <div style="font-family:Arial,sans-serif; max-width:600px; margin:0 auto; border:3px solid #164A2E; border-radius:16px; overflow:hidden;">
@@ -675,6 +680,11 @@ app.post('/api/admin/chat/reply', authenticateAdmin, async (req, res) => {
                 </div>
             `
         });
+
+        if (replyEmailError) {
+            console.error('Failed to send reply via Resend:', replyEmailError);
+            return res.status(500).json({ error: 'Reply saved, but failed to send email.' });
+        }
 
         res.json({ message: 'Reply sent and saved' });
     } catch (err) {
