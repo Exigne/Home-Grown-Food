@@ -1381,7 +1381,7 @@ async function processPayment() {
 }
 
 // ─── EMAIL (EmailJS) ──────────────────────────────────────────────────────────
-const EMAILJS_SERVICE_ID  = '20119397754';
+const EMAILJS_SERVICE_ID  = 'service_itj56bp';
 const EMAILJS_TEMPLATE_ID = 'template_vr90he9';
 const EMAILJS_PUBLIC_KEY  = 'joA0S94u7fQmqjub6';
 
