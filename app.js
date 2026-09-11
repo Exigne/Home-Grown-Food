@@ -1,25 +1,24 @@
 // ═══════════════════════════════════════════════
-//  HOME GROWN — app.js  (v9.0 — Wishlist + Hidden Admin)
+//  HOME GROWN — app.js
 // ═══════════════════════════════════════════════
 
-// --- CONFIGURATION & STATE ---
+// ─── CONFIGURATION & STATE ───────────────────────────────────────────────────
 const API_BASE = window.location.origin + '/api';
-let adminToken = localStorage.getItem('hg_admin_token') || null;
+let adminToken  = localStorage.getItem('hg_admin_token') || null;
 let STRIPE_PUBLISHABLE_KEY = 'pk_live_51PU4upEFaqxyf7ELOsith63WwqUuTzYYzEreW1DEyqn6o2KoLBkzYDLECvMznQZiG9enOc7hhu7kFdai1Cg4eFVK00ZV9S7qmV';
-let cart        = [];
-let orders      = [];
-let ingredients = [];
-let products    = [];
-let promos      = [];
-let wishlistEntries = []; // customers waiting for out-of-stock products
-let chatMessages    = []; // admin: customer chat messages
-let stripeInstance = null;
-let cardElement    = null;
-let appliedPromo   = null;
+let cart             = [];
+let orders           = [];
+let ingredients      = [];
+let products         = [];
+let promos           = [];
+let wishlistEntries  = [];
+let chatMessages     = [];
+let stripeInstance   = null;
+let cardElement      = null;
+let appliedPromo     = null;
 
 // ─── SECRET ADMIN ACCESS ──────────────────────────────────────────────────────
-// Customers never see the Admin Panel button.
-// To open admin: click the Home Grown logo 7 times quickly, OR visit /#admin
+// Click the Home Grown logo 7 times quickly, or visit /#admin
 let _logoClicks = 0;
 let _logoTimer  = null;
 
@@ -28,27 +27,30 @@ function handleLogoClick(e) {
     _logoClicks++;
     clearTimeout(_logoTimer);
     _logoTimer = setTimeout(() => { _logoClicks = 0; }, 2000);
-
     if (_logoClicks >= 7) {
         _logoClicks = 0;
         window.location.hash = 'admin';
         showView('admin', e);
     } else {
-        // Normal behaviour — go to shop
         showView('shop', e);
         if (window.location.hash === '#admin') window.location.hash = '';
     }
 }
 
-// --- DEMO FALLBACK DATA ---
+// ─── CHAT STATE ───────────────────────────────────────────────────────────────
+let localChatHistory = JSON.parse(localStorage.getItem('hg_chat_history') || '[]');
+let chatUser         = JSON.parse(localStorage.getItem('hg_chat_user')    || 'null');
+let chatWindowOpen   = false;
+
+// ─── FALLBACK PRODUCTS ────────────────────────────────────────────────────────
 const DEMO_PRODUCTS = [
     { id: 1, name: 'Honey Oat Clusters', price: 5.50, emoji: '🍯', badge: 'Best Seller', description: 'Crunchy clusters baked with local honey.', bg_color: '#FFFBE8' },
-    { id: 2, name: 'Seeded Crackers',    price: 3.95, emoji: '🌾', badge: null,          description: 'Wholegrain crackers with flax & sesame.', bg_color: '#F5F5DC' },
-    { id: 3, name: 'Fruit & Nut Bar',    price: 2.50, emoji: '🍫', badge: 'Vegan',        description: 'Dates, almonds and dark chocolate.',      bg_color: '#FFF0F0' },
-    { id: 4, name: 'Sourdough Crisps',   price: 4.20, emoji: '🥖', badge: null,          description: 'Thin, crispy sourdough bites.',          bg_color: '#FFF8F0' }
+    { id: 2, name: 'Seeded Crackers',    price: 3.95, emoji: '🌾', badge: null,          description: 'Wholegrain crackers with flax & sesame.',  bg_color: '#F5F5DC' },
+    { id: 3, name: 'Fruit & Nut Bar',    price: 2.50, emoji: '🍫', badge: 'Vegan',       description: 'Dates, almonds and dark chocolate.',       bg_color: '#FFF0F0' },
+    { id: 4, name: 'Sourdough Crisps',   price: 4.20, emoji: '🥖', badge: null,          description: 'Thin, crispy sourdough bites.',            bg_color: '#FFF8F0' }
 ];
 
-// --- CACHE HELPERS ---
+// ─── CACHE HELPERS ────────────────────────────────────────────────────────────
 const CACHE_KEY     = 'hg_products_cache';
 const CACHE_MAX_AGE = 1000 * 60 * 5;
 
@@ -61,12 +63,9 @@ function getCachedProducts() {
         return data;
     } catch (e) { return null; }
 }
-
 function setCachedProducts(data) {
-    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); }
-    catch (e) { }
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); } catch (e) {}
 }
-
 function fetchWithTimeout(url, options = {}, timeout = 8000) {
     return Promise.race([
         fetch(url, options),
@@ -90,23 +89,18 @@ async function initApp() {
             const data = await res.json();
             STRIPE_PUBLISHABLE_KEY = data.stripePublishableKey || STRIPE_PUBLISHABLE_KEY;
         }
-    } catch (e) {
-        console.warn('Config fetch failed — running in demo mode');
-    }
+    } catch (e) { console.warn('Config fetch failed — running with defaults'); }
 
     try {
         const res = await fetchWithTimeout(`${API_BASE}/products`, {}, 8000);
-        if (res.ok) {
-            const fresh = await res.json();
-            if (fresh && fresh.length) {
-                products = fresh;
-                setCachedProducts(fresh);
-                document.getElementById('shop-loading').style.display = 'none';
-                document.getElementById('products-grid').style.display = 'grid';
-                renderShop();
-            }
-        } else {
-            throw new Error('Bad response');
+        if (!res.ok) throw new Error('Bad response');
+        const fresh = await res.json();
+        if (fresh && fresh.length) {
+            products = fresh;
+            setCachedProducts(fresh);
+            document.getElementById('shop-loading').style.display = 'none';
+            document.getElementById('products-grid').style.display = 'grid';
+            renderShop();
         }
     } catch (error) {
         console.error('Products fetch failed:', error);
@@ -131,14 +125,11 @@ function showView(v, e) {
     document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
     document.getElementById('view-' + v).classList.add('active');
-
     if (e) {
-        const btn = e.target.closest('.nav-btn') || e.target;
-        if (btn && btn.classList.contains('nav-btn')) btn.classList.add('active');
+        const btn = e.target?.closest?.('.nav-btn') || e.target;
+        if (btn && btn.classList && btn.classList.contains('nav-btn')) btn.classList.add('active');
     }
-
     if (v === 'shop' && products.length) renderShop();
-
     if (v === 'admin') {
         if (adminToken) {
             document.getElementById('admin-login-screen').style.display = 'none';
@@ -156,7 +147,6 @@ async function handleAdminLogin() {
     const user = document.getElementById('admin-user').value.trim();
     const pass = document.getElementById('admin-pass').value;
     if (!user || !pass) { showToast('Please enter username and password'); return; }
-
     try {
         const res = await fetch(`${API_BASE}/login`, {
             method: 'POST',
@@ -174,9 +164,7 @@ async function handleAdminLogin() {
         } else {
             showToast('Invalid credentials. Please try again.');
         }
-    } catch (error) {
-        showToast('Login failed — check your connection');
-    }
+    } catch (error) { showToast('Login failed — check your connection'); }
 }
 
 function handleLogout() {
@@ -189,11 +177,13 @@ function handleLogout() {
 }
 
 // ─── ADMIN DATA LOADING ───────────────────────────────────────────────────────
+// Uses Promise.allSettled so one failing endpoint never breaks the others.
 async function loadAdminData() {
     if (!adminToken) return;
     try {
         const headers = { 'Authorization': `Bearer ${adminToken}` };
-        const [ordRes, ingRes, prodRes, promoRes, wishRes, chatRes] = await Promise.all([
+
+        const [ordRes, ingRes, prodRes, promoRes, wishRes, chatRes] = await Promise.allSettled([
             fetch(`${API_BASE}/admin/orders`,      { headers }),
             fetch(`${API_BASE}/admin/ingredients`, { headers }),
             fetch(`${API_BASE}/admin/products`,    { headers }),
@@ -201,20 +191,22 @@ async function loadAdminData() {
             fetch(`${API_BASE}/admin/wishlist`,    { headers }),
             fetch(`${API_BASE}/admin/chats`,       { headers })
         ]);
-        if (ordRes.ok)   orders          = await ordRes.json();
-        if (ingRes.ok)   ingredients     = await ingRes.json();
-        if (prodRes.ok)  products        = await prodRes.json();
-        if (promoRes.ok) promos          = await promoRes.json();
-        if (wishRes.ok)  wishlistEntries = await wishRes.json();
-        if (chatRes.ok)  chatMessages    = await chatRes.json();
+
+        if (ordRes.status   === 'fulfilled' && ordRes.value.ok)   orders          = await ordRes.value.json();
+        if (ingRes.status   === 'fulfilled' && ingRes.value.ok)   ingredients     = await ingRes.value.json();
+        if (prodRes.status  === 'fulfilled' && prodRes.value.ok)  products        = await prodRes.value.json();
+        if (promoRes.status === 'fulfilled' && promoRes.value.ok) promos          = await promoRes.value.json();
+        if (wishRes.status  === 'fulfilled' && wishRes.value.ok)  wishlistEntries = await wishRes.value.json();
+        if (chatRes.status  === 'fulfilled' && chatRes.value.ok)  chatMessages    = await chatRes.value.json();
 
         renderAdmin();
-        renderPromos();
-        renderWishlist();
-        renderAdminChats();
+        try { renderPromos();     } catch (e) { console.warn('renderPromos failed:', e); }
+        try { renderWishlist();   } catch (e) { console.warn('renderWishlist failed:', e); }
+        try { renderAdminChats(); } catch (e) { console.warn('renderAdminChats failed:', e); }
+
     } catch (error) {
         console.error('Admin data sync failed:', error);
-        showToast('Failed to load admin data');
+        showToast('Failed to load admin data — check your connection');
     }
 }
 
@@ -223,14 +215,10 @@ function showAdminSection(s, el) {
     document.querySelectorAll('.admin-section').forEach(sec => sec.classList.remove('active'));
     const section = document.getElementById('section-' + s);
     if (section) section.classList.add('active');
-
     document.querySelectorAll('.admin-menu-item').forEach(item => item.classList.remove('active'));
     const menuEl = el instanceof Element ? el : el?.currentTarget;
     if (menuEl && menuEl.classList.contains('admin-menu-item')) menuEl.classList.add('active');
-
-    if (s === 'products') startStockPolling();
-    else stopStockPolling();
-
+    if (s === 'products') startStockPolling(); else stopStockPolling();
     loadAdminData();
 }
 
@@ -238,7 +226,7 @@ function showAdminSection(s, el) {
 function formatDesc(text) {
     if (!text) return '';
     if (/<[a-z][\s\S]*>/i.test(text)) return text;
-    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+    return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 }
 
 // ─── RENDER SHOP ──────────────────────────────────────────────────────────────
@@ -248,7 +236,6 @@ function renderShop() {
         grid.innerHTML = '<p style="color:var(--text-muted); font-weight:700;">No products available.</p>';
         return;
     }
-
     const sorted = [...products].sort((a, b) => {
         const aOut = a.stock !== undefined && a.stock !== null && a.stock <= 0;
         const bOut = b.stock !== undefined && b.stock !== null && b.stock <= 0;
@@ -256,7 +243,6 @@ function renderShop() {
         if (!aOut && bOut) return -1;
         return 0;
     });
-
     grid.innerHTML = sorted.map(p => {
         const outOfStock = (p.stock !== undefined && p.stock !== null && p.stock <= 0);
         return `
@@ -273,7 +259,7 @@ function renderShop() {
           <div class="product-footer">
             <span class="product-price">£${Number(p.price).toFixed(2)}</span>
             ${outOfStock
-              ? `<button class="add-btn notify-btn" onclick="event.stopPropagation(); openWishlistModal(${p.id})">🔔 Notify Me</button>`
+              ? `<button class="notify-btn" onclick="event.stopPropagation(); openWishlistModal(${p.id})">🔔 Notify Me</button>`
               : `<button class="add-btn" id="add-btn-${p.id}" onclick="event.stopPropagation(); addToCart(${p.id})">+ Add to Basket</button>`
             }
           </div>
@@ -285,12 +271,10 @@ function renderShop() {
 function openProductDetail(id) {
     const p = products.find(x => x.id === id);
     if (!p) return;
-
     document.getElementById('pm-name').textContent  = p.name;
     document.getElementById('pm-price').textContent = '£' + Number(p.price).toFixed(2);
     document.getElementById('pm-desc').innerHTML    = formatDesc(p.description);
     document.getElementById('pm-emoji').textContent = p.emoji || '🍪';
-
     const imgContainer = document.getElementById('pm-img-container');
     imgContainer.style.backgroundColor = p.bg_color || '#FFFBE8';
     if (p.image_url) {
@@ -300,11 +284,9 @@ function openProductDetail(id) {
         imgContainer.style.backgroundImage = '';
         document.getElementById('pm-emoji').style.display = '';
     }
-
     const badgeEl = document.getElementById('pm-badge');
     if (p.badge) { badgeEl.textContent = p.badge; badgeEl.style.display = ''; }
-    else { badgeEl.style.display = 'none'; }
-
+    else          { badgeEl.style.display = 'none'; }
     const outOfStock = (p.stock !== undefined && p.stock !== null && p.stock <= 0);
     const addBtn = document.getElementById('pm-add-btn');
     if (outOfStock) {
@@ -314,10 +296,8 @@ function openProductDetail(id) {
         addBtn.textContent = '+ Add to Basket';
         addBtn.onclick = () => { addToCart(id); closeProductDetail(); };
     }
-
     document.getElementById('product-modal').classList.add('open');
 }
-
 function closeProductDetail() { document.getElementById('product-modal').classList.remove('open'); }
 function closeProductDetailOnOverlay(e) { if (e.target.id === 'product-modal') closeProductDetail(); }
 
@@ -335,12 +315,10 @@ function renderDashboard() {
     const total    = orders.reduce((s, o) => s + parseFloat(o.total || 0), 0);
     const pending  = orders.filter(o => o.status === 'pending').length;
     const lowStock = ingredients.filter(i => parseFloat(i.stock) < parseFloat(i.min_stock || i.min || 0)).length;
-
     document.getElementById('stat-revenue').textContent  = '£' + total.toFixed(2);
     document.getElementById('stat-orders').textContent   = orders.length;
     document.getElementById('stat-pending').textContent  = pending;
     document.getElementById('stat-lowstock').textContent = lowStock;
-
     const tbody = document.getElementById('dashboard-orders-body');
     if (!orders.length) {
         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">No orders yet</td></tr>';
@@ -354,11 +332,10 @@ function renderDashboard() {
           <td><strong>£${parseFloat(o.total).toFixed(2)}</strong></td>
           <td>
             <span class="badge badge-${o.status}">${o.status}</span>
-            ${o.pickup ? '<span class="badge" style="background:#E8F5E9; color:#1B5E20; margin-left:4px;">🏠 Pickup</span>' : ''}
+            ${o.pickup ? '<span class="badge" style="background:#E8F5E9;color:#1B5E20;margin-left:4px;">🏠 Pickup</span>' : ''}
           </td>
           <td>${o.date || ''}</td>
-        </tr>`
-    ).join('');
+        </tr>`).join('');
 }
 
 function renderOrdersTable() {
@@ -376,7 +353,7 @@ function renderOrdersTable() {
           <td><strong>£${parseFloat(o.total).toFixed(2)}</strong></td>
           <td>
             <span class="badge badge-${o.status}">${o.status}</span>
-            ${o.pickup ? '<span style="font-size:0.75rem; margin-left:4px;" title="Home Pickup">🏠</span>' : ''}
+            ${o.pickup ? '<span style="font-size:0.75rem;margin-left:4px;" title="Home Pickup">🏠</span>' : ''}
           </td>
           <td>
             ${o.status === 'pending'    ? `<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','processing')">Process</button>` : ''}
@@ -384,23 +361,19 @@ function renderOrdersTable() {
             ${o.status === 'shipped'    ? `<button class="action-btn" onclick="updateOrderStatus('${o.id}','delivered')">Delivered ✓</button>` : ''}
             ${!['delivered','cancelled'].includes(o.status) ? `<button class="action-btn danger" onclick="cancelOrder('${o.id}')">Cancel</button>` : ''}
           </td>
-        </tr>`
-    ).join('');
+        </tr>`).join('');
 }
 
 function renderShipping() {
     const el = document.getElementById('shipping-cards');
     const deliveryOrders = orders.filter(o => !o.pickup && o.status !== 'cancelled');
-
     if (!deliveryOrders.length) {
-        el.innerHTML = '<p style="color:var(--text-muted); font-weight:600;">No delivery orders yet. Home pickup orders are excluded from this view.</p>';
+        el.innerHTML = '<p style="color:var(--text-muted); font-weight:600;">No delivery orders yet.</p>';
         return;
     }
-
     const active    = deliveryOrders.filter(o => o.status !== 'delivered');
     const delivered = deliveryOrders.filter(o => o.status === 'delivered');
     let html = '';
-
     if (active.length) {
         html += active.map(o => `
             <div class="shipping-row" id="ship-${o.id}">
@@ -413,22 +386,20 @@ function renderShipping() {
                 </div>
                 <div class="shipping-row-meta">
                   <span class="badge badge-${o.status}" style="margin-bottom:8px;">${o.status}</span>
-                  <div style="font-weight:800; font-size:1rem; color:var(--green-dark);">£${parseFloat(o.total).toFixed(2)}</div>
-                  <div style="font-size:0.78rem; color:var(--text-muted); font-weight:600; margin-top:4px;">${o.date || ''}</div>
-                  ${o.status === 'pending'    ? `<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','processing')" style="margin-top:8px; width:100%;">Process</button>` : ''}
-                  ${o.status === 'processing' ? `<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','shipped')" style="margin-top:8px; width:100%;">Mark Shipped</button>` : ''}
+                  <div style="font-weight:800;font-size:1rem;color:var(--green-dark);">£${parseFloat(o.total).toFixed(2)}</div>
+                  <div style="font-size:0.78rem;color:var(--text-muted);font-weight:600;margin-top:4px;">${o.date || ''}</div>
+                  ${o.status === 'pending'    ? `<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','processing')" style="margin-top:8px;width:100%;">Process</button>` : ''}
+                  ${o.status === 'processing' ? `<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','shipped')" style="margin-top:8px;width:100%;">Mark Shipped</button>` : ''}
                 </div>
               </div>
               <label class="shipping-delivered-check">
                 <input type="checkbox" onchange="markDelivered('${o.id}', this)">
                 <span>Mark as Delivered</span>
               </label>
-            </div>`
-        ).join('');
+            </div>`).join('');
     }
-
     if (delivered.length) {
-        html += `<div style="margin-top:2rem; margin-bottom:1rem; font-size:0.8rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-muted); display:flex; align-items:center; gap:12px;"><span>✓ Delivered</span><div style="flex:1; height:2px; background:var(--border);"></div></div>`;
+        html += `<div style="margin-top:2rem;margin-bottom:1rem;font-size:0.8rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);display:flex;align-items:center;gap:12px;"><span>✓ Delivered</span><div style="flex:1;height:2px;background:var(--border);"></div></div>`;
         html += delivered.map(o => `
             <div class="shipping-row shipping-row-done" id="ship-${o.id}">
               <div class="shipping-row-main">
@@ -440,58 +411,46 @@ function renderShipping() {
                 </div>
                 <div class="shipping-row-meta">
                   <span class="badge badge-delivered" style="margin-bottom:8px;">Delivered</span>
-                  <div style="font-weight:800; font-size:1rem; color:var(--green-dark);">£${parseFloat(o.total).toFixed(2)}</div>
-                  <div style="font-size:0.78rem; color:var(--text-muted); font-weight:600; margin-top:4px;">${o.date || ''}</div>
+                  <div style="font-weight:800;font-size:1rem;color:var(--green-dark);">£${parseFloat(o.total).toFixed(2)}</div>
+                  <div style="font-size:0.78rem;color:var(--text-muted);font-weight:600;margin-top:4px;">${o.date || ''}</div>
                 </div>
               </div>
               <label class="shipping-delivered-check shipping-delivered-check-done">
                 <input type="checkbox" checked disabled><span>Delivered ✓</span>
               </label>
-            </div>`
-        ).join('');
+            </div>`).join('');
     }
-
     el.innerHTML = html;
 }
 
 async function markDelivered(id, checkbox) {
     checkbox.disabled = true;
-    try {
-        await updateOrderStatus(id, 'delivered');
-    } catch (e) {
-        checkbox.checked = false;
-        checkbox.disabled = false;
-        showToast('Could not mark as delivered — please try again');
-    }
+    try { await updateOrderStatus(id, 'delivered'); }
+    catch (e) { checkbox.checked = false; checkbox.disabled = false; showToast('Could not mark as delivered'); }
 }
 
 function exportShippingCSV() {
     const deliveryOrders = orders.filter(o => !o.pickup && o.status !== 'cancelled');
     if (!deliveryOrders.length) { showToast('No delivery orders to export'); return; }
-
     const headers = ['Order ID','First Name','Last Name','Email','Address','Items','Total','Status','Date'];
-    const rows    = deliveryOrders.map(o => [
-        o.id||'', o.fname||'', o.lname||'', o.email||'',
-        o.address||'', o.items||'', '£'+parseFloat(o.total||0).toFixed(2), o.status||'', o.date||''
-    ].map(c => `"${String(c).replace(/"/g,'""')}"`).join(','));
-
+    const rows    = deliveryOrders.map(o =>
+        [o.id||'',o.fname||'',o.lname||'',o.email||'',o.address||'',o.items||'',
+         '£'+parseFloat(o.total||0).toFixed(2),o.status||'',o.date||'']
+        .map(c => `"${String(c).replace(/"/g,'""')}"`).join(','));
     const csv      = [headers.map(h=>`"${h}"`).join(','), ...rows].join('\n');
     const filename = `homegrown-deliveries-${new Date().toLocaleDateString('en-GB').replace(/\//g,'-')}.csv`;
     const link     = document.createElement('a');
     link.setAttribute('href', 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv));
     link.setAttribute('download', filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
     showToast(`✓ Exported ${deliveryOrders.length} order${deliveryOrders.length !== 1 ? 's' : ''}`);
 }
 
 function renderIngredients() {
     const tbody = document.getElementById('ingredients-body');
     if (!ingredients.length) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem;">No ingredients yet.</td></tr>';
-        const el = document.getElementById('stat-lowstock');
-        if (el) el.textContent = '0';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:2rem;">No ingredients yet.</td></tr>';
+        const el = document.getElementById('stat-lowstock'); if (el) el.textContent = '0';
         return;
     }
     tbody.innerHTML = ingredients.map((ing, i) => {
@@ -503,7 +462,6 @@ function renderIngredients() {
         const isLow  = stock < min && !isCrit;
         const status = isCrit ? 'critical' : isLow ? 'low' : 'ok';
         const barCls = isCrit ? 'prog-critical' : isLow ? 'prog-low' : 'prog-ok';
-
         return `
         <tr>
           <td><strong>${ing.name}</strong></td>
@@ -525,7 +483,6 @@ function renderPayments() {
     const mTot  = orders
         .filter(o => { const d = new Date(o.timestamp || o.date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); })
         .reduce((s, o) => s + parseFloat(o.total || 0), 0);
-
     const payTotal = document.getElementById('pay-total');
     const payMonth = document.getElementById('pay-month');
     const payCount = document.getElementById('pay-count');
@@ -534,7 +491,6 @@ function renderPayments() {
     if (payMonth) payMonth.textContent = '£' + mTot.toFixed(2);
     if (payCount) payCount.textContent = orders.length;
     if (payAvg)   payAvg.textContent   = orders.length ? '£' + (total / orders.length).toFixed(2) : '£0.00';
-
     const chartEl = document.getElementById('revenue-chart');
     if (chartEl) {
         const days = [];
@@ -552,13 +508,9 @@ function renderPayments() {
               <div class="chart-bar-label">${d.label}</div>
             </div>`).join('');
     }
-
     const tbody = document.getElementById('payments-body');
     if (!tbody) return;
-    if (!orders.length) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem;">No transactions yet.</td></tr>';
-        return;
-    }
+    if (!orders.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:2rem;">No transactions yet.</td></tr>'; return; }
     tbody.innerHTML = orders.map(o => `
         <tr>
           <td><strong>${o.id}</strong></td>
@@ -573,7 +525,7 @@ function renderProductMgmt() {
     const grid = document.getElementById('product-mgmt-grid');
     if (!grid) return;
     if (!products.length) {
-        grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:3rem; color:var(--text-muted);"><div style="font-size:3rem; margin-bottom:1rem;">🍪</div><p style="font-weight:700; font-size:1rem;">No products yet.</p><button class="action-btn primary" onclick="openProductModal()" style="margin-top:1rem; padding:10px 24px;">+ Add Your First Product</button></div>`;
+        grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--text-muted);"><div style="font-size:3rem;margin-bottom:1rem;">🍪</div><p style="font-weight:700;font-size:1rem;">No products yet.</p><button class="action-btn primary" onclick="openProductModal()" style="margin-top:1rem;padding:10px 24px;">+ Add Your First Product</button></div>`;
         return;
     }
     grid.innerHTML = products.map(p => {
@@ -585,17 +537,17 @@ function renderProductMgmt() {
         const stockIcon  = isOut ? '🔴' : isLow ? '🟡' : '🟢';
         return `
         <div class="pmc-card" id="pmc-${p.id}">
-          <div class="pmc-card-img" style="background:${p.bg_color || '#FFFBE8'}; ${p.image_url ? `background-image:url('${p.image_url}'); background-size:cover; background-position:center;` : ''}">
-            ${p.image_url ? '' : `<span style="font-size:2.8rem;">${p.emoji || '🍪'}</span>`}
-            ${p.badge ? `<span class="product-badge" style="position:absolute; top:8px; right:8px;">${p.badge}</span>` : ''}
+          <div class="pmc-card-img" style="background:${p.bg_color||'#FFFBE8'};${p.image_url?`background-image:url('${p.image_url}');background-size:cover;background-position:center;`:''}">
+            ${p.image_url ? '' : `<span style="font-size:2.8rem;">${p.emoji||'🍪'}</span>`}
+            ${p.badge ? `<span class="product-badge" style="position:absolute;top:8px;right:8px;">${p.badge}</span>` : ''}
           </div>
           <div class="pmc-card-body">
             <div class="pmc-card-name">${p.name}</div>
-            <div class="pmc-card-desc">${p.description ? p.description.substring(0,55) + (p.description.length > 55 ? '…' : '') : 'No description'}</div>
+            <div class="pmc-card-desc">${p.description ? p.description.substring(0,55)+(p.description.length>55?'…':'') : 'No description'}</div>
             <div class="pmc-card-price">£${Number(p.price).toFixed(2)}</div>
             <div class="pmc-stock-bar">
               <span class="pmc-stock-label" style="color:${stockColor};">${stockIcon} ${stockLabel}</span>
-              ${stock !== null && stock > 0 ? `<div class="pmc-stock-track"><div class="pmc-stock-fill" style="width:${Math.min(100,(stock/Math.max(stock,20))*100)}%; background:${stockColor};"></div></div>` : ''}
+              ${stock !== null && stock > 0 ? `<div class="pmc-stock-track"><div class="pmc-stock-fill" style="width:${Math.min(100,(stock/Math.max(stock,20))*100)}%;background:${stockColor};"></div></div>` : ''}
             </div>
             <div class="pmc-card-actions">
               <button class="action-btn primary" onclick="openProductModal(${p.id})">✏️ Edit</button>
@@ -606,9 +558,9 @@ function renderProductMgmt() {
     }).join('');
 }
 
-// ─── PRODUCT MODAL (ADD / EDIT) ───────────────────────────────────────────────
-let productStockPollTimer = null;
-const CLOUDINARY_CLOUD_NAME    = 'dyitrwe5h';
+// ─── PRODUCT MODAL ────────────────────────────────────────────────────────────
+let productStockPollTimer     = null;
+const CLOUDINARY_CLOUD_NAME   = 'dyitrwe5h';
 const CLOUDINARY_UPLOAD_PRESET = 'homegrownfoods';
 
 function updateImagePreview(url) {
@@ -622,7 +574,6 @@ async function uploadToCloudinary() {
     const fileInput = document.getElementById('pem-file-input');
     const file      = fileInput.files[0];
     if (!file) return;
-
     if (!CLOUDINARY_CLOUD_NAME.startsWith('YOUR_')) {
         const uploadBtn = document.getElementById('pem-upload-btn');
         uploadBtn.disabled = true; uploadBtn.textContent = '⏳ Uploading…';
@@ -643,7 +594,11 @@ async function uploadToCloudinary() {
         }
     } else {
         const reader = new FileReader();
-        reader.onload = e => { document.getElementById('pem-image').value = e.target.result; updateImagePreview(e.target.result); showToast('⚠️ Preview only — configure Cloudinary to save images'); };
+        reader.onload = e => {
+            document.getElementById('pem-image').value = e.target.result;
+            updateImagePreview(e.target.result);
+            showToast('⚠️ Preview only — configure Cloudinary to save images');
+        };
         reader.readAsDataURL(file);
         fileInput.value = '';
     }
@@ -653,7 +608,6 @@ function openProductModal(id) {
     const modal  = document.getElementById('product-edit-modal');
     const isEdit = !!id;
     document.getElementById('pem-title').textContent = isEdit ? 'Edit Product' : 'Add New Product';
-
     if (isEdit) {
         const p = products.find(x => x.id === id);
         if (!p) return;
@@ -668,41 +622,30 @@ function openProductModal(id) {
         document.getElementById('pem-stock').value = p.stock     ?? '';
         updateImagePreview(p.image_url || '');
     } else {
-        document.getElementById('pem-id').value    = '';
-        document.getElementById('pem-name').value  = '';
-        document.getElementById('pem-price').value = '';
-        document.getElementById('pem-emoji').value = '';
-        document.getElementById('pem-badge').value = '';
-        document.getElementById('pem-image').value = '';
+        ['pem-id','pem-name','pem-price','pem-emoji','pem-badge','pem-image','pem-stock'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('pem-desc').innerHTML = '';
-        document.getElementById('pem-bg').value    = '#FFFBE8';
-        document.getElementById('pem-stock').value = '';
+        document.getElementById('pem-bg').value = '#FFFBE8';
         updateImagePreview('');
     }
     modal.classList.add('open');
 }
-
 function closeProductModal() { document.getElementById('product-edit-modal').classList.remove('open'); }
 
 async function saveProductFromModal() {
     const id   = document.getElementById('pem-id').value;
     const name = document.getElementById('pem-name').value.trim();
     if (!name) { showToast('Product name is required'); return; }
-
     const payload = {
-        name,
-        price:       parseFloat(document.getElementById('pem-price').value)  || 0,
-        emoji:       document.getElementById('pem-emoji').value,
-        badge:       document.getElementById('pem-badge').value,
-        image_url:   document.getElementById('pem-image').value,
+        name, price: parseFloat(document.getElementById('pem-price').value) || 0,
+        emoji: document.getElementById('pem-emoji').value,
+        badge: document.getElementById('pem-badge').value,
+        image_url: document.getElementById('pem-image').value,
         description: document.getElementById('pem-desc').innerHTML.trim(),
-        bg_color:    document.getElementById('pem-bg').value,
-        stock:       parseInt(document.getElementById('pem-stock').value)     || 0
+        bg_color: document.getElementById('pem-bg').value,
+        stock: parseInt(document.getElementById('pem-stock').value) || 0
     };
-
     const saveBtn = document.getElementById('pem-save-btn');
     saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
-
     try {
         const url    = id ? `${API_BASE}/admin/products/${id}` : `${API_BASE}/admin/products`;
         const method = id ? 'PUT' : 'POST';
@@ -744,19 +687,19 @@ function startStockPolling() {
                     }
                 });
             }
-        } catch (e) { }
+        } catch (e) {}
     }, 20000);
 }
-
 function stopStockPolling() {
     if (productStockPollTimer) { clearInterval(productStockPollTimer); productStockPollTimer = null; }
 }
 
+// ─── PROMO CODES ──────────────────────────────────────────────────────────────
 function renderPromos() {
     const tbody = document.getElementById('promos-body');
     if (!tbody) return;
     if (!promos.length) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:2rem;">No active promo codes.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:2rem;">No active promo codes.</td></tr>';
         return;
     }
     tbody.innerHTML = promos.map(p => `
@@ -768,105 +711,80 @@ function renderPromos() {
         </tr>`).join('');
 }
 
-// ─── WISHLIST (CUSTOMER) ───────────────────────────────────────────────────────
+// ─── WISHLIST (CUSTOMER) ──────────────────────────────────────────────────────
 function openWishlistModal(productId) {
     const p     = products.find(x => x.id === productId);
     const modal = document.getElementById('wishlist-modal');
+    if (!modal) return;
     modal.dataset.productId = productId;
-
     const nameEl = document.getElementById('wishlist-product-name');
     if (nameEl && p) nameEl.textContent = p.name;
-
     document.getElementById('wishlist-email').value = '';
     document.getElementById('wishlist-msg').textContent = '';
-
     const btn = document.getElementById('wishlist-submit-btn');
-    btn.disabled    = false;
-    btn.textContent = '🔔 Notify Me When Back In Stock';
-
+    btn.disabled = false; btn.textContent = '🔔 Notify Me When Back In Stock';
     modal.classList.add('open');
-    setTimeout(() => document.getElementById('wishlist-email').focus(), 100);
+    setTimeout(() => document.getElementById('wishlist-email').focus(), 150);
 }
-
 function closeWishlistModal() {
-    document.getElementById('wishlist-modal').classList.remove('open');
+    const modal = document.getElementById('wishlist-modal');
+    if (modal) modal.classList.remove('open');
 }
 
 async function submitWishlist() {
     const email     = document.getElementById('wishlist-email').value.trim();
     const productId = parseInt(document.getElementById('wishlist-modal').dataset.productId);
     const msgEl     = document.getElementById('wishlist-msg');
-
     if (!email || !email.includes('@')) {
         msgEl.style.color = 'var(--danger)';
         msgEl.textContent = 'Please enter a valid email address.';
         return;
     }
-
     const btn = document.getElementById('wishlist-submit-btn');
     btn.disabled = true; btn.textContent = 'Saving…';
-
     try {
         await fetch(`${API_BASE}/wishlist`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ productId, email })
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productId, email })
         });
-    } catch (err) {
-        // Silently fall through — show success anyway so customer isn't blocked
-        console.warn('Wishlist backend save failed:', err);
-    }
-
+    } catch (err) { console.warn('Wishlist backend save failed:', err); }
     msgEl.style.color = 'var(--success)';
     msgEl.textContent = "✓ Saved! We'll email you the moment it's back in stock.";
-    btn.textContent   = '✓ You\'re on the list!';
-
-    setTimeout(() => {
-        closeWishlistModal();
-        showToast("🔔 We'll let you know when it's back!");
-    }, 1800);
+    btn.textContent   = "✓ You're on the list!";
+    setTimeout(() => { closeWishlistModal(); showToast("🔔 We'll let you know when it's back!"); }, 1800);
 }
 
-// ─── WISHLIST (ADMIN) ──────────────────────────────────────────────────────────
-// EmailJS template ID for back-in-stock notifications (can be same or different template)
-// Template variables: {{to_email}}, {{product_name}}, {{shop_name}}, {{shop_url}}
-const EMAILJS_WISHLIST_TEMPLATE_ID = 'YOUR_WISHLIST_TEMPLATE_ID'; // set this in EmailJS
+// ─── WISHLIST (ADMIN) ─────────────────────────────────────────────────────────
+const EMAILJS_WISHLIST_TEMPLATE_ID = 'YOUR_WISHLIST_TEMPLATE_ID';
 
 function renderWishlist() {
     const container = document.getElementById('wishlist-admin-content');
     if (!container) return;
-
     if (!wishlistEntries || !wishlistEntries.length) {
-        container.innerHTML = '<p style="color:var(--text-muted); font-weight:600;">No wishlist entries yet. When customers click "🔔 Notify Me" on a sold-out product, they\'ll appear here.</p>';
+        container.innerHTML = '<p style="color:var(--text-muted);font-weight:600;">No wishlist entries yet. When customers click "🔔 Notify Me" on a sold-out product, they\'ll appear here.</p>';
         return;
     }
-
-    // Group entries by product
     const grouped = {};
     wishlistEntries.forEach(entry => {
         const pid = String(entry.product_id || entry.productId);
         if (!grouped[pid]) grouped[pid] = [];
         grouped[pid].push(entry);
     });
-
     let html = '';
     Object.entries(grouped).forEach(([productId, entries]) => {
         const product     = products.find(p => String(p.id) === productId);
         const productName = product ? product.name : `Product #${productId}`;
         const isOut       = product && product.stock !== null && product.stock <= 0;
-
         html += `
         <div class="table-wrap" style="margin-bottom:1.5rem;">
-          <div style="padding:1rem 1.25rem; background:var(--green-dark); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
-            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-              <span style="font-family:var(--font-brand); font-size:1.15rem; color:var(--yellow);">${product ? (product.emoji || '') + ' ' : ''}${productName}</span>
-              <span style="font-size:0.78rem; font-weight:700; color:var(--green-light);">${entries.length} customer${entries.length !== 1 ? 's' : ''} waiting</span>
-              <span class="badge ${isOut ? 'badge-cancelled' : 'badge-ok'}" style="margin-left:4px;">${isOut ? 'Still out of stock' : '✓ Back in stock'}</span>
+          <div style="padding:1rem 1.25rem;background:var(--green-dark);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+              <span style="font-family:var(--font-brand);font-size:1.15rem;color:var(--yellow);">${product ? (product.emoji||'')+ ' ' : ''}${productName}</span>
+              <span style="font-size:0.78rem;font-weight:700;color:var(--green-light);">${entries.length} customer${entries.length!==1?'s':''} waiting</span>
+              <span class="badge ${isOut?'badge-cancelled':'badge-ok'}">${isOut?'Still out of stock':'✓ Back in stock'}</span>
             </div>
-            <div style="display:flex; gap:8px;">
-              <button class="action-btn primary" onclick="notifyWishlistProduct('${productId}')" style="background:var(--yellow); color:var(--green-dark); border-color:var(--yellow);">
-                📧 Email All (${entries.length})
-              </button>
+            <div style="display:flex;gap:8px;">
+              <button class="action-btn primary" onclick="notifyWishlistProduct('${productId}')" style="background:var(--yellow);color:var(--green-dark);border-color:var(--yellow);">📧 Email All (${entries.length})</button>
               <button class="action-btn danger" onclick="clearWishlistProduct('${productId}')">🗑 Clear</button>
             </div>
           </div>
@@ -876,14 +794,13 @@ function renderWishlist() {
               ${entries.map(e => `
                 <tr>
                   <td>${e.email}</td>
-                  <td style="color:var(--text-muted); font-size:0.85rem;">${e.date || e.created_at || '—'}</td>
+                  <td style="color:var(--text-muted);font-size:0.85rem;">${e.date || e.created_at || '—'}</td>
                   <td><button class="action-btn danger" onclick="removeWishlistEntry(${e.id})">Remove</button></td>
                 </tr>`).join('')}
             </tbody>
           </table>
         </div>`;
     });
-
     container.innerHTML = html;
 }
 
@@ -891,47 +808,29 @@ async function notifyWishlistProduct(productId) {
     const product     = products.find(p => String(p.id) === String(productId));
     const productName = product ? product.name : `Product #${productId}`;
     const entries     = wishlistEntries.filter(e => String(e.product_id || e.productId) === String(productId));
-
     if (!entries.length) { showToast('No customers to notify'); return; }
-
-    const templateId = EMAILJS_WISHLIST_TEMPLATE_ID.startsWith('YOUR_')
-        ? EMAILJS_TEMPLATE_ID  // fall back to the order confirmation template
-        : EMAILJS_WISHLIST_TEMPLATE_ID;
-
-    if (!emailJsReady()) {
-        showToast('Configure EmailJS first (see app.js) — emails not sent');
-        return;
-    }
-
-    if (!confirm(`Send back-in-stock emails to ${entries.length} customer${entries.length !== 1 ? 's' : ''} for "${productName}"?`)) return;
-
+    if (!emailJsReady()) { showToast('Configure EmailJS first — see app.js'); return; }
+    if (!confirm(`Send back-in-stock emails to ${entries.length} customer${entries.length!==1?'s':''} for "${productName}"?`)) return;
+    const templateId = EMAILJS_WISHLIST_TEMPLATE_ID.startsWith('YOUR_') ? EMAILJS_TEMPLATE_ID : EMAILJS_WISHLIST_TEMPLATE_ID;
     let sent = 0;
     for (const entry of entries) {
         try {
             await emailjs.send(EMAILJS_SERVICE_ID, templateId, {
-                to_name:      entry.email.split('@')[0],
-                to_email:     entry.email,
-                product_name: productName,
-                shop_name:    'Home Grown',
-                shop_url:     window.location.origin,
-                reply_to:     'hello@homegrown.co.uk'
+                to_name: entry.email.split('@')[0], to_email: entry.email,
+                product_name: productName, shop_name: 'Home Grown',
+                shop_url: window.location.origin, reply_to: 'hello@homegrown.co.uk'
             }, EMAILJS_PUBLIC_KEY);
             sent++;
-        } catch (err) {
-            console.warn('Failed to notify', entry.email, err);
-        }
+        } catch (err) { console.warn('Failed to notify', entry.email, err); }
     }
-    showToast(`✓ Notified ${sent} customer${sent !== 1 ? 's' : ''} about "${productName}"`);
+    showToast(`✓ Notified ${sent} customer${sent!==1?'s':''} about "${productName}"`);
 }
 
 async function clearWishlistProduct(productId) {
     const product = products.find(p => String(p.id) === String(productId));
-    const name    = product ? product.name : 'this product';
-    if (!confirm(`Clear all wishlist entries for "${name}"?`)) return;
+    if (!confirm(`Clear all wishlist entries for "${product ? product.name : 'this product'}"?`)) return;
     try {
-        await fetch(`${API_BASE}/admin/wishlist/${productId}`, {
-            method: 'DELETE', headers: { 'Authorization': `Bearer ${adminToken}` }
-        });
+        await fetch(`${API_BASE}/admin/wishlist/${productId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${adminToken}` } });
         showToast('Wishlist cleared');
         await loadAdminData();
     } catch (err) { showToast('Failed to clear wishlist'); }
@@ -939,12 +838,244 @@ async function clearWishlistProduct(productId) {
 
 async function removeWishlistEntry(id) {
     try {
-        await fetch(`${API_BASE}/admin/wishlist/entry/${id}`, {
-            method: 'DELETE', headers: { 'Authorization': `Bearer ${adminToken}` }
-        });
+        await fetch(`${API_BASE}/admin/wishlist/entry/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${adminToken}` } });
         showToast('Entry removed');
         await loadAdminData();
     } catch (err) { showToast('Failed to remove entry'); }
+}
+
+// ─── CHAT WIDGET (CUSTOMER) ───────────────────────────────────────────────────
+function toggleChatWindow() {
+    chatWindowOpen = !chatWindowOpen;
+    const win = document.getElementById('chat-window');
+    if (!win) return;
+    win.style.display = chatWindowOpen ? 'flex' : 'none';
+    if (chatWindowOpen) {
+        const badge = document.getElementById('chat-unread-badge');
+        if (badge) badge.style.display = 'none';
+        if (chatUser) {
+            showChatConversation();
+        } else {
+            document.getElementById('chat-identity').style.display      = 'flex';
+            document.getElementById('chat-messages-area').style.display = 'none';
+            document.getElementById('chat-input-area').style.display    = 'none';
+            setTimeout(() => document.getElementById('chat-name-input')?.focus(), 150);
+        }
+    }
+}
+
+function startChat() {
+    const name  = document.getElementById('chat-name-input').value.trim();
+    const email = document.getElementById('chat-email-input').value.trim();
+    if (!name)                     { showChatIdentityStatus('Please enter your name.', 'error'); return; }
+    if (!email || !email.includes('@')) { showChatIdentityStatus('Please enter a valid email.', 'error'); return; }
+    chatUser = { name, email };
+    localStorage.setItem('hg_chat_user', JSON.stringify(chatUser));
+    showChatConversation();
+}
+
+function showChatConversation() {
+    document.getElementById('chat-identity').style.display      = 'none';
+    document.getElementById('chat-messages-area').style.display = 'flex';
+    document.getElementById('chat-input-area').style.display    = 'flex';
+    renderLocalChat();
+    const msgArea = document.getElementById('chat-messages-area');
+    if (msgArea) msgArea.scrollTop = msgArea.scrollHeight;
+    setTimeout(() => document.getElementById('chat-msg-input')?.focus(), 150);
+}
+
+function renderLocalChat() {
+    const area = document.getElementById('chat-messages-area');
+    if (!area) return;
+    if (!localChatHistory.length) {
+        area.innerHTML = `
+        <div class="chat-welcome">
+          <div class="chat-welcome-icon">🌿</div>
+          <p>Hi <strong>${chatUser?.name || 'there'}</strong>! How can we help you today?</p>
+          <p style="font-size:0.82rem;color:var(--text-muted);margin-top:6px;">We'll reply to your email as soon as possible.</p>
+        </div>`;
+        return;
+    }
+    area.innerHTML = localChatHistory.map(msg => `
+        <div class="chat-bubble-wrap ${msg.role === 'customer' ? 'chat-bubble-right' : 'chat-bubble-left'}">
+          <div class="chat-bubble ${msg.role === 'customer' ? 'chat-bubble-customer' : 'chat-bubble-admin'}">${msg.text}</div>
+          <div class="chat-bubble-time">${msg.time || ''}</div>
+        </div>`).join('');
+    area.scrollTop = area.scrollHeight;
+}
+
+async function submitChatMessage() {
+    const input = document.getElementById('chat-msg-input');
+    const text  = (input?.value || '').trim();
+    if (!text || !chatUser) return;
+    const msg = {
+        role: 'customer', text, name: chatUser.name, email: chatUser.email,
+        time: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+        ts: Date.now()
+    };
+    localChatHistory.push(msg);
+    localStorage.setItem('hg_chat_history', JSON.stringify(localChatHistory));
+    input.value = '';
+    renderLocalChat();
+    try {
+        await fetch(`${API_BASE}/chat`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: chatUser.name, email: chatUser.email, message: text, ts: msg.ts })
+        });
+    } catch (err) { console.warn('Chat message save failed:', err); }
+    showChatStatus("✓ Message sent! We'll reply to your email.", 'success');
+    setTimeout(() => showChatStatus('', ''), 4000);
+}
+
+function showChatStatus(msg, type) {
+    const el = document.getElementById('chat-status-msg');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = type === 'error' ? 'var(--danger)' : type === 'success' ? 'var(--success)' : 'var(--text-muted)';
+}
+function showChatIdentityStatus(msg, type) {
+    const el = document.getElementById('chat-identity-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = type === 'error' ? 'var(--danger)' : 'var(--text-muted)';
+}
+
+// ─── CHAT ADMIN INBOX ─────────────────────────────────────────────────────────
+function renderAdminChats() {
+    const container = document.getElementById('chat-admin-content');
+    if (!container) return;
+    if (!chatMessages || !chatMessages.length) {
+        container.innerHTML = `
+        <div style="text-align:center;padding:3rem;color:var(--text-muted);">
+          <div style="font-size:3rem;margin-bottom:1rem;">💬</div>
+          <p style="font-weight:700;font-size:1rem;">No messages yet.</p>
+          <p style="font-size:0.88rem;margin-top:6px;">When customers use the chat widget, their messages appear here.</p>
+        </div>`;
+        const badge = document.getElementById('chat-sidebar-badge');
+        if (badge) badge.style.display = 'none';
+        return;
+    }
+    const threads = {};
+    chatMessages.forEach(msg => {
+        const key = msg.email || 'unknown';
+        if (!threads[key]) threads[key] = { name: msg.name, email: msg.email, messages: [] };
+        threads[key].messages.push(msg);
+    });
+    const sortedThreads = Object.values(threads).sort((a, b) => {
+        const aLast = a.messages[a.messages.length - 1]?.ts || 0;
+        const bLast = b.messages[b.messages.length - 1]?.ts || 0;
+        return bLast - aLast;
+    });
+    container.innerHTML = sortedThreads.map((thread, idx) => {
+        const lastMsg  = thread.messages[thread.messages.length - 1];
+        const lastTime = lastMsg?.ts ? new Date(lastMsg.ts).toLocaleDateString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : (lastMsg?.date || '');
+        const unread   = thread.messages.filter(m => !m.read).length;
+        return `
+        <div class="chat-thread-card" id="thread-${idx}">
+          <div class="chat-thread-header" onclick="toggleThread(${idx})">
+            <div class="chat-thread-avatar">${(thread.name||'?')[0].toUpperCase()}</div>
+            <div class="chat-thread-info">
+              <div class="chat-thread-name">
+                ${thread.name || 'Unknown'}
+                ${unread ? `<span class="chat-unread-count">${unread} new</span>` : ''}
+              </div>
+              <div class="chat-thread-email">${thread.email}</div>
+              <div class="chat-thread-preview">${(lastMsg?.message||'').substring(0,60)}${(lastMsg?.message||'').length>60?'…':''}</div>
+            </div>
+            <div class="chat-thread-meta">
+              <div class="chat-thread-time">${lastTime}</div>
+              <div class="chat-thread-count">${thread.messages.length} msg${thread.messages.length!==1?'s':''}</div>
+            </div>
+          </div>
+          <div class="chat-thread-body" id="thread-body-${idx}" style="display:none;">
+            <div class="chat-thread-messages">
+              ${thread.messages.map(m => `
+                <div class="chat-admin-bubble-wrap">
+                  <div class="chat-admin-bubble">
+                    <div class="chat-admin-bubble-meta">
+                      <strong>${m.name || 'Customer'}</strong>
+                      <span>${m.date || (m.ts ? new Date(m.ts).toLocaleString('en-GB') : '')}</span>
+                    </div>
+                    <div class="chat-admin-bubble-text">${m.message || ''}</div>
+                  </div>
+                </div>
+                ${(m.replies || []).map(r => `
+                  <div class="chat-admin-bubble-wrap chat-admin-reply-wrap">
+                    <div class="chat-admin-bubble chat-admin-reply">
+                      <div class="chat-admin-bubble-meta"><strong>You (Home Grown)</strong><span>${r.date||''}</span></div>
+                      <div class="chat-admin-bubble-text">${r.text}</div>
+                    </div>
+                  </div>`).join('')}
+              `).join('')}
+            </div>
+            <div class="chat-reply-box">
+              <div style="font-size:0.78rem;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:var(--green-mid);margin-bottom:8px;">
+                Reply to ${thread.name} · <span style="font-weight:600;text-transform:none;">${thread.email}</span>
+              </div>
+              <textarea id="reply-input-${idx}" rows="3"
+                placeholder="Type your reply… it'll be sent to ${thread.email}"
+                style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);font-size:0.92rem;background:var(--yellow-pale);resize:vertical;outline:none;"
+                onfocus="this.style.borderColor='var(--green-leaf)';this.style.background='var(--white)'"
+                onblur="this.style.borderColor='var(--border)';this.style.background='var(--yellow-pale)'"></textarea>
+              <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
+                <button class="action-btn primary" onclick="sendAdminChatReply('${thread.email}','${(thread.name||'').replace(/'/g,"\\'")}',${idx})" style="padding:10px 20px;">📧 Send Reply Email</button>
+                <span style="font-size:0.78rem;font-weight:700;color:var(--text-muted);">Sends via EmailJS to customer's inbox</span>
+              </div>
+              <div id="reply-status-${idx}" style="font-size:0.82rem;font-weight:700;margin-top:6px;min-height:1.2rem;"></div>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+    const totalUnread = sortedThreads.reduce((s, t) => s + t.messages.filter(m => !m.read).length, 0);
+    const badge = document.getElementById('chat-sidebar-badge');
+    if (badge) { badge.textContent = totalUnread || ''; badge.style.display = totalUnread ? 'inline-flex' : 'none'; }
+}
+
+function toggleThread(idx) {
+    const body = document.getElementById(`thread-body-${idx}`);
+    if (!body) return;
+    const isOpen = body.style.display !== 'none';
+    document.querySelectorAll('[id^="thread-body-"]').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.chat-thread-card').forEach(el => el.classList.remove('chat-thread-active'));
+    if (!isOpen) {
+        body.style.display = 'block';
+        document.getElementById(`thread-${idx}`).classList.add('chat-thread-active');
+        const msgs = body.querySelector('.chat-thread-messages');
+        if (msgs) msgs.scrollTop = msgs.scrollHeight;
+    }
+}
+
+async function sendAdminChatReply(email, name, idx) {
+    const textarea  = document.getElementById(`reply-input-${idx}`);
+    const statusEl  = document.getElementById(`reply-status-${idx}`);
+    const replyText = (textarea?.value || '').trim();
+    if (!replyText) { statusEl.style.color='var(--danger)'; statusEl.textContent='Please type a reply first.'; return; }
+    if (!emailJsReady()) { statusEl.style.color='var(--danger)'; statusEl.textContent='EmailJS not configured — set your IDs in app.js first.'; return; }
+    const btn = document.querySelector(`#thread-${idx} .action-btn.primary`);
+    if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+    try {
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+            to_name: name || 'Customer', to_email: email, reply_to: 'hello@homegrown.co.uk',
+            shop_name: 'Home Grown', order_id: 'Chat Reply',
+            order_date: new Date().toLocaleDateString('en-GB'),
+            items_list: replyText, order_total: '', delivery_address: ''
+        }, EMAILJS_PUBLIC_KEY);
+        try {
+            await fetch(`${API_BASE}/admin/chat/reply`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+                body: JSON.stringify({ email, name, reply: replyText, date: new Date().toLocaleString('en-GB') })
+            });
+        } catch (e) {}
+        statusEl.style.color = 'var(--success)';
+        statusEl.textContent = `✓ Reply sent to ${email}`;
+        if (textarea) textarea.value = '';
+        if (btn) { btn.disabled = false; btn.textContent = '📧 Send Reply Email'; }
+        await loadAdminData();
+    } catch (err) {
+        statusEl.style.color = 'var(--danger)';
+        statusEl.textContent = 'Email failed — check EmailJS config: ' + (err.text || err.message || err);
+        if (btn) { btn.disabled = false; btn.textContent = '📧 Send Reply Email'; }
+    }
 }
 
 // ─── BASKET ───────────────────────────────────────────────────────────────────
@@ -955,10 +1086,9 @@ function addToCart(id) {
     if (ex) ex.qty++; else cart.push({ ...p, qty: 1 });
     updateCartUI();
     const btn = document.getElementById('add-btn-' + id);
-    if (btn) { btn.textContent = '✓ Added'; btn.classList.add('added'); setTimeout(() => { btn.textContent = 'Add +'; btn.classList.remove('added'); }, 1500); }
+    if (btn) { btn.textContent = '✓ Added'; btn.classList.add('added'); setTimeout(() => { btn.textContent = '+ Add to Basket'; btn.classList.remove('added'); }, 1500); }
     showToast(`${p.emoji || '🍪'} ${p.name} added!`);
 }
-
 function changeQty(id, d) {
     const item = cart.find(x => x.id === id);
     if (!item) return;
@@ -966,17 +1096,14 @@ function changeQty(id, d) {
     if (item.qty <= 0) cart = cart.filter(x => x.id !== id);
     updateCartUI();
 }
-
 function removeFromCart(id) { cart = cart.filter(x => x.id !== id); updateCartUI(); }
 
 function updateCartUI() {
     const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
     const count    = cart.reduce((s, x) => s + x.qty, 0);
     document.getElementById('cart-count').textContent = count;
-
     const itemsEl  = document.getElementById('cart-items');
     const footerEl = document.getElementById('cart-footer');
-
     if (cart.length === 0) {
         itemsEl.innerHTML = `<div class="empty-cart"><span class="ec-icon">🧺</span><p>Your basket is empty</p></div>`;
         footerEl.style.display = 'none';
@@ -993,8 +1120,8 @@ function updateCartUI() {
                   <button class="qty-btn" onclick="changeQty(${item.id},1)">+</button>
                 </div>
               </div>
-              <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
-                <span style="font-weight:800; font-size:0.95rem; color:var(--green-dark);">£${(parseFloat(item.price) * item.qty).toFixed(2)}</span>
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+                <span style="font-weight:800;font-size:0.95rem;color:var(--green-dark);">£${(parseFloat(item.price)*item.qty).toFixed(2)}</span>
                 <button class="remove-item" onclick="removeFromCart(${item.id})" title="Remove">🗑</button>
               </div>
             </div>`).join('');
@@ -1021,7 +1148,6 @@ function updateCheckoutTotals() {
     const btn      = document.getElementById('pay-btn');
     const msgEl    = document.getElementById('delivery-message');
     const errEl    = document.getElementById('card-errors');
-
     let shipping = 0, shippingLabel = '';
 
     if (isPickup) {
@@ -1035,7 +1161,7 @@ function updateCheckoutTotals() {
     } else {
         const hasCity = city.length > 0, hasPostcode = postcode.length > 0;
         if (!hasCity && !hasPostcode) {
-            shipping = 0; shippingLabel = 'Delivery (enter your city and postcode above)';
+            shipping = 0; shippingLabel = 'Delivery (enter city & postcode above)';
             btn.disabled = false; msgEl.textContent = '';
             const infoEl = document.getElementById('checkout-fulfilment-info'); if (infoEl) infoEl.style.display='none';
         } else if (isSheffieldDelivery()) {
@@ -1050,18 +1176,15 @@ function updateCheckoutTotals() {
             shipping = 0; shippingLabel = '<span style="color:var(--danger);">Delivery unavailable</span>';
             btn.disabled = true;
             msgEl.style.color = 'var(--danger)';
-            if (city === 'sheffield' && hasPostcode && !/^S\d/.test(postcode)) {
-                msgEl.textContent = "✗ That postcode doesn't look like a Sheffield postcode (should start with S).";
-            } else {
-                msgEl.textContent = '✗ Sorry, we only deliver within Sheffield. Please select Home Pickup instead.';
-            }
+            msgEl.textContent = (city === 'sheffield' && hasPostcode && !/^S\d/.test(postcode))
+                ? "✗ That postcode doesn't look like a Sheffield postcode (should start with S)."
+                : '✗ Sorry, we only deliver within Sheffield. Please select Home Pickup instead.';
             const infoEl = document.getElementById('checkout-fulfilment-info'); if (infoEl) infoEl.style.display='none';
         }
     }
 
     let discount = 0, discountLabel = '';
     if (appliedPromo) { discount = subtotal * (appliedPromo.discount / 100); discountLabel = `🎟️ Promo ${appliedPromo.code} (−${appliedPromo.discount}%)`; }
-
     const total = Math.max(0, subtotal - discount + shipping);
     let html = cart.map(i => `<div class="os-item"><span>${i.emoji||''} ${i.name} ×${i.qty}</span><span>£${(parseFloat(i.price)*i.qty).toFixed(2)}</span></div>`).join('');
     if (discountLabel) html += `<div class="os-item" style="color:var(--success);"><span>${discountLabel}</span><span>−£${discount.toFixed(2)}</span></div>`;
@@ -1102,16 +1225,15 @@ function openCheckout() {
     document.getElementById('checkout-modal').classList.add('open');
     toggleCart();
 }
-
 function closeCheckout() { document.getElementById('checkout-modal').classList.remove('open'); }
 
-// ─── PROMO CODE ───────────────────────────────────────────────────────────────
+// ─── PROMO ────────────────────────────────────────────────────────────────────
 async function applyPromo() {
-    const code    = (document.getElementById('promo-input')?.value || '').trim().toUpperCase();
-    const email   = (document.getElementById('ch-email')?.value || '').trim();
-    const msgEl   = document.getElementById('promo-message');
+    const code     = (document.getElementById('promo-input')?.value || '').trim().toUpperCase();
+    const email    = (document.getElementById('ch-email')?.value || '').trim();
+    const msgEl    = document.getElementById('promo-message');
     const promoBtn = document.getElementById('promo-btn');
-    if (!code) { msgEl.style.color='var(--danger)'; msgEl.textContent='Please enter a promo code.'; return; }
+    if (!code)  { msgEl.style.color='var(--danger)'; msgEl.textContent='Please enter a promo code.'; return; }
     if (!email) { msgEl.style.color='var(--danger)'; msgEl.textContent='Please enter your email address first.'; return; }
     promoBtn.disabled = true; promoBtn.textContent = 'Checking…';
     try {
@@ -1132,18 +1254,15 @@ async function applyPromo() {
     }
 }
 
-// ─── FULFILMENT DATE HELPERS ──────────────────────────────────────────────────
+// ─── FULFILMENT DATES ─────────────────────────────────────────────────────────
 function nextSlotDate(targetDay, type) {
-    const nowString  = new Date().toLocaleString("en-US", { timeZone: "Europe/London" });
-    const now        = new Date(nowString);
-    const currentDay = now.getDay();
+    const nowString   = new Date().toLocaleString("en-US", { timeZone: "Europe/London" });
+    const now         = new Date(nowString);
+    const currentDay  = now.getDay();
     const currentHour = now.getHours();
-    let canUseThisWeek = false;
-    if (type === 'delivery') {
-        canUseThisWeek = currentDay < 4 || (currentDay === 4 && currentHour < 13);
-    } else if (type === 'pickup') {
-        canUseThisWeek = currentDay < 5 || (currentDay === 5 && currentHour < 17);
-    }
+    let canUseThisWeek = type === 'delivery'
+        ? (currentDay < 4 || (currentDay === 4 && currentHour < 13))
+        : (currentDay < 5 || (currentDay === 5 && currentHour < 17));
     let daysUntil = targetDay - currentDay;
     const isThisWeek = daysUntil >= 0;
     if (!isThisWeek) daysUntil += 7;
@@ -1157,16 +1276,12 @@ function getFulfilmentMessage(isPickup) {
     if (isPickup) {
         const friday   = nextSlotDate(5, 'pickup');
         const saturday = nextSlotDate(6, 'pickup');
-        return {
-            bg: '#E8F5E9', border: '#A5D6A7', color: '#1B5E20',
-            html: `<strong>Collection Details</strong><br>Your order will be ready for collection on:<br>📅 <strong>${friday}</strong> or <strong>${saturday}</strong><br>🕙 Between <strong>10am and 1pm</strong><br><br>We'll be in touch if anything changes.`
-        };
+        return { bg:'#E8F5E9', border:'#A5D6A7', color:'#1B5E20',
+            html:`<strong>Collection Details</strong><br>Your order will be ready for collection on:<br>📅 <strong>${friday}</strong> or <strong>${saturday}</strong><br>🕙 Between <strong>10am and 1pm</strong><br><br>We'll be in touch if anything changes.` };
     } else {
         const thursday = nextSlotDate(4, 'delivery');
-        return {
-            bg: '#E3F2FD', border: '#90CAF9', color: '#0D47A1',
-            html: `<strong>Delivery Details</strong><br>Your order will be delivered on:<br>📅 <strong>${thursday}</strong><br>🕕 Between <strong>6pm and 8pm</strong><br><br>Please make sure someone is home to receive it.`
-        };
+        return { bg:'#E3F2FD', border:'#90CAF9', color:'#0D47A1',
+            html:`<strong>Delivery Details</strong><br>Your order will be delivered on:<br>📅 <strong>${thursday}</strong><br>🕕 Between <strong>6pm and 8pm</strong><br><br>Please make sure someone is home to receive it.` };
     }
 }
 
@@ -1174,13 +1289,11 @@ function getFulfilmentMessage(isPickup) {
 async function processPayment() {
     const fields = [['ch-fname','First name'],['ch-lname','Last name'],['ch-email','Email'],['ch-address','Address'],['ch-city','City'],['ch-postcode','Postcode']];
     for (const [id, label] of fields) {
-        if (!document.getElementById(id).value.trim()) { showToast(`Please enter your ${label}`); return; }
+        if (!document.getElementById(id)?.value.trim()) { showToast(`Please enter your ${label}`); return; }
     }
-
     const btn = document.getElementById('pay-btn');
     btn.disabled = true; btn.innerHTML = 'Processing…';
     document.getElementById('card-errors').textContent = '';
-
     const customer = {
         fname:    document.getElementById('ch-fname').value.trim(),
         lname:    document.getElementById('ch-lname').value.trim(),
@@ -1193,11 +1306,10 @@ async function processPayment() {
     customer.name     = `${customer.fname} ${customer.lname}`;
     const fullAddress = `${customer.address}, ${customer.city}, ${customer.postcode}`;
     const isPickup    = document.getElementById('pickup-check')?.checked || false;
-
-    const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
-    const discount = appliedPromo ? subtotal * (appliedPromo.discount / 100) : 0;
-    const shipping = isPickup ? 0 : (isSheffieldDelivery() ? 3.00 : 0);
-    const total    = Math.max(0, subtotal - discount + shipping).toFixed(2);
+    const subtotal    = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
+    const discount    = appliedPromo ? subtotal * (appliedPromo.discount / 100) : 0;
+    const shipping    = isPickup ? 0 : (isSheffieldDelivery() ? 3.00 : 0);
+    const total       = Math.max(0, subtotal - discount + shipping).toFixed(2);
 
     if (!isPickup && !isSheffieldDelivery()) {
         showToast('Delivery is only available in Sheffield. Please select pickup or update your address.');
@@ -1210,7 +1322,6 @@ async function processPayment() {
 
     try {
         let paymentIntentId = null;
-
         if (STRIPE_PUBLISHABLE_KEY && stripeInstance && cardElement) {
             const res = await fetch(`${API_BASE}/create-payment-intent`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1225,7 +1336,11 @@ async function processPayment() {
             const { paymentIntent, error } = await stripeInstance.confirmCardPayment(clientSecret, {
                 payment_method: {
                     card: cardElement,
-                    billing_details: { name: customer.name, email: customer.email, phone: customer.phone || undefined, address: { line1: customer.address, city: customer.city, postal_code: customer.postcode, country: 'GB' } }
+                    billing_details: {
+                        name: customer.name, email: customer.email,
+                        phone: customer.phone || undefined,
+                        address: { line1: customer.address, city: customer.city, postal_code: customer.postcode, country: 'GB' }
+                    }
                 },
                 receipt_email: customer.email
             });
@@ -1246,7 +1361,7 @@ async function processPayment() {
         const orderRes = await fetch(`${API_BASE}/orders`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(orderPayload)
         });
-        if (!orderRes.ok) { const e = await orderRes.json().catch(()=>({})); throw new Error(e.error || 'Order backend processing failed'); }
+        if (!orderRes.ok) { const e = await orderRes.json().catch(()=>({})); throw new Error(e.error || 'Order processing failed'); }
 
         await sendConfirmationEmail(orderPayload, customer, total);
 
@@ -1254,7 +1369,6 @@ async function processPayment() {
         const msg   = getFulfilmentMessage(isPickup);
         const msgEl = document.getElementById('success-fulfilment-msg');
         if (msgEl) { msgEl.style.background=msg.bg; msgEl.style.border=`2px solid ${msg.border}`; msgEl.style.color=msg.color; msgEl.innerHTML=msg.html; }
-
         document.getElementById('checkout-content').style.display = 'none';
         document.getElementById('success-content').style.display  = 'block';
         cart = []; appliedPromo = null; updateCartUI();
@@ -1266,7 +1380,7 @@ async function processPayment() {
     }
 }
 
-// ─── EMAIL CONFIRMATION (EmailJS) ─────────────────────────────────────────────
+// ─── EMAIL (EmailJS) ──────────────────────────────────────────────────────────
 const EMAILJS_SERVICE_ID  = 'YOUR_SERVICE_ID';
 const EMAILJS_TEMPLATE_ID = 'YOUR_TEMPLATE_ID';
 const EMAILJS_PUBLIC_KEY  = 'YOUR_PUBLIC_KEY';
@@ -1280,7 +1394,9 @@ function emailJsReady() {
 
 async function sendConfirmationEmail(order, customer, total) {
     if (!emailJsReady()) { console.info('EmailJS not configured — skipping confirmation email.'); return; }
-    const itemLines = cart.length ? cart.map(i => `• ${i.name} × ${i.qty}   —   £${(parseFloat(i.price)*i.qty).toFixed(2)}`).join('\n') : (order.items || '');
+    const itemLines = cart.length
+        ? cart.map(i => `• ${i.name} × ${i.qty}   —   £${(parseFloat(i.price)*i.qty).toFixed(2)}`).join('\n')
+        : (order.items || '');
     try {
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
             to_name: customer.name, to_email: customer.email, order_id: order.id,
@@ -1310,17 +1426,13 @@ async function updateOrderStatus(id, status) {
     } catch (err) { showToast('Update failed'); }
 }
 
-async function cancelOrder(id) {
-    if (!confirm(`Cancel order ${id}?`)) return;
-    await updateOrderStatus(id, 'cancelled');
-}
+async function cancelOrder(id) { if (!confirm(`Cancel order ${id}?`)) return; await updateOrderStatus(id, 'cancelled'); }
 
 function filterOrders(q) {
     document.querySelectorAll('#orders-body tr').forEach(row => {
         row.style.display = row.textContent.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
     });
 }
-
 function filterOrdersByStatus(s) {
     document.querySelectorAll('#orders-body tr').forEach(row => {
         row.style.display = (!s || row.textContent.toLowerCase().includes(s)) ? '' : 'none';
@@ -1335,8 +1447,7 @@ async function addIngredient() {
     const max   = parseFloat(document.getElementById('ing-max').value)   || 10;
     if (!name || !unit) { showToast('Please enter ingredient name and unit'); return; }
     try {
-        const res = await fetch(`${API_BASE}/admin/ingredients`, { method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${adminToken}`}, body:JSON.stringify({ name, unit, stock, min_stock:min, max_stock:max }) });
-        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        await fetch(`${API_BASE}/admin/ingredients`, { method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${adminToken}`}, body:JSON.stringify({ name, unit, stock, min_stock:min, max_stock:max }) });
         showToast('✓ ' + name + ' added');
         ['ing-name','ing-unit','ing-stock','ing-min','ing-max'].forEach(id => document.getElementById(id).value = '');
         await loadAdminData();
@@ -1349,8 +1460,7 @@ async function restockIngredient(index) {
     if (isNaN(amt) || amt <= 0) return;
     const newStock = Math.min(parseFloat(ing.max_stock || ing.max || 999), parseFloat(ing.stock) + amt);
     try {
-        const res = await fetch(`${API_BASE}/admin/ingredients/${ing.id}`, { method:'PUT', headers:{'Content-Type':'application/json','Authorization':`Bearer ${adminToken}`}, body:JSON.stringify({ stock: newStock }) });
-        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        await fetch(`${API_BASE}/admin/ingredients/${ing.id}`, { method:'PUT', headers:{'Content-Type':'application/json','Authorization':`Bearer ${adminToken}`}, body:JSON.stringify({ stock: newStock }) });
         showToast(`✓ Restocked ${ing.name}`); await loadAdminData();
     } catch (err) { showToast('Restock failed'); }
 }
@@ -1359,8 +1469,7 @@ async function deleteIngredient(index) {
     const ing = ingredients[index];
     if (!ing || !confirm(`Remove ${ing.name}?`)) return;
     try {
-        const res = await fetch(`${API_BASE}/admin/ingredients/${ing.id}`, { method:'DELETE', headers:{'Authorization':`Bearer ${adminToken}`} });
-        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        await fetch(`${API_BASE}/admin/ingredients/${ing.id}`, { method:'DELETE', headers:{'Authorization':`Bearer ${adminToken}`} });
         showToast(`${ing.name} removed`); await loadAdminData();
     } catch (err) { showToast('Delete failed'); }
 }
@@ -1369,7 +1478,7 @@ async function addPromo() {
     const code = document.getElementById('promo-new-code').value.trim().toUpperCase();
     const disc = parseInt(document.getElementById('promo-new-discount').value);
     const max  = document.getElementById('promo-new-max').value ? parseInt(document.getElementById('promo-new-max').value) : null;
-    if (!code)                              { showToast('Please enter a promo code'); return; }
+    if (!code) { showToast('Please enter a promo code'); return; }
     if (isNaN(disc) || disc < 1 || disc > 100) { showToast('Please enter a valid discount (1-100%)'); return; }
     try {
         const res = await fetch(`${API_BASE}/admin/promos`, { method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${adminToken}`}, body:JSON.stringify({ code, discount_percent:disc, max_uses:max }) });
@@ -1383,8 +1492,7 @@ async function addPromo() {
 async function deletePromo(id) {
     if (!confirm('Delete this promo code?')) return;
     try {
-        const res = await fetch(`${API_BASE}/admin/promos/${id}`, { method:'DELETE', headers:{'Authorization':`Bearer ${adminToken}`} });
-        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        await fetch(`${API_BASE}/admin/promos/${id}`, { method:'DELETE', headers:{'Authorization':`Bearer ${adminToken}`} });
         showToast('Promo code removed'); await loadAdminData();
     } catch (err) { showToast('Delete failed'); }
 }
@@ -1400,312 +1508,3 @@ function showToast(msg) {
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 initApp();
-
-// ═══════════════════════════════════════════════
-//  LIVE CHAT WIDGET
-// ═══════════════════════════════════════════════
-
-// ─── CHAT STATE ───────────────────────────────────────────────────────────────
-// chatMessages is declared at top of file with other state variables
-let localChatHistory = JSON.parse(localStorage.getItem('hg_chat_history') || '[]');
-let chatUser         = JSON.parse(localStorage.getItem('hg_chat_user')    || 'null');
-let chatWindowOpen   = false;
-
-// ─── CHAT WIDGET (CUSTOMER FACING) ────────────────────────────────────────────
-function toggleChatWindow() {
-    chatWindowOpen = !chatWindowOpen;
-    const win = document.getElementById('chat-window');
-    win.style.display = chatWindowOpen ? 'flex' : 'none';
-
-    if (chatWindowOpen) {
-        // Hide unread badge when opened
-        const badge = document.getElementById('chat-unread-badge');
-        if (badge) badge.style.display = 'none';
-
-        if (chatUser) {
-            showChatConversation();
-        } else {
-            document.getElementById('chat-identity').style.display = 'flex';
-            document.getElementById('chat-messages-area').style.display = 'none';
-            document.getElementById('chat-input-area').style.display = 'none';
-            setTimeout(() => document.getElementById('chat-name-input').focus(), 150);
-        }
-    }
-}
-
-function startChat() {
-    const name  = document.getElementById('chat-name-input').value.trim();
-    const email = document.getElementById('chat-email-input').value.trim();
-
-    if (!name) { showChatIdentityStatus('Please enter your name.', 'error'); return; }
-    if (!email || !email.includes('@')) { showChatIdentityStatus('Please enter a valid email.', 'error'); return; }
-
-    chatUser = { name, email };
-    localStorage.setItem('hg_chat_user', JSON.stringify(chatUser));
-    showChatConversation();
-}
-
-function showChatConversation() {
-    document.getElementById('chat-identity').style.display     = 'none';
-    document.getElementById('chat-messages-area').style.display = 'flex';
-    document.getElementById('chat-input-area').style.display   = 'flex';
-    renderLocalChat();
-    const msgArea = document.getElementById('chat-messages-area');
-    msgArea.scrollTop = msgArea.scrollHeight;
-    setTimeout(() => document.getElementById('chat-msg-input').focus(), 150);
-}
-
-function renderLocalChat() {
-    const area = document.getElementById('chat-messages-area');
-    if (!area) return;
-
-    if (!localChatHistory.length) {
-        area.innerHTML = `
-        <div class="chat-welcome">
-          <div class="chat-welcome-icon">🌿</div>
-          <p>Hi <strong>${chatUser?.name || 'there'}</strong>! How can we help you today?</p>
-          <p style="font-size:0.82rem; color:var(--text-muted); margin-top:6px;">We'll reply to your email as soon as possible.</p>
-        </div>`;
-        return;
-    }
-
-    area.innerHTML = localChatHistory.map(msg => `
-        <div class="chat-bubble-wrap ${msg.role === 'customer' ? 'chat-bubble-right' : 'chat-bubble-left'}">
-          <div class="chat-bubble ${msg.role === 'customer' ? 'chat-bubble-customer' : 'chat-bubble-admin'}">
-            ${msg.text}
-          </div>
-          <div class="chat-bubble-time">${msg.time || ''}</div>
-        </div>`
-    ).join('');
-    area.scrollTop = area.scrollHeight;
-}
-
-async function submitChatMessage() {
-    const input = document.getElementById('chat-msg-input');
-    const text  = (input.value || '').trim();
-    if (!text || !chatUser) return;
-
-    const msg = {
-        role: 'customer',
-        text,
-        name:  chatUser.name,
-        email: chatUser.email,
-        time:  new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-        ts:    Date.now()
-    };
-
-    localChatHistory.push(msg);
-    localStorage.setItem('hg_chat_history', JSON.stringify(localChatHistory));
-    input.value = '';
-    renderLocalChat();
-
-    // Save to backend
-    try {
-        await fetch(`${API_BASE}/chat`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({
-                name:    chatUser.name,
-                email:   chatUser.email,
-                message: text,
-                ts:      msg.ts
-            })
-        });
-    } catch (err) {
-        console.warn('Chat message save failed (will still show locally):', err);
-    }
-
-    showChatStatus("✓ Message sent! We'll reply to your email.", 'success');
-    setTimeout(() => showChatStatus('', ''), 4000);
-}
-
-function showChatStatus(msg, type) {
-    const el = document.getElementById('chat-status-msg');
-    if (!el) return;
-    el.textContent = msg;
-    el.style.color = type === 'error' ? 'var(--danger)' : type === 'success' ? 'var(--success)' : 'var(--text-muted)';
-}
-
-function showChatIdentityStatus(msg, type) {
-    const el = document.getElementById('chat-identity-status');
-    if (!el) return;
-    el.textContent = msg;
-    el.style.color = type === 'error' ? 'var(--danger)' : 'var(--text-muted)';
-}
-
-// ─── CHAT ADMIN PANEL ─────────────────────────────────────────────────────────
-function renderAdminChats() {
-    const container = document.getElementById('chat-admin-content');
-    if (!container) return;
-
-    if (!chatMessages || !chatMessages.length) {
-        container.innerHTML = `
-        <div style="text-align:center; padding:3rem; color:var(--text-muted);">
-          <div style="font-size:3rem; margin-bottom:1rem;">💬</div>
-          <p style="font-weight:700; font-size:1rem;">No messages yet.</p>
-          <p style="font-size:0.88rem; margin-top:6px;">When customers use the chat widget, their messages appear here.</p>
-        </div>`;
-        return;
-    }
-
-    // Group by email (conversation threads)
-    const threads = {};
-    chatMessages.forEach(msg => {
-        const key = msg.email || 'unknown';
-        if (!threads[key]) threads[key] = { name: msg.name, email: msg.email, messages: [] };
-        threads[key].messages.push(msg);
-    });
-
-    // Sort threads by most recent message
-    const sortedThreads = Object.values(threads).sort((a, b) => {
-        const aLast = a.messages[a.messages.length - 1]?.ts || 0;
-        const bLast = b.messages[b.messages.length - 1]?.ts || 0;
-        return bLast - aLast;
-    });
-
-    container.innerHTML = sortedThreads.map((thread, idx) => {
-        const lastMsg     = thread.messages[thread.messages.length - 1];
-        const lastTime    = lastMsg?.date || lastMsg?.ts ? new Date(lastMsg.ts || lastMsg.date).toLocaleDateString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
-        const unread      = thread.messages.filter(m => !m.read).length;
-
-        return `
-        <div class="chat-thread-card" id="thread-${idx}">
-          <div class="chat-thread-header" onclick="toggleThread(${idx})">
-            <div class="chat-thread-avatar">${(thread.name || '?')[0].toUpperCase()}</div>
-            <div class="chat-thread-info">
-              <div class="chat-thread-name">
-                ${thread.name || 'Unknown'}
-                ${unread ? `<span class="chat-unread-count">${unread} new</span>` : ''}
-              </div>
-              <div class="chat-thread-email">${thread.email}</div>
-              <div class="chat-thread-preview">${(lastMsg?.message || '').substring(0, 60)}${(lastMsg?.message || '').length > 60 ? '…' : ''}</div>
-            </div>
-            <div class="chat-thread-meta">
-              <div class="chat-thread-time">${lastTime}</div>
-              <div class="chat-thread-count">${thread.messages.length} msg${thread.messages.length !== 1 ? 's' : ''}</div>
-            </div>
-          </div>
-
-          <div class="chat-thread-body" id="thread-body-${idx}" style="display:none;">
-            <div class="chat-thread-messages">
-              ${thread.messages.map(m => `
-                <div class="chat-admin-bubble-wrap">
-                  <div class="chat-admin-bubble">
-                    <div class="chat-admin-bubble-meta">
-                      <strong>${m.name || 'Customer'}</strong>
-                      <span>${m.date || (m.ts ? new Date(m.ts).toLocaleString('en-GB') : '')}</span>
-                    </div>
-                    <div class="chat-admin-bubble-text">${m.message || ''}</div>
-                  </div>
-                </div>
-                ${(m.replies || []).map(r => `
-                  <div class="chat-admin-bubble-wrap chat-admin-reply-wrap">
-                    <div class="chat-admin-bubble chat-admin-reply">
-                      <div class="chat-admin-bubble-meta">
-                        <strong>You (Home Grown)</strong>
-                        <span>${r.date || ''}</span>
-                      </div>
-                      <div class="chat-admin-bubble-text">${r.text}</div>
-                    </div>
-                  </div>`).join('')}
-              `).join('')}
-            </div>
-
-            <div class="chat-reply-box">
-              <div style="font-size:0.78rem; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:var(--green-mid); margin-bottom:8px;">
-                Reply to ${thread.name} · <span style="font-weight:600; text-transform:none;">${thread.email}</span>
-              </div>
-              <textarea id="reply-input-${idx}" rows="3"
-                placeholder="Type your reply… it'll be sent to ${thread.email}"
-                style="width:100%; padding:10px 14px; border:2px solid var(--border); border-radius:var(--radius); font-family:var(--font-body); font-size:0.92rem; background:var(--yellow-pale); resize:vertical; outline:none;"
-                onfocus="this.style.borderColor='var(--green-leaf)'; this.style.background='var(--white)'"
-                onblur="this.style.borderColor='var(--border)'; this.style.background='var(--yellow-pale)'"></textarea>
-              <div style="display:flex; gap:8px; margin-top:10px; align-items:center;">
-                <button class="action-btn primary" onclick="sendAdminChatReply('${thread.email}', '${(thread.name||'').replace(/'/g,"\\'")}', ${idx})" style="padding:10px 20px;">
-                  📧 Send Reply Email
-                </button>
-                <span style="font-size:0.78rem; font-weight:700; color:var(--text-muted);">Sends via EmailJS to customer's inbox</span>
-              </div>
-              <div id="reply-status-${idx}" style="font-size:0.82rem; font-weight:700; margin-top:6px; min-height:1.2rem;"></div>
-            </div>
-          </div>
-        </div>`;
-    }).join('');
-
-    // Update sidebar badge
-    const totalUnread = sortedThreads.reduce((s, t) => s + t.messages.filter(m => !m.read).length, 0);
-    const badge = document.getElementById('chat-sidebar-badge');
-    if (badge) {
-        badge.textContent    = totalUnread || '';
-        badge.style.display  = totalUnread ? 'inline-flex' : 'none';
-    }
-}
-
-function toggleThread(idx) {
-    const body = document.getElementById(`thread-body-${idx}`);
-    if (!body) return;
-    const isOpen = body.style.display !== 'none';
-    // Close all
-    document.querySelectorAll('[id^="thread-body-"]').forEach(el => el.style.display = 'none');
-    document.querySelectorAll('.chat-thread-card').forEach(el => el.classList.remove('chat-thread-active'));
-    // Open this one (toggle)
-    if (!isOpen) {
-        body.style.display = 'block';
-        document.getElementById(`thread-${idx}`).classList.add('chat-thread-active');
-        // Scroll messages to bottom
-        const msgs = body.querySelector('.chat-thread-messages');
-        if (msgs) msgs.scrollTop = msgs.scrollHeight;
-    }
-}
-
-async function sendAdminChatReply(email, name, idx) {
-    const textarea  = document.getElementById(`reply-input-${idx}`);
-    const statusEl  = document.getElementById(`reply-status-${idx}`);
-    const replyText = (textarea?.value || '').trim();
-
-    if (!replyText) { statusEl.style.color='var(--danger)'; statusEl.textContent='Please type a reply first.'; return; }
-
-    if (!emailJsReady()) {
-        statusEl.style.color = 'var(--danger)';
-        statusEl.textContent = 'EmailJS not configured — set your IDs in app.js first.';
-        return;
-    }
-
-    const btn = document.querySelector(`#thread-${idx} .action-btn.primary`);
-    if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
-
-    try {
-        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-            to_name:   name || 'Customer',
-            to_email:  email,
-            reply_to:  'hello@homegrown.co.uk',
-            shop_name: 'Home Grown',
-            // Pass as order fields so existing template works — or create a dedicated chat reply template
-            order_id:         'Chat Reply',
-            order_date:       new Date().toLocaleDateString('en-GB'),
-            items_list:       replyText,
-            order_total:      '',
-            delivery_address: ''
-        }, EMAILJS_PUBLIC_KEY);
-
-        // Save reply to backend
-        try {
-            await fetch(`${API_BASE}/admin/chat/reply`, {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
-                body:    JSON.stringify({ email, name, reply: replyText, date: new Date().toLocaleString('en-GB') })
-            });
-        } catch (e) { /* backend save optional — email already sent */ }
-
-        statusEl.style.color = 'var(--success)';
-        statusEl.textContent = `✓ Reply sent to ${email}`;
-        if (textarea) textarea.value = '';
-        if (btn) { btn.disabled = false; btn.textContent = '📧 Send Reply Email'; }
-
-    } catch (err) {
-        console.error('Chat reply email failed:', err);
-        statusEl.style.color = 'var(--danger)';
-        statusEl.textContent = 'Email failed — check EmailJS config. Error: ' + (err.text || err.message || err);
-        if (btn) { btn.disabled = false; btn.textContent = '📧 Send Reply Email'; }
-    }
-}
