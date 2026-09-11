@@ -1049,31 +1049,37 @@ async function sendAdminChatReply(email, name, idx) {
     const textarea  = document.getElementById(`reply-input-${idx}`);
     const statusEl  = document.getElementById(`reply-status-${idx}`);
     const replyText = (textarea?.value || '').trim();
-    if (!replyText) { statusEl.style.color='var(--danger)'; statusEl.textContent='Please type a reply first.'; return; }
-    if (!emailJsReady()) { statusEl.style.color='var(--danger)'; statusEl.textContent='EmailJS not configured — set your IDs in app.js first.'; return; }
+    if (!replyText) {
+        statusEl.style.color = 'var(--danger)';
+        statusEl.textContent = 'Please type a reply first.';
+        return;
+    }
     const btn = document.querySelector(`#thread-${idx} .action-btn.primary`);
     if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+    statusEl.textContent = '';
+
     try {
-        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-            to_name: name || 'Customer', to_email: email, reply_to: 'hello@homegrown.co.uk',
-            shop_name: 'Home Grown', order_id: 'Chat Reply',
-            order_date: new Date().toLocaleDateString('en-GB'),
-            items_list: replyText, order_total: '', delivery_address: ''
-        }, EMAILJS_PUBLIC_KEY);
-        try {
-            await fetch(`${API_BASE}/admin/chat/reply`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
-                body: JSON.stringify({ email, name, reply: replyText, date: new Date().toLocaleString('en-GB') })
-            });
-        } catch (e) {}
+        // Backend handles both saving the reply AND emailing the customer via Nodemailer
+        const res = await fetch(`${API_BASE}/admin/chat/reply`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+            body:    JSON.stringify({ email, name, reply: replyText, date: new Date().toLocaleString('en-GB') })
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `Server returned ${res.status}`);
+        }
+
         statusEl.style.color = 'var(--success)';
         statusEl.textContent = `✓ Reply sent to ${email}`;
         if (textarea) textarea.value = '';
         if (btn) { btn.disabled = false; btn.textContent = '📧 Send Reply Email'; }
         await loadAdminData();
+
     } catch (err) {
         statusEl.style.color = 'var(--danger)';
-        statusEl.textContent = 'Email failed — check EmailJS config: ' + (err.text || err.message || err);
+        statusEl.textContent = 'Failed to send: ' + (err.message || err);
         if (btn) { btn.disabled = false; btn.textContent = '📧 Send Reply Email'; }
     }
 }
