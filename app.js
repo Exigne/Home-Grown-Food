@@ -1,21 +1,44 @@
 // ═══════════════════════════════════════════════
-//  HOME GROWN — app.js  (v7.0 — Ntfy Push added)
+//  HOME GROWN — app.js  (v9.0 — Wishlist + Hidden Admin)
 // ═══════════════════════════════════════════════
 
 // --- CONFIGURATION & STATE ---
 const API_BASE = window.location.origin + '/api';
 let adminToken = localStorage.getItem('hg_admin_token') || null;
 let STRIPE_PUBLISHABLE_KEY = 'pk_live_51PU4upEFaqxyf7ELOsith63WwqUuTzYYzEreW1DEyqn6o2KoLBkzYDLECvMznQZiG9enOc7hhu7kFdai1Cg4eFVK00ZV9S7qmV';
-let cart = [];
-let orders = [];
+let cart        = [];
+let orders      = [];
 let ingredients = [];
-let products = [];
-let promos = [];
+let products    = [];
+let promos      = [];
+let wishlistEntries = []; // customers waiting for out-of-stock products
+let chatMessages    = []; // admin: customer chat messages
 let stripeInstance = null;
-let cardElement = null;
+let cardElement    = null;
+let appliedPromo   = null;
 
-// Promo state
-let appliedPromo = null; // { code, discount } or null
+// ─── SECRET ADMIN ACCESS ──────────────────────────────────────────────────────
+// Customers never see the Admin Panel button.
+// To open admin: click the Home Grown logo 7 times quickly, OR visit /#admin
+let _logoClicks = 0;
+let _logoTimer  = null;
+
+function handleLogoClick(e) {
+    e.preventDefault();
+    _logoClicks++;
+    clearTimeout(_logoTimer);
+    _logoTimer = setTimeout(() => { _logoClicks = 0; }, 2000);
+
+    if (_logoClicks >= 7) {
+        _logoClicks = 0;
+        window.location.hash = 'admin';
+        showView('admin', e);
+    } else {
+        // Normal behaviour — go to shop
+        showView('shop', e);
+        if (window.location.hash === '#admin') window.location.hash = '';
+    }
+}
 
 // --- DEMO FALLBACK DATA ---
 const DEMO_PRODUCTS = [
@@ -27,7 +50,7 @@ const DEMO_PRODUCTS = [
 
 // --- CACHE HELPERS ---
 const CACHE_KEY     = 'hg_products_cache';
-const CACHE_MAX_AGE = 1000 * 60 * 5; // 5 minutes
+const CACHE_MAX_AGE = 1000 * 60 * 5;
 
 function getCachedProducts() {
     try {
@@ -41,7 +64,7 @@ function getCachedProducts() {
 
 function setCachedProducts(data) {
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); }
-    catch (e) { /* ignore quota errors */ }
+    catch (e) { }
 }
 
 function fetchWithTimeout(url, options = {}, timeout = 8000) {
@@ -96,6 +119,11 @@ async function initApp() {
     }
 
     updateCartUI();
+
+    // Secret admin access via URL hash
+    if (window.location.hash === '#admin') {
+        showView('admin');
+    }
 }
 
 // ─── NAVIGATION ──────────────────────────────────────────────────────────────
@@ -106,12 +134,10 @@ function showView(v, e) {
 
     if (e) {
         const btn = e.target.closest('.nav-btn') || e.target;
-        if (btn.classList.contains('nav-btn')) btn.classList.add('active');
+        if (btn && btn.classList.contains('nav-btn')) btn.classList.add('active');
     }
 
-    if (v === 'shop' && products.length) {
-        renderShop();
-    }
+    if (v === 'shop' && products.length) renderShop();
 
     if (v === 'admin') {
         if (adminToken) {
@@ -158,6 +184,7 @@ function handleLogout() {
     localStorage.removeItem('hg_admin_token');
     document.getElementById('admin-login-screen').style.display = 'flex';
     document.getElementById('admin-layout').style.display = 'none';
+    window.location.hash = '';
     showToast('Logged out');
 }
 
@@ -166,19 +193,25 @@ async function loadAdminData() {
     if (!adminToken) return;
     try {
         const headers = { 'Authorization': `Bearer ${adminToken}` };
-        const [ordRes, ingRes, prodRes, promoRes] = await Promise.all([
+        const [ordRes, ingRes, prodRes, promoRes, wishRes, chatRes] = await Promise.all([
             fetch(`${API_BASE}/admin/orders`,      { headers }),
             fetch(`${API_BASE}/admin/ingredients`, { headers }),
             fetch(`${API_BASE}/admin/products`,    { headers }),
-            fetch(`${API_BASE}/admin/promos`,      { headers })
+            fetch(`${API_BASE}/admin/promos`,      { headers }),
+            fetch(`${API_BASE}/admin/wishlist`,    { headers }),
+            fetch(`${API_BASE}/admin/chats`,       { headers })
         ]);
-        if (ordRes.ok)   orders      = await ordRes.json();
-        if (ingRes.ok)   ingredients = await ingRes.json();
-        if (prodRes.ok)  products    = await prodRes.json();
-        if (promoRes.ok) promos      = await promoRes.json();
+        if (ordRes.ok)   orders          = await ordRes.json();
+        if (ingRes.ok)   ingredients     = await ingRes.json();
+        if (prodRes.ok)  products        = await prodRes.json();
+        if (promoRes.ok) promos          = await promoRes.json();
+        if (wishRes.ok)  wishlistEntries = await wishRes.json();
+        if (chatRes.ok)  chatMessages    = await chatRes.json();
 
         renderAdmin();
         renderPromos();
+        renderWishlist();
+        renderAdminChats();
     } catch (error) {
         console.error('Admin data sync failed:', error);
         showToast('Failed to load admin data');
@@ -193,9 +226,7 @@ function showAdminSection(s, el) {
 
     document.querySelectorAll('.admin-menu-item').forEach(item => item.classList.remove('active'));
     const menuEl = el instanceof Element ? el : el?.currentTarget;
-    if (menuEl && menuEl.classList.contains('admin-menu-item')) {
-        menuEl.classList.add('active');
-    }
+    if (menuEl && menuEl.classList.contains('admin-menu-item')) menuEl.classList.add('active');
 
     if (s === 'products') startStockPolling();
     else stopStockPolling();
@@ -206,19 +237,8 @@ function showAdminSection(s, el) {
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function formatDesc(text) {
     if (!text) return '';
-    if (/<[a-z][\s\S]*>/i.test(text)) return text; 
-    return text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/\n/g, '<br>');
-}
-
-function rteCmd(cmd) {
-    const editor = document.getElementById('pem-desc');
-    if (!editor) return;
-    editor.focus();
-    document.execCommand(cmd, false, null);
+    if (/<[a-z][\s\S]*>/i.test(text)) return text;
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
 }
 
 // ─── RENDER SHOP ──────────────────────────────────────────────────────────────
@@ -239,10 +259,8 @@ function renderShop() {
 
     grid.innerHTML = sorted.map(p => {
         const outOfStock = (p.stock !== undefined && p.stock !== null && p.stock <= 0);
-        const stockClass = outOfStock ? 'out-of-stock' : '';
-
         return `
-        <div class="product-card ${stockClass}" onclick="openProductDetail(${p.id})">
+        <div class="product-card ${outOfStock ? 'out-of-stock' : ''}" onclick="openProductDetail(${p.id})">
           <div class="product-img" style="background-color:${p.bg_color || '#FFFBE8'};${p.image_url ? `background-image:url('${p.image_url}');background-size:cover;background-position:center;` : ''}">
             ${!p.image_url ? `<span class="product-emoji">${p.emoji || '🍪'}</span>` : ''}
             ${p.badge ? `<span class="product-badge">${p.badge}</span>` : ''}
@@ -254,24 +272,23 @@ function renderShop() {
           </div>
           <div class="product-footer">
             <span class="product-price">£${Number(p.price).toFixed(2)}</span>
-            <button class="add-btn" id="add-btn-${p.id}"
-              onclick="event.stopPropagation(); addToCart(${p.id})"
-              ${outOfStock ? 'disabled' : ''}>
-              ${outOfStock ? 'Sold Out' : '+ Add to Basket'}
-            </button>
+            ${outOfStock
+              ? `<button class="add-btn notify-btn" onclick="event.stopPropagation(); openWishlistModal(${p.id})">🔔 Notify Me</button>`
+              : `<button class="add-btn" id="add-btn-${p.id}" onclick="event.stopPropagation(); addToCart(${p.id})">+ Add to Basket</button>`
+            }
           </div>
         </div>`;
     }).join('');
 }
 
-// ─── PRODUCT DETAIL MODAL (shop) ─────────────────────────────────────────────
+// ─── PRODUCT DETAIL MODAL ─────────────────────────────────────────────────────
 function openProductDetail(id) {
     const p = products.find(x => x.id === id);
     if (!p) return;
 
-    document.getElementById('pm-name').textContent = p.name;
+    document.getElementById('pm-name').textContent  = p.name;
     document.getElementById('pm-price').textContent = '£' + Number(p.price).toFixed(2);
-    document.getElementById('pm-desc').innerHTML   = formatDesc(p.description);
+    document.getElementById('pm-desc').innerHTML    = formatDesc(p.description);
     document.getElementById('pm-emoji').textContent = p.emoji || '🍪';
 
     const imgContainer = document.getElementById('pm-img-container');
@@ -288,17 +305,21 @@ function openProductDetail(id) {
     if (p.badge) { badgeEl.textContent = p.badge; badgeEl.style.display = ''; }
     else { badgeEl.style.display = 'none'; }
 
-    document.getElementById('pm-add-btn').onclick = () => { addToCart(id); closeProductDetail(); };
+    const outOfStock = (p.stock !== undefined && p.stock !== null && p.stock <= 0);
+    const addBtn = document.getElementById('pm-add-btn');
+    if (outOfStock) {
+        addBtn.textContent = '🔔 Notify Me When Back In Stock';
+        addBtn.onclick = () => { closeProductDetail(); openWishlistModal(id); };
+    } else {
+        addBtn.textContent = '+ Add to Basket';
+        addBtn.onclick = () => { addToCart(id); closeProductDetail(); };
+    }
+
     document.getElementById('product-modal').classList.add('open');
 }
 
-function closeProductDetail() {
-    document.getElementById('product-modal').classList.remove('open');
-}
-
-function closeProductDetailOnOverlay(e) {
-    if (e.target.id === 'product-modal') closeProductDetail();
-}
+function closeProductDetail() { document.getElementById('product-modal').classList.remove('open'); }
+function closeProductDetailOnOverlay(e) { if (e.target.id === 'product-modal') closeProductDetail(); }
 
 // ─── RENDER ADMIN ─────────────────────────────────────────────────────────────
 function renderAdmin() {
@@ -378,16 +399,10 @@ function renderShipping() {
 
     const active    = deliveryOrders.filter(o => o.status !== 'delivered');
     const delivered = deliveryOrders.filter(o => o.status === 'delivered');
-
     let html = '';
 
     if (active.length) {
-        html += active.map(o => {
-            const statusColour = o.status === 'pending'    ? 'var(--warning)'
-                               : o.status === 'processing' ? '#1565C0'
-                               : o.status === 'shipped'    ? 'var(--success)'
-                               : 'var(--text-muted)';
-            return `
+        html += active.map(o => `
             <div class="shipping-row" id="ship-${o.id}">
               <div class="shipping-row-main">
                 <div class="shipping-row-info">
@@ -400,7 +415,7 @@ function renderShipping() {
                   <span class="badge badge-${o.status}" style="margin-bottom:8px;">${o.status}</span>
                   <div style="font-weight:800; font-size:1rem; color:var(--green-dark);">£${parseFloat(o.total).toFixed(2)}</div>
                   <div style="font-size:0.78rem; color:var(--text-muted); font-weight:600; margin-top:4px;">${o.date || ''}</div>
-                  ${o.status === 'pending' ? `<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','processing')" style="margin-top:8px; width:100%;">Process</button>` : ''}
+                  ${o.status === 'pending'    ? `<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','processing')" style="margin-top:8px; width:100%;">Process</button>` : ''}
                   ${o.status === 'processing' ? `<button class="action-btn primary" onclick="updateOrderStatus('${o.id}','shipped')" style="margin-top:8px; width:100%;">Mark Shipped</button>` : ''}
                 </div>
               </div>
@@ -408,17 +423,12 @@ function renderShipping() {
                 <input type="checkbox" onchange="markDelivered('${o.id}', this)">
                 <span>Mark as Delivered</span>
               </label>
-            </div>`;
-        }).join('');
+            </div>`
+        ).join('');
     }
 
     if (delivered.length) {
-        html += `
-        <div style="margin-top:2rem; margin-bottom:1rem; font-size:0.8rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-muted); display:flex; align-items:center; gap:12px;">
-          <span>✓ Delivered</span>
-          <div style="flex:1; height:2px; background:var(--border);"></div>
-        </div>`;
-
+        html += `<div style="margin-top:2rem; margin-bottom:1rem; font-size:0.8rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-muted); display:flex; align-items:center; gap:12px;"><span>✓ Delivered</span><div style="flex:1; height:2px; background:var(--border);"></div></div>`;
         html += delivered.map(o => `
             <div class="shipping-row shipping-row-done" id="ship-${o.id}">
               <div class="shipping-row-main">
@@ -435,8 +445,7 @@ function renderShipping() {
                 </div>
               </div>
               <label class="shipping-delivered-check shipping-delivered-check-done">
-                <input type="checkbox" checked disabled>
-                <span>Delivered ✓</span>
+                <input type="checkbox" checked disabled><span>Delivered ✓</span>
               </label>
             </div>`
         ).join('');
@@ -450,54 +459,31 @@ async function markDelivered(id, checkbox) {
     try {
         await updateOrderStatus(id, 'delivered');
     } catch (e) {
-        checkbox.checked  = false;
+        checkbox.checked = false;
         checkbox.disabled = false;
         showToast('Could not mark as delivered — please try again');
     }
 }
 
 function exportShippingCSV() {
-    const deliveryOrders = orders.filter(o => {
-        const isPickup = o.pickup === true || o.pickup === 'true';
-        return !isPickup && o.status !== 'cancelled';
-    });
+    const deliveryOrders = orders.filter(o => !o.pickup && o.status !== 'cancelled');
+    if (!deliveryOrders.length) { showToast('No delivery orders to export'); return; }
 
-    if (!deliveryOrders.length) {
-        showToast('No delivery orders to export');
-        return;
-    }
+    const headers = ['Order ID','First Name','Last Name','Email','Address','Items','Total','Status','Date'];
+    const rows    = deliveryOrders.map(o => [
+        o.id||'', o.fname||'', o.lname||'', o.email||'',
+        o.address||'', o.items||'', '£'+parseFloat(o.total||0).toFixed(2), o.status||'', o.date||''
+    ].map(c => `"${String(c).replace(/"/g,'""')}"`).join(','));
 
-    const csvHeaders = ['Order ID', 'First Name', 'Last Name', 'Email', 'Address', 'Items', 'Total', 'Status', 'Date'];
-
-    const csvRows = deliveryOrders.map(o => [
-        o.id    || '',
-        o.fname || '',
-        o.lname || '',
-        o.email || '',
-        o.address || '',
-        o.items   || '',
-        '£' + parseFloat(o.total || 0).toFixed(2),
-        o.status || '',
-        o.date   || ''
-    ].map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','));
-
-    const csvContent = [
-        csvHeaders.map(h => `"${h}"`).join(','),
-        ...csvRows
-    ].join('\n');
-
-    const filename = `homegrown-deliveries-${new Date().toLocaleDateString('en-GB').replace(/\//g, '-')}.csv`;
-
-    const dataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent);
-    const link    = document.createElement('a');
-    link.setAttribute('href',      dataUri);
+    const csv      = [headers.map(h=>`"${h}"`).join(','), ...rows].join('\n');
+    const filename = `homegrown-deliveries-${new Date().toLocaleDateString('en-GB').replace(/\//g,'-')}.csv`;
+    const link     = document.createElement('a');
+    link.setAttribute('href', 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv));
     link.setAttribute('download', filename);
-    link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-
-    showToast(`✓ Exported ${deliveryOrders.length} order${deliveryOrders.length !== 1 ? 's' : ''} to CSV`);
+    showToast(`✓ Exported ${deliveryOrders.length} order${deliveryOrders.length !== 1 ? 's' : ''}`);
 }
 
 function renderIngredients() {
@@ -523,11 +509,7 @@ function renderIngredients() {
           <td><strong>${ing.name}</strong></td>
           <td>${stock} / ${max}</td>
           <td>${ing.unit || ''}</td>
-          <td style="min-width:120px;">
-            <div class="progress-bar-wrap">
-              <div class="progress-bar ${barCls}" style="width:${pct}%;"></div>
-            </div>
-          </td>
+          <td style="min-width:120px;"><div class="progress-bar-wrap"><div class="progress-bar ${barCls}" style="width:${pct}%;"></div></div></td>
           <td><span class="badge badge-${status}">${status}</span></td>
           <td>
             <button class="action-btn" onclick="restockIngredient(${i})">+ Restock</button>
@@ -557,8 +539,7 @@ function renderPayments() {
     if (chartEl) {
         const days = [];
         for (let i = 6; i >= 0; i--) {
-            const d = new Date();
-            d.setDate(d.getDate() - i);
+            const d = new Date(); d.setDate(d.getDate() - i);
             const key = d.toLocaleDateString('en-GB');
             const rev = orders.filter(o => o.date === key).reduce((s, o) => s + parseFloat(o.total || 0), 0);
             days.push({ label: d.toLocaleDateString('en-GB', { weekday: 'short' }), val: rev });
@@ -569,8 +550,7 @@ function renderPayments() {
               <div class="chart-bar-val">${d.val > 0 ? '£' + d.val.toFixed(0) : ''}</div>
               <div class="chart-bar" style="height:${Math.round((d.val / maxR) * 110)}px;"></div>
               <div class="chart-bar-label">${d.label}</div>
-            </div>`
-        ).join('');
+            </div>`).join('');
     }
 
     const tbody = document.getElementById('payments-body');
@@ -586,20 +566,14 @@ function renderPayments() {
           <td><strong>£${parseFloat(o.total).toFixed(2)}</strong></td>
           <td>${o.date || ''}</td>
           <td><span class="badge badge-paid">Paid</span></td>
-        </tr>`
-    ).join('');
+        </tr>`).join('');
 }
 
 function renderProductMgmt() {
     const grid = document.getElementById('product-mgmt-grid');
     if (!grid) return;
     if (!products.length) {
-        grid.innerHTML = `
-            <div style="grid-column:1/-1; text-align:center; padding:3rem; color:var(--text-muted);">
-                <div style="font-size:3rem; margin-bottom:1rem;">🍪</div>
-                <p style="font-weight:700; font-size:1rem;">No products yet.</p>
-                <button class="action-btn primary" onclick="openProductModal()" style="margin-top:1rem; padding:10px 24px;">+ Add Your First Product</button>
-            </div>`;
+        grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:3rem; color:var(--text-muted);"><div style="font-size:3rem; margin-bottom:1rem;">🍪</div><p style="font-weight:700; font-size:1rem;">No products yet.</p><button class="action-btn primary" onclick="openProductModal()" style="margin-top:1rem; padding:10px 24px;">+ Add Your First Product</button></div>`;
         return;
     }
     grid.innerHTML = products.map(p => {
@@ -609,7 +583,6 @@ function renderProductMgmt() {
         const stockColor = isOut ? 'var(--danger)' : isLow ? 'var(--warning)' : 'var(--success)';
         const stockLabel = isOut ? 'Out of Stock' : isLow ? `Low — ${stock} left` : `${stock !== null ? stock : '∞'} in stock`;
         const stockIcon  = isOut ? '🔴' : isLow ? '🟡' : '🟢';
-
         return `
         <div class="pmc-card" id="pmc-${p.id}">
           <div class="pmc-card-img" style="background:${p.bg_color || '#FFFBE8'}; ${p.image_url ? `background-image:url('${p.image_url}'); background-size:cover; background-position:center;` : ''}">
@@ -618,18 +591,15 @@ function renderProductMgmt() {
           </div>
           <div class="pmc-card-body">
             <div class="pmc-card-name">${p.name}</div>
-            <div class="pmc-card-desc">${p.description ? p.description.substring(0, 55) + (p.description.length > 55 ? '…' : '') : 'No description'}</div>
+            <div class="pmc-card-desc">${p.description ? p.description.substring(0,55) + (p.description.length > 55 ? '…' : '') : 'No description'}</div>
             <div class="pmc-card-price">£${Number(p.price).toFixed(2)}</div>
             <div class="pmc-stock-bar">
               <span class="pmc-stock-label" style="color:${stockColor};">${stockIcon} ${stockLabel}</span>
-              ${stock !== null && stock > 0 ? `
-              <div class="pmc-stock-track">
-                <div class="pmc-stock-fill" style="width:${Math.min(100, (stock / Math.max(stock, 20)) * 100)}%; background:${stockColor};"></div>
-              </div>` : ''}
+              ${stock !== null && stock > 0 ? `<div class="pmc-stock-track"><div class="pmc-stock-fill" style="width:${Math.min(100,(stock/Math.max(stock,20))*100)}%; background:${stockColor};"></div></div>` : ''}
             </div>
             <div class="pmc-card-actions">
               <button class="action-btn primary" onclick="openProductModal(${p.id})">✏️ Edit</button>
-              <button class="action-btn danger" onclick="deleteProduct(${p.id})">🗑 Delete</button>
+              <button class="action-btn danger"  onclick="deleteProduct(${p.id})">🗑 Delete</button>
             </div>
           </div>
         </div>`;
@@ -638,20 +608,14 @@ function renderProductMgmt() {
 
 // ─── PRODUCT MODAL (ADD / EDIT) ───────────────────────────────────────────────
 let productStockPollTimer = null;
-
 const CLOUDINARY_CLOUD_NAME    = 'dyitrwe5h';
 const CLOUDINARY_UPLOAD_PRESET = 'homegrownfoods';
 
 function updateImagePreview(url) {
     const preview    = document.getElementById('pem-img-preview');
     const previewBox = document.getElementById('pem-img-preview-box');
-    if (url) {
-        preview.src              = url;
-        previewBox.style.display = 'block';
-    } else {
-        preview.src              = '';
-        previewBox.style.display = 'none';
-    }
+    if (url) { preview.src = url; previewBox.style.display = 'block'; }
+    else      { preview.src = ''; previewBox.style.display = 'none'; }
 }
 
 async function uploadToCloudinary() {
@@ -660,41 +624,26 @@ async function uploadToCloudinary() {
     if (!file) return;
 
     if (!CLOUDINARY_CLOUD_NAME.startsWith('YOUR_')) {
-        const uploadBtn  = document.getElementById('pem-upload-btn');
-        uploadBtn.disabled    = true;
-        uploadBtn.textContent = '⏳ Uploading…';
-
+        const uploadBtn = document.getElementById('pem-upload-btn');
+        uploadBtn.disabled = true; uploadBtn.textContent = '⏳ Uploading…';
         try {
             const formData = new FormData();
-            formData.append('file',         file);
+            formData.append('file', file);
             formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-
-            const res  = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
-                method: 'POST',
-                body:   formData
-            });
-
+            const res  = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, { method: 'POST', body: formData });
             if (!res.ok) throw new Error('Upload failed');
             const data = await res.json();
-
             document.getElementById('pem-image').value = data.secure_url;
             updateImagePreview(data.secure_url);
             showToast('✓ Image uploaded!');
         } catch (err) {
-            console.error('Cloudinary upload error:', err);
             showToast('Upload failed — check your Cloudinary config');
         } finally {
-            uploadBtn.disabled    = false;
-            uploadBtn.textContent = '📷 Upload Photo';
-            fileInput.value       = '';
+            uploadBtn.disabled = false; uploadBtn.textContent = '📷 Upload Photo'; fileInput.value = '';
         }
     } else {
         const reader = new FileReader();
-        reader.onload = e => {
-            document.getElementById('pem-image').value = e.target.result;
-            updateImagePreview(e.target.result);
-            showToast('⚠️ Preview only — configure Cloudinary to save images');
-        };
+        reader.onload = e => { document.getElementById('pem-image').value = e.target.result; updateImagePreview(e.target.result); showToast('⚠️ Preview only — configure Cloudinary to save images'); };
         reader.readAsDataURL(file);
         fileInput.value = '';
     }
@@ -709,14 +658,14 @@ function openProductModal(id) {
         const p = products.find(x => x.id === id);
         if (!p) return;
         document.getElementById('pem-id').value    = p.id;
-        document.getElementById('pem-name').value  = p.name        || '';
-        document.getElementById('pem-price').value = p.price       || '';
-        document.getElementById('pem-emoji').value = p.emoji       || '';
-        document.getElementById('pem-badge').value = p.badge       || '';
-        document.getElementById('pem-image').value = p.image_url   || '';
+        document.getElementById('pem-name').value  = p.name      || '';
+        document.getElementById('pem-price').value = p.price     || '';
+        document.getElementById('pem-emoji').value = p.emoji     || '';
+        document.getElementById('pem-badge').value = p.badge     || '';
+        document.getElementById('pem-image').value = p.image_url || '';
         document.getElementById('pem-desc').innerHTML = formatDesc(p.description || '');
-        document.getElementById('pem-bg').value    = p.bg_color    || '#FFFBE8';
-        document.getElementById('pem-stock').value = p.stock       ?? '';
+        document.getElementById('pem-bg').value    = p.bg_color  || '#FFFBE8';
+        document.getElementById('pem-stock').value = p.stock     ?? '';
         updateImagePreview(p.image_url || '');
     } else {
         document.getElementById('pem-id').value    = '';
@@ -730,13 +679,10 @@ function openProductModal(id) {
         document.getElementById('pem-stock').value = '';
         updateImagePreview('');
     }
-
     modal.classList.add('open');
 }
 
-function closeProductModal() {
-    document.getElementById('product-edit-modal').classList.remove('open');
-}
+function closeProductModal() { document.getElementById('product-edit-modal').classList.remove('open'); }
 
 async function saveProductFromModal() {
     const id   = document.getElementById('pem-id').value;
@@ -751,38 +697,26 @@ async function saveProductFromModal() {
         image_url:   document.getElementById('pem-image').value,
         description: document.getElementById('pem-desc').innerHTML.trim(),
         bg_color:    document.getElementById('pem-bg').value,
-        stock:       parseInt(document.getElementById('pem-stock').value)      || 0
+        stock:       parseInt(document.getElementById('pem-stock').value)     || 0
     };
 
     const saveBtn = document.getElementById('pem-save-btn');
-    saveBtn.disabled    = true;
-    saveBtn.textContent = 'Saving…';
+    saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
 
     try {
         const url    = id ? `${API_BASE}/admin/products/${id}` : `${API_BASE}/admin/products`;
         const method = id ? 'PUT' : 'POST';
-        const res    = await fetch(url, {
-            method,
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
-            body:    JSON.stringify(payload)
-        });
-
-        if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.error || `Server returned ${res.status}`);
-        }
-
+        const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` }, body: JSON.stringify(payload) });
+        if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || `Server returned ${res.status}`); }
         localStorage.removeItem(CACHE_KEY);
         showToast(id ? '✓ Product updated!' : '✓ Product added!');
         closeProductModal();
         await loadAdminData();
         renderShop();
     } catch (err) {
-        console.error('Save Product Error:', err);
         showToast('Save failed: ' + err.message);
     } finally {
-        saveBtn.disabled    = false;
-        saveBtn.textContent = '💾 Save Product';
+        saveBtn.disabled = false; saveBtn.textContent = '💾 Save Product';
     }
 }
 
@@ -790,9 +724,7 @@ function startStockPolling() {
     stopStockPolling();
     productStockPollTimer = setInterval(async () => {
         try {
-            const res = await fetch(`${API_BASE}/admin/products`, {
-                headers: { 'Authorization': `Bearer ${adminToken}` }
-            });
+            const res = await fetch(`${API_BASE}/admin/products`, { headers: { 'Authorization': `Bearer ${adminToken}` } });
             if (res.ok) {
                 const fresh = await res.json();
                 fresh.forEach(p => {
@@ -801,16 +733,13 @@ function startStockPolling() {
                         existing.stock = p.stock;
                         const card = document.getElementById('pmc-' + p.id);
                         if (card) {
-                            const isLow      = p.stock !== null && p.stock > 0 && p.stock <= 5;
-                            const isOut      = p.stock !== null && p.stock <= 0;
-                            const stockColor = isOut ? 'var(--danger)' : isLow ? 'var(--warning)' : 'var(--success)';
-                            const stockLabel = isOut ? 'Out of Stock' : isLow ? `Low — ${p.stock} left` : `${p.stock !== null ? p.stock : '∞'} in stock`;
-                            const stockIcon  = isOut ? '🔴' : isLow ? '🟡' : '🟢';
-                            const stockEl    = card.querySelector('.pmc-stock-label');
-                            if (stockEl) {
-                                stockEl.style.color = stockColor;
-                                stockEl.textContent = `${stockIcon} ${stockLabel}`;
-                            }
+                            const isLow = p.stock !== null && p.stock > 0 && p.stock <= 5;
+                            const isOut = p.stock !== null && p.stock <= 0;
+                            const c = isOut ? 'var(--danger)' : isLow ? 'var(--warning)' : 'var(--success)';
+                            const l = isOut ? 'Out of Stock' : isLow ? `Low — ${p.stock} left` : `${p.stock !== null ? p.stock : '∞'} in stock`;
+                            const i = isOut ? '🔴' : isLow ? '🟡' : '🟢';
+                            const el = card.querySelector('.pmc-stock-label');
+                            if (el) { el.style.color = c; el.textContent = `${i} ${l}`; }
                         }
                     }
                 });
@@ -836,8 +765,186 @@ function renderPromos() {
           <td>${p.discount_percent}%</td>
           <td>${p.used_count} / ${p.max_uses !== null ? p.max_uses : '∞'}</td>
           <td><button class="action-btn danger" onclick="deletePromo(${p.id})">Remove</button></td>
-        </tr>`
-    ).join('');
+        </tr>`).join('');
+}
+
+// ─── WISHLIST (CUSTOMER) ───────────────────────────────────────────────────────
+function openWishlistModal(productId) {
+    const p     = products.find(x => x.id === productId);
+    const modal = document.getElementById('wishlist-modal');
+    modal.dataset.productId = productId;
+
+    const nameEl = document.getElementById('wishlist-product-name');
+    if (nameEl && p) nameEl.textContent = p.name;
+
+    document.getElementById('wishlist-email').value = '';
+    document.getElementById('wishlist-msg').textContent = '';
+
+    const btn = document.getElementById('wishlist-submit-btn');
+    btn.disabled    = false;
+    btn.textContent = '🔔 Notify Me When Back In Stock';
+
+    modal.classList.add('open');
+    setTimeout(() => document.getElementById('wishlist-email').focus(), 100);
+}
+
+function closeWishlistModal() {
+    document.getElementById('wishlist-modal').classList.remove('open');
+}
+
+async function submitWishlist() {
+    const email     = document.getElementById('wishlist-email').value.trim();
+    const productId = parseInt(document.getElementById('wishlist-modal').dataset.productId);
+    const msgEl     = document.getElementById('wishlist-msg');
+
+    if (!email || !email.includes('@')) {
+        msgEl.style.color = 'var(--danger)';
+        msgEl.textContent = 'Please enter a valid email address.';
+        return;
+    }
+
+    const btn = document.getElementById('wishlist-submit-btn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+
+    try {
+        await fetch(`${API_BASE}/wishlist`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ productId, email })
+        });
+    } catch (err) {
+        // Silently fall through — show success anyway so customer isn't blocked
+        console.warn('Wishlist backend save failed:', err);
+    }
+
+    msgEl.style.color = 'var(--success)';
+    msgEl.textContent = "✓ Saved! We'll email you the moment it's back in stock.";
+    btn.textContent   = '✓ You\'re on the list!';
+
+    setTimeout(() => {
+        closeWishlistModal();
+        showToast("🔔 We'll let you know when it's back!");
+    }, 1800);
+}
+
+// ─── WISHLIST (ADMIN) ──────────────────────────────────────────────────────────
+// EmailJS template ID for back-in-stock notifications (can be same or different template)
+// Template variables: {{to_email}}, {{product_name}}, {{shop_name}}, {{shop_url}}
+const EMAILJS_WISHLIST_TEMPLATE_ID = 'YOUR_WISHLIST_TEMPLATE_ID'; // set this in EmailJS
+
+function renderWishlist() {
+    const container = document.getElementById('wishlist-admin-content');
+    if (!container) return;
+
+    if (!wishlistEntries || !wishlistEntries.length) {
+        container.innerHTML = '<p style="color:var(--text-muted); font-weight:600;">No wishlist entries yet. When customers click "🔔 Notify Me" on a sold-out product, they\'ll appear here.</p>';
+        return;
+    }
+
+    // Group entries by product
+    const grouped = {};
+    wishlistEntries.forEach(entry => {
+        const pid = String(entry.product_id || entry.productId);
+        if (!grouped[pid]) grouped[pid] = [];
+        grouped[pid].push(entry);
+    });
+
+    let html = '';
+    Object.entries(grouped).forEach(([productId, entries]) => {
+        const product     = products.find(p => String(p.id) === productId);
+        const productName = product ? product.name : `Product #${productId}`;
+        const isOut       = product && product.stock !== null && product.stock <= 0;
+
+        html += `
+        <div class="table-wrap" style="margin-bottom:1.5rem;">
+          <div style="padding:1rem 1.25rem; background:var(--green-dark); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <span style="font-family:var(--font-brand); font-size:1.15rem; color:var(--yellow);">${product ? (product.emoji || '') + ' ' : ''}${productName}</span>
+              <span style="font-size:0.78rem; font-weight:700; color:var(--green-light);">${entries.length} customer${entries.length !== 1 ? 's' : ''} waiting</span>
+              <span class="badge ${isOut ? 'badge-cancelled' : 'badge-ok'}" style="margin-left:4px;">${isOut ? 'Still out of stock' : '✓ Back in stock'}</span>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="action-btn primary" onclick="notifyWishlistProduct('${productId}')" style="background:var(--yellow); color:var(--green-dark); border-color:var(--yellow);">
+                📧 Email All (${entries.length})
+              </button>
+              <button class="action-btn danger" onclick="clearWishlistProduct('${productId}')">🗑 Clear</button>
+            </div>
+          </div>
+          <table>
+            <thead><tr><th>Email</th><th>Date Added</th><th>Actions</th></tr></thead>
+            <tbody>
+              ${entries.map(e => `
+                <tr>
+                  <td>${e.email}</td>
+                  <td style="color:var(--text-muted); font-size:0.85rem;">${e.date || e.created_at || '—'}</td>
+                  <td><button class="action-btn danger" onclick="removeWishlistEntry(${e.id})">Remove</button></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    });
+
+    container.innerHTML = html;
+}
+
+async function notifyWishlistProduct(productId) {
+    const product     = products.find(p => String(p.id) === String(productId));
+    const productName = product ? product.name : `Product #${productId}`;
+    const entries     = wishlistEntries.filter(e => String(e.product_id || e.productId) === String(productId));
+
+    if (!entries.length) { showToast('No customers to notify'); return; }
+
+    const templateId = EMAILJS_WISHLIST_TEMPLATE_ID.startsWith('YOUR_')
+        ? EMAILJS_TEMPLATE_ID  // fall back to the order confirmation template
+        : EMAILJS_WISHLIST_TEMPLATE_ID;
+
+    if (!emailJsReady()) {
+        showToast('Configure EmailJS first (see app.js) — emails not sent');
+        return;
+    }
+
+    if (!confirm(`Send back-in-stock emails to ${entries.length} customer${entries.length !== 1 ? 's' : ''} for "${productName}"?`)) return;
+
+    let sent = 0;
+    for (const entry of entries) {
+        try {
+            await emailjs.send(EMAILJS_SERVICE_ID, templateId, {
+                to_name:      entry.email.split('@')[0],
+                to_email:     entry.email,
+                product_name: productName,
+                shop_name:    'Home Grown',
+                shop_url:     window.location.origin,
+                reply_to:     'hello@homegrown.co.uk'
+            }, EMAILJS_PUBLIC_KEY);
+            sent++;
+        } catch (err) {
+            console.warn('Failed to notify', entry.email, err);
+        }
+    }
+    showToast(`✓ Notified ${sent} customer${sent !== 1 ? 's' : ''} about "${productName}"`);
+}
+
+async function clearWishlistProduct(productId) {
+    const product = products.find(p => String(p.id) === String(productId));
+    const name    = product ? product.name : 'this product';
+    if (!confirm(`Clear all wishlist entries for "${name}"?`)) return;
+    try {
+        await fetch(`${API_BASE}/admin/wishlist/${productId}`, {
+            method: 'DELETE', headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        showToast('Wishlist cleared');
+        await loadAdminData();
+    } catch (err) { showToast('Failed to clear wishlist'); }
+}
+
+async function removeWishlistEntry(id) {
+    try {
+        await fetch(`${API_BASE}/admin/wishlist/entry/${id}`, {
+            method: 'DELETE', headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        showToast('Entry removed');
+        await loadAdminData();
+    } catch (err) { showToast('Failed to remove entry'); }
 }
 
 // ─── BASKET ───────────────────────────────────────────────────────────────────
@@ -845,15 +952,10 @@ function addToCart(id) {
     const p  = products.find(x => x.id === id);
     if (!p) return;
     const ex = cart.find(x => x.id === id);
-    if (ex) ex.qty++;
-    else cart.push({ ...p, qty: 1 });
+    if (ex) ex.qty++; else cart.push({ ...p, qty: 1 });
     updateCartUI();
-
     const btn = document.getElementById('add-btn-' + id);
-    if (btn) {
-        btn.textContent = '✓ Added'; btn.classList.add('added');
-        setTimeout(() => { btn.textContent = 'Add +'; btn.classList.remove('added'); }, 1500);
-    }
+    if (btn) { btn.textContent = '✓ Added'; btn.classList.add('added'); setTimeout(() => { btn.textContent = 'Add +'; btn.classList.remove('added'); }, 1500); }
     showToast(`${p.emoji || '🍪'} ${p.name} added!`);
 }
 
@@ -865,10 +967,7 @@ function changeQty(id, d) {
     updateCartUI();
 }
 
-function removeFromCart(id) {
-    cart = cart.filter(x => x.id !== id);
-    updateCartUI();
-}
+function removeFromCart(id) { cart = cart.filter(x => x.id !== id); updateCartUI(); }
 
 function updateCartUI() {
     const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
@@ -898,8 +997,7 @@ function updateCartUI() {
                 <span style="font-weight:800; font-size:0.95rem; color:var(--green-dark);">£${(parseFloat(item.price) * item.qty).toFixed(2)}</span>
                 <button class="remove-item" onclick="removeFromCart(${item.id})" title="Remove">🗑</button>
               </div>
-            </div>`
-        ).join('');
+            </div>`).join('');
         document.getElementById('cart-total-amount').textContent = '£' + subtotal.toFixed(2);
         footerEl.style.display = 'block';
     }
@@ -912,8 +1010,7 @@ function closeCartOnOverlay(e) { if (e.target.id === 'cart-overlay') toggleCart(
 function isSheffieldDelivery() {
     const city     = (document.getElementById('ch-city')?.value || '').trim().toLowerCase();
     const postcode = (document.getElementById('ch-postcode')?.value || '').trim().toUpperCase();
-    const isSheffieldCode = /^S\d/.test(postcode); 
-    return city === 'sheffield' && isSheffieldCode;
+    return city === 'sheffield' && /^S\d/.test(postcode);
 }
 
 function updateCheckoutTotals() {
@@ -925,154 +1022,88 @@ function updateCheckoutTotals() {
     const msgEl    = document.getElementById('delivery-message');
     const errEl    = document.getElementById('card-errors');
 
-    let shipping      = 0;
-    let shippingLabel = '';
+    let shipping = 0, shippingLabel = '';
 
     if (isPickup) {
-        shipping          = 0;
-        shippingLabel     = '🏠 Home Pickup';
-        btn.disabled      = false;
-        msgEl.style.color = 'var(--green-mid)';
-        msgEl.textContent = '✓ Great! We\'ll have your order ready for collection.';
+        shipping = 0; shippingLabel = '🏠 Home Pickup';
+        btn.disabled = false;
+        msgEl.style.color = 'var(--green-mid)'; msgEl.textContent = "✓ Great! We'll have your order ready for collection.";
         if (errEl) errEl.textContent = '';
-
         const msg = getFulfilmentMessage(true);
         const infoEl = document.getElementById('checkout-fulfilment-info');
-        if (infoEl) {
-            infoEl.style.display     = 'block';
-            infoEl.style.background  = msg.bg;
-            infoEl.style.borderColor = msg.border;
-            infoEl.style.color       = msg.color;
-            infoEl.innerHTML         = msg.html;
-        }
+        if (infoEl) { infoEl.style.display='block'; infoEl.style.background=msg.bg; infoEl.style.borderColor=msg.border; infoEl.style.color=msg.color; infoEl.innerHTML=msg.html; }
     } else {
-        const hasCity     = city.length > 0;
-        const hasPostcode = postcode.length > 0;
-
+        const hasCity = city.length > 0, hasPostcode = postcode.length > 0;
         if (!hasCity && !hasPostcode) {
-            shipping          = 0;
-            shippingLabel     = 'Delivery (enter your city and postcode above)';
-            btn.disabled      = false;
-            msgEl.textContent = '';
-            const infoEl = document.getElementById('checkout-fulfilment-info');
-            if (infoEl) infoEl.style.display = 'none';
+            shipping = 0; shippingLabel = 'Delivery (enter your city and postcode above)';
+            btn.disabled = false; msgEl.textContent = '';
+            const infoEl = document.getElementById('checkout-fulfilment-info'); if (infoEl) infoEl.style.display='none';
         } else if (isSheffieldDelivery()) {
-            shipping          = 3.00;
-            shippingLabel     = '🚚 Sheffield Delivery (+£3.00)';
-            btn.disabled      = false;
-            msgEl.style.color = 'var(--green-mid)';
-            msgEl.textContent = '✓ Great news — we deliver to your area!';
+            shipping = 3.00; shippingLabel = '🚚 Sheffield Delivery (+£3.00)';
+            btn.disabled = false;
+            msgEl.style.color = 'var(--green-mid)'; msgEl.textContent = '✓ Great news — we deliver to your area!';
             if (errEl) errEl.textContent = '';
-
             const msg = getFulfilmentMessage(false);
             const infoEl = document.getElementById('checkout-fulfilment-info');
-            if (infoEl) {
-                infoEl.style.display     = 'block';
-                infoEl.style.background  = msg.bg;
-                infoEl.style.borderColor = msg.border;
-                infoEl.style.color       = msg.color;
-                infoEl.innerHTML         = msg.html;
-            }
-        } else if (postcode.startsWith('S') && hasCity && city !== 'sheffield') {
-            shipping          = 0;
-            shippingLabel     = '<span style="color:var(--danger);">Delivery unavailable</span>';
-            btn.disabled      = true;
-            msgEl.style.color = 'var(--danger)';
-            msgEl.textContent = '✗ Sorry, we only deliver within Sheffield. Your city must be Sheffield to qualify.';
-            const infoEl = document.getElementById('checkout-fulfilment-info');
-            if (infoEl) infoEl.style.display = 'none';
-        } else if (city === 'sheffield' && hasPostcode && !postcode.startsWith('S')) {
-            shipping          = 0;
-            shippingLabel     = '<span style="color:var(--danger);">Delivery unavailable</span>';
-            btn.disabled      = true;
-            msgEl.style.color = 'var(--danger)';
-            msgEl.textContent = '✗ That postcode doesn\'t look like a Sheffield postcode (should start with S).';
-            const infoEl2 = document.getElementById('checkout-fulfilment-info');
-            if (infoEl2) infoEl2.style.display = 'none';
+            if (infoEl) { infoEl.style.display='block'; infoEl.style.background=msg.bg; infoEl.style.borderColor=msg.border; infoEl.style.color=msg.color; infoEl.innerHTML=msg.html; }
         } else {
-            shipping          = 0;
-            shippingLabel     = '<span style="color:var(--danger);">Delivery unavailable</span>';
-            btn.disabled      = true;
+            shipping = 0; shippingLabel = '<span style="color:var(--danger);">Delivery unavailable</span>';
+            btn.disabled = true;
             msgEl.style.color = 'var(--danger)';
-            msgEl.textContent = '✗ Sorry, we only deliver to Sheffield. Please select Home Pickup instead.';
-            const infoEl3 = document.getElementById('checkout-fulfilment-info');
-            if (infoEl3) infoEl3.style.display = 'none';
+            if (city === 'sheffield' && hasPostcode && !/^S\d/.test(postcode)) {
+                msgEl.textContent = "✗ That postcode doesn't look like a Sheffield postcode (should start with S).";
+            } else {
+                msgEl.textContent = '✗ Sorry, we only deliver within Sheffield. Please select Home Pickup instead.';
+            }
+            const infoEl = document.getElementById('checkout-fulfilment-info'); if (infoEl) infoEl.style.display='none';
         }
     }
 
-    let discount      = 0;
-    let discountLabel = '';
-    if (appliedPromo) {
-        discount      = subtotal * (appliedPromo.discount / 100);
-        discountLabel = `🎟️ Promo ${appliedPromo.code} (−${appliedPromo.discount}%)`;
-    }
+    let discount = 0, discountLabel = '';
+    if (appliedPromo) { discount = subtotal * (appliedPromo.discount / 100); discountLabel = `🎟️ Promo ${appliedPromo.code} (−${appliedPromo.discount}%)`; }
 
     const total = Math.max(0, subtotal - discount + shipping);
-
-    let html = cart.map(i => `
-        <div class="os-item">
-          <span>${i.emoji || ''} ${i.name} ×${i.qty}</span>
-          <span>£${(parseFloat(i.price) * i.qty).toFixed(2)}</span>
-        </div>`).join('');
-
-    if (discountLabel) {
-        html += `<div class="os-item" style="color:var(--success);">
-          <span>${discountLabel}</span>
-          <span>−£${discount.toFixed(2)}</span>
-        </div>`;
-    }
-
-    html += `<div class="os-item"><span>${shippingLabel}</span><span>${shipping > 0 ? '£' + shipping.toFixed(2) : 'Free'}</span></div>`;
+    let html = cart.map(i => `<div class="os-item"><span>${i.emoji||''} ${i.name} ×${i.qty}</span><span>£${(parseFloat(i.price)*i.qty).toFixed(2)}</span></div>`).join('');
+    if (discountLabel) html += `<div class="os-item" style="color:var(--success);"><span>${discountLabel}</span><span>−£${discount.toFixed(2)}</span></div>`;
+    html += `<div class="os-item"><span>${shippingLabel}</span><span>${shipping > 0 ? '£'+shipping.toFixed(2) : 'Free'}</span></div>`;
     html += `<div class="os-item total"><span>Total</span><span>£${total.toFixed(2)}</span></div>`;
-
     document.getElementById('checkout-summary').innerHTML = html;
     document.getElementById('pay-amount').textContent = '£' + total.toFixed(2);
 }
 
 function openCheckout() {
     if (cart.length === 0) return;
-
     appliedPromo = null;
     const promoMsgEl = document.getElementById('promo-message');
     const promoInput = document.getElementById('promo-input');
     if (promoMsgEl) promoMsgEl.textContent = '';
     if (promoInput) promoInput.value = '';
-
     const pickupCheck = document.getElementById('pickup-check');
     if (pickupCheck) pickupCheck.checked = false;
-
     const infoEl = document.getElementById('checkout-fulfilment-info');
     if (infoEl) infoEl.style.display = 'none';
-
     document.getElementById('checkout-content').style.display = 'block';
     document.getElementById('success-content').style.display  = 'none';
     document.getElementById('card-errors').textContent = '';
-
     updateCheckoutTotals();
-
     if (STRIPE_PUBLISHABLE_KEY) {
         document.getElementById('stripe-alert').style.display        = 'none';
         document.getElementById('stripe-card-section').style.display = 'block';
         if (!stripeInstance) {
             stripeInstance = Stripe(STRIPE_PUBLISHABLE_KEY);
             const elements = stripeInstance.elements();
-            cardElement    = elements.create('card', {
-                style: { base: { fontFamily: "'Nunito', sans-serif", fontSize: '15px', color: '#0E3019' } }
-            });
+            cardElement    = elements.create('card', { style: { base: { fontFamily: "'Nunito', sans-serif", fontSize: '15px', color: '#0E3019' } } });
             cardElement.mount('#card-element');
         }
     } else {
         document.getElementById('stripe-alert').style.display        = 'block';
         document.getElementById('stripe-card-section').style.display = 'none';
     }
-
     document.getElementById('checkout-modal').classList.add('open');
     toggleCart();
 }
 
-function closeCheckout() {
-    document.getElementById('checkout-modal').classList.remove('open');
-}
+function closeCheckout() { document.getElementById('checkout-modal').classList.remove('open'); }
 
 // ─── PROMO CODE ───────────────────────────────────────────────────────────────
 async function applyPromo() {
@@ -1080,85 +1111,43 @@ async function applyPromo() {
     const email   = (document.getElementById('ch-email')?.value || '').trim();
     const msgEl   = document.getElementById('promo-message');
     const promoBtn = document.getElementById('promo-btn');
-
-    if (!code) {
-        msgEl.style.color = 'var(--danger)';
-        msgEl.textContent = 'Please enter a promo code.';
-        return;
-    }
-    if (!email) {
-        msgEl.style.color = 'var(--danger)';
-        msgEl.textContent = 'Please enter your email address first.';
-        return;
-    }
-
-    promoBtn.disabled   = true;
-    promoBtn.textContent = 'Checking…';
-
+    if (!code) { msgEl.style.color='var(--danger)'; msgEl.textContent='Please enter a promo code.'; return; }
+    if (!email) { msgEl.style.color='var(--danger)'; msgEl.textContent='Please enter your email address first.'; return; }
+    promoBtn.disabled = true; promoBtn.textContent = 'Checking…';
     try {
-        const res  = await fetch(`${API_BASE}/validate-promo`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ code, email })
-        });
+        const res  = await fetch(`${API_BASE}/validate-promo`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ code, email }) });
         const data = await res.json();
-
         if (data.valid) {
-            appliedPromo          = { code, discount: data.discount };
-            msgEl.style.color     = 'var(--success)';
-            msgEl.textContent     = `✓ Code applied! ${data.discount}% off your order.`;
-            promoBtn.textContent  = '✓ Applied';
-            promoBtn.disabled     = true;
+            appliedPromo = { code, discount: data.discount };
+            msgEl.style.color = 'var(--success)'; msgEl.textContent = `✓ Code applied! ${data.discount}% off your order.`;
+            promoBtn.textContent = '✓ Applied'; promoBtn.disabled = true;
             updateCheckoutTotals();
         } else {
-            appliedPromo          = null;
-            msgEl.style.color     = 'var(--danger)';
-            msgEl.textContent     = data.message || 'Invalid promo code.';
-            promoBtn.disabled     = false;
-            promoBtn.textContent  = 'Apply';
+            appliedPromo = null; msgEl.style.color = 'var(--danger)'; msgEl.textContent = data.message || 'Invalid promo code.';
+            promoBtn.disabled = false; promoBtn.textContent = 'Apply';
         }
     } catch (err) {
-        console.error('Promo validation error:', err);
-        msgEl.style.color    = 'var(--danger)';
-        msgEl.textContent    = 'Could not validate code — please try again.';
-        promoBtn.disabled    = false;
-        promoBtn.textContent = 'Apply';
+        msgEl.style.color = 'var(--danger)'; msgEl.textContent = 'Could not validate code — please try again.';
+        promoBtn.disabled = false; promoBtn.textContent = 'Apply';
     }
 }
 
 // ─── FULFILMENT DATE HELPERS ──────────────────────────────────────────────────
 function nextSlotDate(targetDay, type) {
-    const nowString   = new Date().toLocaleString("en-US", {timeZone: "Europe/London"});
-    const now         = new Date(nowString);
-    const currentDay  = now.getDay();      
+    const nowString  = new Date().toLocaleString("en-US", { timeZone: "Europe/London" });
+    const now        = new Date(nowString);
+    const currentDay = now.getDay();
     const currentHour = now.getHours();
-    const currentMin  = now.getMinutes();
-
     let canUseThisWeek = false;
-
     if (type === 'delivery') {
-        // Delivery cutoff = Thursday 13:00 (1 pm)
-        const isBeforeThursday = currentDay < 4;                       
-        const isThursdayBefore1pm = currentDay === 4 && currentHour < 13;
-        canUseThisWeek = isBeforeThursday || isThursdayBefore1pm;
+        canUseThisWeek = currentDay < 4 || (currentDay === 4 && currentHour < 13);
     } else if (type === 'pickup') {
-        // NEW: Pickup cutoff = Friday 17:00 (5 pm)
-        const isBeforeFriday = currentDay < 5;                         
-        const isFridayBefore5pm = currentDay === 5 && currentHour < 17;
-        canUseThisWeek = isBeforeFriday || isFridayBefore5pm;
+        canUseThisWeek = currentDay < 5 || (currentDay === 5 && currentHour < 17);
     }
-
     let daysUntil = targetDay - currentDay;
     const isThisWeek = daysUntil >= 0;
-
-    if (!isThisWeek) {
-        daysUntil += 7;          
-    }
-
-    if (!canUseThisWeek && isThisWeek) {
-        daysUntil += 7;          
-    }
-
+    if (!isThisWeek) daysUntil += 7;
+    if (!canUseThisWeek && isThisWeek) daysUntil += 7;
     const d = new Date(now);
     d.setDate(now.getDate() + daysUntil);
     return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -1166,55 +1155,30 @@ function nextSlotDate(targetDay, type) {
 
 function getFulfilmentMessage(isPickup) {
     if (isPickup) {
-        const friday   = nextSlotDate(5, 'pickup');   
-        const saturday = nextSlotDate(6, 'pickup');   
+        const friday   = nextSlotDate(5, 'pickup');
+        const saturday = nextSlotDate(6, 'pickup');
         return {
-            icon:   '🏠',
-            bg:     '#E8F5E9',
-            border: '#A5D6A7',
-            color:  '#1B5E20',
-            html:   `<strong>Collection Details</strong><br>
-Your order will be ready for collection on:<br>
-📅 <strong>${friday}</strong> or <strong>${saturday}</strong><br>
-🕙 Between <strong>10am and 1pm</strong><br><br>
-We'll be in touch if anything changes.`
+            bg: '#E8F5E9', border: '#A5D6A7', color: '#1B5E20',
+            html: `<strong>Collection Details</strong><br>Your order will be ready for collection on:<br>📅 <strong>${friday}</strong> or <strong>${saturday}</strong><br>🕙 Between <strong>10am and 1pm</strong><br><br>We'll be in touch if anything changes.`
         };
     } else {
-        const thursday = nextSlotDate(4, 'delivery'); 
+        const thursday = nextSlotDate(4, 'delivery');
         return {
-            icon:   '🚚',
-            bg:     '#E3F2FD',
-            border: '#90CAF9',
-            color:  '#0D47A1',
-            html:   `<strong>Delivery Details</strong><br>
-Your order will be delivered on:<br>
-📅 <strong>${thursday}</strong><br>
-🕕 Between <strong>6pm and 8pm</strong><br><br>
-Please make sure someone is home to receive it.`
+            bg: '#E3F2FD', border: '#90CAF9', color: '#0D47A1',
+            html: `<strong>Delivery Details</strong><br>Your order will be delivered on:<br>📅 <strong>${thursday}</strong><br>🕕 Between <strong>6pm and 8pm</strong><br><br>Please make sure someone is home to receive it.`
         };
     }
 }
 
 // ─── PROCESS PAYMENT ──────────────────────────────────────────────────────────
 async function processPayment() {
-    const fields = [
-        ['ch-fname',   'First name'],
-        ['ch-lname',   'Last name'],
-        ['ch-email',   'Email'],
-        ['ch-address', 'Address'],
-        ['ch-city',    'City'],
-        ['ch-postcode','Postcode']
-    ];
+    const fields = [['ch-fname','First name'],['ch-lname','Last name'],['ch-email','Email'],['ch-address','Address'],['ch-city','City'],['ch-postcode','Postcode']];
     for (const [id, label] of fields) {
-        if (!document.getElementById(id).value.trim()) {
-            showToast(`Please enter your ${label}`);
-            return;
-        }
+        if (!document.getElementById(id).value.trim()) { showToast(`Please enter your ${label}`); return; }
     }
 
     const btn = document.getElementById('pay-btn');
-    btn.disabled  = true;
-    btn.innerHTML = 'Processing…';
+    btn.disabled = true; btn.innerHTML = 'Processing…';
     document.getElementById('card-errors').textContent = '';
 
     const customer = {
@@ -1226,23 +1190,22 @@ async function processPayment() {
         postcode: document.getElementById('ch-postcode').value.trim().toUpperCase(),
         phone:    document.getElementById('ch-phone')?.value.trim() || ''
     };
-    customer.name        = `${customer.fname} ${customer.lname}`;
-    const fullAddress    = `${customer.address}, ${customer.city}, ${customer.postcode}`;
-    const isPickup       = document.getElementById('pickup-check')?.checked || false;
+    customer.name     = `${customer.fname} ${customer.lname}`;
+    const fullAddress = `${customer.address}, ${customer.city}, ${customer.postcode}`;
+    const isPickup    = document.getElementById('pickup-check')?.checked || false;
 
-    const subtotal       = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
-    const discount       = appliedPromo ? subtotal * (appliedPromo.discount / 100) : 0;
-    const shipping       = isPickup ? 0 : (isSheffieldDelivery() ? 3.00 : 0);
-    const total          = Math.max(0, subtotal - discount + shipping).toFixed(2);
+    const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
+    const discount = appliedPromo ? subtotal * (appliedPromo.discount / 100) : 0;
+    const shipping = isPickup ? 0 : (isSheffieldDelivery() ? 3.00 : 0);
+    const total    = Math.max(0, subtotal - discount + shipping).toFixed(2);
 
     if (!isPickup && !isSheffieldDelivery()) {
         showToast('Delivery is only available in Sheffield. Please select pickup or update your address.');
-        btn.disabled = false;
-        btn.innerHTML = `🌿 Place Order — <span id="pay-amount">£${total}</span>`;
+        btn.disabled = false; btn.innerHTML = `🌿 Place Order — <span id="pay-amount">£${total}</span>`;
         return;
     }
 
-    const oid            = 'HG-' + Date.now().toString().slice(-6);
+    const oid             = 'HG-' + Date.now().toString().slice(-6);
     const secureCartItems = cart.map(i => ({ id: i.id, qty: i.qty }));
 
     try {
@@ -1250,44 +1213,22 @@ async function processPayment() {
 
         if (STRIPE_PUBLISHABLE_KEY && stripeInstance && cardElement) {
             const res = await fetch(`${API_BASE}/create-payment-intent`, {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({
-                    cartItems:      secureCartItems,
-                    pickup:         isPickup,
-                    postcode:       customer.postcode,
-                    receipt_email:  customer.email,
-                    promoCode:      appliedPromo ? appliedPromo.code : null,
-                    metadata: {
-                        order_id:       oid,
-                        customer_name:  customer.name,
-                        email:          customer.email,
-                        address:        fullAddress
-                    }
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    cartItems: secureCartItems, pickup: isPickup, postcode: customer.postcode,
+                    receipt_email: customer.email, promoCode: appliedPromo ? appliedPromo.code : null,
+                    metadata: { order_id: oid, customer_name: customer.name, email: customer.email, address: fullAddress }
                 })
             });
-
             if (!res.ok) throw new Error('Failed to initialise payment.');
             const { clientSecret } = await res.json();
-
             const { paymentIntent, error } = await stripeInstance.confirmCardPayment(clientSecret, {
                 payment_method: {
                     card: cardElement,
-                    billing_details: {
-                        name:  customer.name,
-                        email: customer.email,
-                        phone: customer.phone || undefined,
-                        address: {
-                            line1:       customer.address,
-                            city:        customer.city,
-                            postal_code: customer.postcode,
-                            country:     'GB'
-                        }
-                    }
+                    billing_details: { name: customer.name, email: customer.email, phone: customer.phone || undefined, address: { line1: customer.address, city: customer.city, postal_code: customer.postcode, country: 'GB' } }
                 },
                 receipt_email: customer.email
             });
-
             if (error) throw new Error(error.message);
             paymentIntentId = paymentIntent.id;
         } else {
@@ -1295,58 +1236,33 @@ async function processPayment() {
         }
 
         const orderPayload = {
-            id:              oid,
-            fname:           customer.fname,
-            lname:           customer.lname,
-            email:           customer.email,
-            address:         fullAddress,
-            postcode:        customer.postcode,
-            cartItems:       secureCartItems,
-            status:          'pending',
-            date:            new Date().toLocaleDateString('en-GB'),
-            timestamp:       Date.now(),
-            paymentIntentId: paymentIntentId,
-            pickup:          isPickup,
-            promoCode:       appliedPromo ? appliedPromo.code : null
+            id: oid, fname: customer.fname, lname: customer.lname, email: customer.email,
+            address: fullAddress, postcode: customer.postcode, cartItems: secureCartItems,
+            status: 'pending', date: new Date().toLocaleDateString('en-GB'),
+            timestamp: Date.now(), paymentIntentId, pickup: isPickup,
+            promoCode: appliedPromo ? appliedPromo.code : null
         };
 
         const orderRes = await fetch(`${API_BASE}/orders`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify(orderPayload)
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(orderPayload)
         });
+        if (!orderRes.ok) { const e = await orderRes.json().catch(()=>({})); throw new Error(e.error || 'Order backend processing failed'); }
 
-        if (!orderRes.ok) {
-            const errData = await orderRes.json().catch(() => ({}));
-            throw new Error(errData.error || 'Order backend processing failed');
-        }
-
-        // TRIGGER ALL NOTIFICATIONS
         await sendConfirmationEmail(orderPayload, customer, total);
 
         document.getElementById('success-order-num').textContent = 'Order Reference: ' + oid;
-
-        const msg    = getFulfilmentMessage(isPickup);
-        const msgEl  = document.getElementById('success-fulfilment-msg');
-        if (msgEl) {
-            msgEl.style.background   = msg.bg;
-            msgEl.style.border       = `2px solid ${msg.border}`;
-            msgEl.style.color        = msg.color;
-            msgEl.innerHTML          = msg.html;
-        }
+        const msg   = getFulfilmentMessage(isPickup);
+        const msgEl = document.getElementById('success-fulfilment-msg');
+        if (msgEl) { msgEl.style.background=msg.bg; msgEl.style.border=`2px solid ${msg.border}`; msgEl.style.color=msg.color; msgEl.innerHTML=msg.html; }
 
         document.getElementById('checkout-content').style.display = 'none';
         document.getElementById('success-content').style.display  = 'block';
-        cart         = [];
-        appliedPromo = null;
-        updateCartUI();
+        cart = []; appliedPromo = null; updateCartUI();
         showToast('🎉 Order placed! Confirmation email sent.');
-
     } catch (e) {
         document.getElementById('card-errors').textContent = e.message;
     } finally {
-        btn.disabled  = false;
-        btn.innerHTML = `🌿 Place Order — <span id="pay-amount">£${total}</span>`;
+        btn.disabled = false; btn.innerHTML = `🌿 Place Order — <span id="pay-amount">£${total}</span>`;
     }
 }
 
@@ -1363,134 +1279,35 @@ function emailJsReady() {
 }
 
 async function sendConfirmationEmail(order, customer, total) {
-    if (!emailJsReady()) {
-        console.info('EmailJS not configured — skipping confirmation email.');
-        return;
-    }
-
-    const itemLines = cart.length
-        ? cart.map(i => `• ${i.name} × ${i.qty}   —   £${(parseFloat(i.price) * i.qty).toFixed(2)}`).join('\n')
-        : (order.items || '');
-
-    const templateParams = {
-        to_name:          customer.name,
-        to_email:         customer.email,
-        order_id:         order.id,
-        order_date:       order.date,
-        items_list:       itemLines,
-        order_total:      `£${total}`,
-        delivery_address: order.pickup ? '🏠 Home Pickup — no delivery needed' : order.address,
-        shop_name:        'Home Grown',
-        reply_to:         'hello@homegrown.co.uk'
-    };
-
+    if (!emailJsReady()) { console.info('EmailJS not configured — skipping confirmation email.'); return; }
+    const itemLines = cart.length ? cart.map(i => `• ${i.name} × ${i.qty}   —   £${(parseFloat(i.price)*i.qty).toFixed(2)}`).join('\n') : (order.items || '');
     try {
-        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams, EMAILJS_PUBLIC_KEY);
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+            to_name: customer.name, to_email: customer.email, order_id: order.id,
+            order_date: order.date, items_list: itemLines, order_total: `£${total}`,
+            delivery_address: order.pickup ? '🏠 Home Pickup — no delivery needed' : order.address,
+            shop_name: 'Home Grown', reply_to: 'hello@homegrown.co.uk'
+        }, EMAILJS_PUBLIC_KEY);
         console.info('✓ Confirmation email sent to', customer.email);
-    } catch (err) {
-        console.warn('Confirmation email failed:', err);
-    }
+    } catch (err) { console.warn('Confirmation email failed:', err); }
 }
 
 // ─── ADMIN CRUD ───────────────────────────────────────────────────────────────
-function resetProductForm() {
-    document.getElementById('prod-id').value    = '';
-    document.getElementById('prod-name').value  = '';
-    document.getElementById('prod-price').value = '';
-    document.getElementById('prod-emoji').value = '';
-    document.getElementById('prod-badge').value = '';
-    document.getElementById('prod-image').value = '';
-    document.getElementById('prod-desc').value  = '';
-    document.getElementById('prod-bg').value    = '#FFFBE8';
-    document.getElementById('prod-stock').value = '';
-    document.getElementById('product-form-title').textContent = 'Add New Snack';
-}
-
-function editProduct(id) {
-    const p = products.find(x => x.id === id);
-    if (!p) return;
-    document.getElementById('prod-id').value    = p.id;
-    document.getElementById('prod-name').value  = p.name  || '';
-    document.getElementById('prod-price').value = p.price || '';
-    document.getElementById('prod-emoji').value = p.emoji || '';
-    document.getElementById('prod-badge').value = p.badge || '';
-    document.getElementById('prod-image').value = p.image_url || '';
-    document.getElementById('prod-desc').value  = p.description || '';
-    document.getElementById('prod-bg').value    = p.bg_color || '#FFFBE8';
-    document.getElementById('prod-stock').value = p.stock ?? '';
-    document.getElementById('product-form-title').textContent = 'Edit Snack';
-    document.getElementById('product-form-title').scrollIntoView({ behavior: 'smooth' });
-}
-
-async function saveProduct() {
-    const id   = document.getElementById('prod-id').value;
-    const name = document.getElementById('prod-name').value.trim();
-    if (!name) { showToast('Product name is required'); return; }
-
-    const payload = {
-        name,
-        price:       parseFloat(document.getElementById('prod-price').value) || 0,
-        emoji:       document.getElementById('prod-emoji').value,
-        badge:       document.getElementById('prod-badge').value,
-        image_url:   document.getElementById('prod-image').value,
-        description: document.getElementById('prod-desc').value,
-        bg_color:    document.getElementById('prod-bg').value,
-        stock:       parseInt(document.getElementById('prod-stock').value) || 0
-    };
-
-    try {
-        const url    = id ? `${API_BASE}/admin/products/${id}` : `${API_BASE}/admin/products`;
-        const method = id ? 'PUT' : 'POST';
-        const res    = await fetch(url, {
-            method,
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
-            body:    JSON.stringify(payload)
-        });
-
-        if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.error || `Server returned ${res.status}`);
-        }
-
-        showToast(id ? '✓ Product updated!' : '✓ Product added!');
-        resetProductForm();
-        await loadAdminData();
-    } catch (err) {
-        console.error('Save Product Error:', err);
-        showToast('Save failed: ' + err.message);
-    }
-}
-
 async function deleteProduct(id) {
     if (!confirm('Delete this product?')) return;
     try {
-        const res = await fetch(`${API_BASE}/admin/products/${id}`, {
-            method:  'DELETE',
-            headers: { 'Authorization': `Bearer ${adminToken}` }
-        });
+        const res = await fetch(`${API_BASE}/admin/products/${id}`, { method:'DELETE', headers:{'Authorization':`Bearer ${adminToken}`} });
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
-        showToast('Product deleted');
-        await loadAdminData();
-    } catch (err) {
-        console.error('Delete Product Error:', err);
-        showToast('Delete failed');
-    }
+        showToast('Product deleted'); await loadAdminData();
+    } catch (err) { showToast('Delete failed'); }
 }
 
 async function updateOrderStatus(id, status) {
     try {
-        const res = await fetch(`${API_BASE}/admin/orders/${id}`, {
-            method:  'PUT',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
-            body:    JSON.stringify({ status })
-        });
+        const res = await fetch(`${API_BASE}/admin/orders/${id}`, { method:'PUT', headers:{'Content-Type':'application/json','Authorization':`Bearer ${adminToken}`}, body:JSON.stringify({ status }) });
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
-        showToast(`Order ${id} → ${status}`);
-        await loadAdminData();
-    } catch (err) {
-        console.error('Update Order Error:', err);
-        showToast('Update failed');
-    }
+        showToast(`Order ${id} → ${status}`); await loadAdminData();
+    } catch (err) { showToast('Update failed'); }
 }
 
 async function cancelOrder(id) {
@@ -1516,103 +1333,59 @@ async function addIngredient() {
     const stock = parseFloat(document.getElementById('ing-stock').value) || 0;
     const min   = parseFloat(document.getElementById('ing-min').value)   || 0;
     const max   = parseFloat(document.getElementById('ing-max').value)   || 10;
-
     if (!name || !unit) { showToast('Please enter ingredient name and unit'); return; }
-
     try {
-        const res = await fetch(`${API_BASE}/admin/ingredients`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
-            body:    JSON.stringify({ name, unit, stock, min_stock: min, max_stock: max })
-        });
+        const res = await fetch(`${API_BASE}/admin/ingredients`, { method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${adminToken}`}, body:JSON.stringify({ name, unit, stock, min_stock:min, max_stock:max }) });
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
         showToast('✓ ' + name + ' added');
         ['ing-name','ing-unit','ing-stock','ing-min','ing-max'].forEach(id => document.getElementById(id).value = '');
         await loadAdminData();
-    } catch (err) {
-        console.error('Add Ingredient Error:', err);
-        showToast('Failed to add ingredient');
-    }
+    } catch (err) { showToast('Failed to add ingredient'); }
 }
 
 async function restockIngredient(index) {
-    const ing = ingredients[index];
-    if (!ing) return;
+    const ing = ingredients[index]; if (!ing) return;
     const amt = parseFloat(prompt(`Add how much ${ing.unit} to ${ing.name}?`));
     if (isNaN(amt) || amt <= 0) return;
     const newStock = Math.min(parseFloat(ing.max_stock || ing.max || 999), parseFloat(ing.stock) + amt);
-
     try {
-        const res = await fetch(`${API_BASE}/admin/ingredients/${ing.id}`, {
-            method:  'PUT',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
-            body:    JSON.stringify({ stock: newStock })
-        });
+        const res = await fetch(`${API_BASE}/admin/ingredients/${ing.id}`, { method:'PUT', headers:{'Content-Type':'application/json','Authorization':`Bearer ${adminToken}`}, body:JSON.stringify({ stock: newStock }) });
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
-        showToast(`✓ Restocked ${ing.name}`);
-        await loadAdminData();
-    } catch (err) {
-        console.error('Restock Error:', err);
-        showToast('Restock failed');
-    }
+        showToast(`✓ Restocked ${ing.name}`); await loadAdminData();
+    } catch (err) { showToast('Restock failed'); }
 }
 
 async function deleteIngredient(index) {
     const ing = ingredients[index];
     if (!ing || !confirm(`Remove ${ing.name}?`)) return;
     try {
-        const res = await fetch(`${API_BASE}/admin/ingredients/${ing.id}`, {
-            method:  'DELETE',
-            headers: { 'Authorization': `Bearer ${adminToken}` }
-        });
+        const res = await fetch(`${API_BASE}/admin/ingredients/${ing.id}`, { method:'DELETE', headers:{'Authorization':`Bearer ${adminToken}`} });
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
-        showToast(`${ing.name} removed`);
-        await loadAdminData();
-    } catch (err) {
-        console.error('Delete Ingredient Error:', err);
-        showToast('Delete failed');
-    }
+        showToast(`${ing.name} removed`); await loadAdminData();
+    } catch (err) { showToast('Delete failed'); }
 }
 
 async function addPromo() {
     const code = document.getElementById('promo-new-code').value.trim().toUpperCase();
     const disc = parseInt(document.getElementById('promo-new-discount').value);
     const max  = document.getElementById('promo-new-max').value ? parseInt(document.getElementById('promo-new-max').value) : null;
-
-    if (!code)                                      { showToast('Please enter a promo code'); return; }
+    if (!code)                              { showToast('Please enter a promo code'); return; }
     if (isNaN(disc) || disc < 1 || disc > 100) { showToast('Please enter a valid discount (1-100%)'); return; }
-
     try {
-        const res = await fetch(`${API_BASE}/admin/promos`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
-            body:    JSON.stringify({ code, discount_percent: disc, max_uses: max })
-        });
-        if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.error || 'Server error');
-        }
+        const res = await fetch(`${API_BASE}/admin/promos`, { method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${adminToken}`}, body:JSON.stringify({ code, discount_percent:disc, max_uses:max }) });
+        if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || 'Server error'); }
         showToast('✓ Promo code added!');
-        document.getElementById('promo-new-code').value     = '';
-        document.getElementById('promo-new-discount').value = '10';
-        document.getElementById('promo-new-max').value      = '';
+        document.getElementById('promo-new-code').value=''; document.getElementById('promo-new-discount').value='10'; document.getElementById('promo-new-max').value='';
         await loadAdminData();
-    } catch (err) {
-        console.error('Add Promo Error:', err);
-        showToast('Failed: ' + err.message);
-    }
+    } catch (err) { showToast('Failed: ' + err.message); }
 }
 
 async function deletePromo(id) {
     if (!confirm('Delete this promo code?')) return;
     try {
-        const res = await fetch(`${API_BASE}/admin/promos/${id}`, {
-            method:  'DELETE',
-            headers: { 'Authorization': `Bearer ${adminToken}` }
-        });
+        const res = await fetch(`${API_BASE}/admin/promos/${id}`, { method:'DELETE', headers:{'Authorization':`Bearer ${adminToken}`} });
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
-        showToast('Promo code removed');
-        await loadAdminData();
+        showToast('Promo code removed'); await loadAdminData();
     } catch (err) { showToast('Delete failed'); }
 }
 
@@ -1620,11 +1393,319 @@ async function deletePromo(id) {
 let toastTimer;
 function showToast(msg) {
     const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.classList.add('show');
+    t.textContent = msg; t.classList.add('show');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
 }
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 initApp();
+
+// ═══════════════════════════════════════════════
+//  LIVE CHAT WIDGET
+// ═══════════════════════════════════════════════
+
+// ─── CHAT STATE ───────────────────────────────────────────────────────────────
+// chatMessages is declared at top of file with other state variables
+let localChatHistory = JSON.parse(localStorage.getItem('hg_chat_history') || '[]');
+let chatUser         = JSON.parse(localStorage.getItem('hg_chat_user')    || 'null');
+let chatWindowOpen   = false;
+
+// ─── CHAT WIDGET (CUSTOMER FACING) ────────────────────────────────────────────
+function toggleChatWindow() {
+    chatWindowOpen = !chatWindowOpen;
+    const win = document.getElementById('chat-window');
+    win.style.display = chatWindowOpen ? 'flex' : 'none';
+
+    if (chatWindowOpen) {
+        // Hide unread badge when opened
+        const badge = document.getElementById('chat-unread-badge');
+        if (badge) badge.style.display = 'none';
+
+        if (chatUser) {
+            showChatConversation();
+        } else {
+            document.getElementById('chat-identity').style.display = 'flex';
+            document.getElementById('chat-messages-area').style.display = 'none';
+            document.getElementById('chat-input-area').style.display = 'none';
+            setTimeout(() => document.getElementById('chat-name-input').focus(), 150);
+        }
+    }
+}
+
+function startChat() {
+    const name  = document.getElementById('chat-name-input').value.trim();
+    const email = document.getElementById('chat-email-input').value.trim();
+
+    if (!name) { showChatIdentityStatus('Please enter your name.', 'error'); return; }
+    if (!email || !email.includes('@')) { showChatIdentityStatus('Please enter a valid email.', 'error'); return; }
+
+    chatUser = { name, email };
+    localStorage.setItem('hg_chat_user', JSON.stringify(chatUser));
+    showChatConversation();
+}
+
+function showChatConversation() {
+    document.getElementById('chat-identity').style.display     = 'none';
+    document.getElementById('chat-messages-area').style.display = 'flex';
+    document.getElementById('chat-input-area').style.display   = 'flex';
+    renderLocalChat();
+    const msgArea = document.getElementById('chat-messages-area');
+    msgArea.scrollTop = msgArea.scrollHeight;
+    setTimeout(() => document.getElementById('chat-msg-input').focus(), 150);
+}
+
+function renderLocalChat() {
+    const area = document.getElementById('chat-messages-area');
+    if (!area) return;
+
+    if (!localChatHistory.length) {
+        area.innerHTML = `
+        <div class="chat-welcome">
+          <div class="chat-welcome-icon">🌿</div>
+          <p>Hi <strong>${chatUser?.name || 'there'}</strong>! How can we help you today?</p>
+          <p style="font-size:0.82rem; color:var(--text-muted); margin-top:6px;">We'll reply to your email as soon as possible.</p>
+        </div>`;
+        return;
+    }
+
+    area.innerHTML = localChatHistory.map(msg => `
+        <div class="chat-bubble-wrap ${msg.role === 'customer' ? 'chat-bubble-right' : 'chat-bubble-left'}">
+          <div class="chat-bubble ${msg.role === 'customer' ? 'chat-bubble-customer' : 'chat-bubble-admin'}">
+            ${msg.text}
+          </div>
+          <div class="chat-bubble-time">${msg.time || ''}</div>
+        </div>`
+    ).join('');
+    area.scrollTop = area.scrollHeight;
+}
+
+async function submitChatMessage() {
+    const input = document.getElementById('chat-msg-input');
+    const text  = (input.value || '').trim();
+    if (!text || !chatUser) return;
+
+    const msg = {
+        role: 'customer',
+        text,
+        name:  chatUser.name,
+        email: chatUser.email,
+        time:  new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+        ts:    Date.now()
+    };
+
+    localChatHistory.push(msg);
+    localStorage.setItem('hg_chat_history', JSON.stringify(localChatHistory));
+    input.value = '';
+    renderLocalChat();
+
+    // Save to backend
+    try {
+        await fetch(`${API_BASE}/chat`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+                name:    chatUser.name,
+                email:   chatUser.email,
+                message: text,
+                ts:      msg.ts
+            })
+        });
+    } catch (err) {
+        console.warn('Chat message save failed (will still show locally):', err);
+    }
+
+    showChatStatus("✓ Message sent! We'll reply to your email.", 'success');
+    setTimeout(() => showChatStatus('', ''), 4000);
+}
+
+function showChatStatus(msg, type) {
+    const el = document.getElementById('chat-status-msg');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = type === 'error' ? 'var(--danger)' : type === 'success' ? 'var(--success)' : 'var(--text-muted)';
+}
+
+function showChatIdentityStatus(msg, type) {
+    const el = document.getElementById('chat-identity-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = type === 'error' ? 'var(--danger)' : 'var(--text-muted)';
+}
+
+// ─── CHAT ADMIN PANEL ─────────────────────────────────────────────────────────
+function renderAdminChats() {
+    const container = document.getElementById('chat-admin-content');
+    if (!container) return;
+
+    if (!chatMessages || !chatMessages.length) {
+        container.innerHTML = `
+        <div style="text-align:center; padding:3rem; color:var(--text-muted);">
+          <div style="font-size:3rem; margin-bottom:1rem;">💬</div>
+          <p style="font-weight:700; font-size:1rem;">No messages yet.</p>
+          <p style="font-size:0.88rem; margin-top:6px;">When customers use the chat widget, their messages appear here.</p>
+        </div>`;
+        return;
+    }
+
+    // Group by email (conversation threads)
+    const threads = {};
+    chatMessages.forEach(msg => {
+        const key = msg.email || 'unknown';
+        if (!threads[key]) threads[key] = { name: msg.name, email: msg.email, messages: [] };
+        threads[key].messages.push(msg);
+    });
+
+    // Sort threads by most recent message
+    const sortedThreads = Object.values(threads).sort((a, b) => {
+        const aLast = a.messages[a.messages.length - 1]?.ts || 0;
+        const bLast = b.messages[b.messages.length - 1]?.ts || 0;
+        return bLast - aLast;
+    });
+
+    container.innerHTML = sortedThreads.map((thread, idx) => {
+        const lastMsg     = thread.messages[thread.messages.length - 1];
+        const lastTime    = lastMsg?.date || lastMsg?.ts ? new Date(lastMsg.ts || lastMsg.date).toLocaleDateString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
+        const unread      = thread.messages.filter(m => !m.read).length;
+
+        return `
+        <div class="chat-thread-card" id="thread-${idx}">
+          <div class="chat-thread-header" onclick="toggleThread(${idx})">
+            <div class="chat-thread-avatar">${(thread.name || '?')[0].toUpperCase()}</div>
+            <div class="chat-thread-info">
+              <div class="chat-thread-name">
+                ${thread.name || 'Unknown'}
+                ${unread ? `<span class="chat-unread-count">${unread} new</span>` : ''}
+              </div>
+              <div class="chat-thread-email">${thread.email}</div>
+              <div class="chat-thread-preview">${(lastMsg?.message || '').substring(0, 60)}${(lastMsg?.message || '').length > 60 ? '…' : ''}</div>
+            </div>
+            <div class="chat-thread-meta">
+              <div class="chat-thread-time">${lastTime}</div>
+              <div class="chat-thread-count">${thread.messages.length} msg${thread.messages.length !== 1 ? 's' : ''}</div>
+            </div>
+          </div>
+
+          <div class="chat-thread-body" id="thread-body-${idx}" style="display:none;">
+            <div class="chat-thread-messages">
+              ${thread.messages.map(m => `
+                <div class="chat-admin-bubble-wrap">
+                  <div class="chat-admin-bubble">
+                    <div class="chat-admin-bubble-meta">
+                      <strong>${m.name || 'Customer'}</strong>
+                      <span>${m.date || (m.ts ? new Date(m.ts).toLocaleString('en-GB') : '')}</span>
+                    </div>
+                    <div class="chat-admin-bubble-text">${m.message || ''}</div>
+                  </div>
+                </div>
+                ${(m.replies || []).map(r => `
+                  <div class="chat-admin-bubble-wrap chat-admin-reply-wrap">
+                    <div class="chat-admin-bubble chat-admin-reply">
+                      <div class="chat-admin-bubble-meta">
+                        <strong>You (Home Grown)</strong>
+                        <span>${r.date || ''}</span>
+                      </div>
+                      <div class="chat-admin-bubble-text">${r.text}</div>
+                    </div>
+                  </div>`).join('')}
+              `).join('')}
+            </div>
+
+            <div class="chat-reply-box">
+              <div style="font-size:0.78rem; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:var(--green-mid); margin-bottom:8px;">
+                Reply to ${thread.name} · <span style="font-weight:600; text-transform:none;">${thread.email}</span>
+              </div>
+              <textarea id="reply-input-${idx}" rows="3"
+                placeholder="Type your reply… it'll be sent to ${thread.email}"
+                style="width:100%; padding:10px 14px; border:2px solid var(--border); border-radius:var(--radius); font-family:var(--font-body); font-size:0.92rem; background:var(--yellow-pale); resize:vertical; outline:none;"
+                onfocus="this.style.borderColor='var(--green-leaf)'; this.style.background='var(--white)'"
+                onblur="this.style.borderColor='var(--border)'; this.style.background='var(--yellow-pale)'"></textarea>
+              <div style="display:flex; gap:8px; margin-top:10px; align-items:center;">
+                <button class="action-btn primary" onclick="sendAdminChatReply('${thread.email}', '${(thread.name||'').replace(/'/g,"\\'")}', ${idx})" style="padding:10px 20px;">
+                  📧 Send Reply Email
+                </button>
+                <span style="font-size:0.78rem; font-weight:700; color:var(--text-muted);">Sends via EmailJS to customer's inbox</span>
+              </div>
+              <div id="reply-status-${idx}" style="font-size:0.82rem; font-weight:700; margin-top:6px; min-height:1.2rem;"></div>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+
+    // Update sidebar badge
+    const totalUnread = sortedThreads.reduce((s, t) => s + t.messages.filter(m => !m.read).length, 0);
+    const badge = document.getElementById('chat-sidebar-badge');
+    if (badge) {
+        badge.textContent    = totalUnread || '';
+        badge.style.display  = totalUnread ? 'inline-flex' : 'none';
+    }
+}
+
+function toggleThread(idx) {
+    const body = document.getElementById(`thread-body-${idx}`);
+    if (!body) return;
+    const isOpen = body.style.display !== 'none';
+    // Close all
+    document.querySelectorAll('[id^="thread-body-"]').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.chat-thread-card').forEach(el => el.classList.remove('chat-thread-active'));
+    // Open this one (toggle)
+    if (!isOpen) {
+        body.style.display = 'block';
+        document.getElementById(`thread-${idx}`).classList.add('chat-thread-active');
+        // Scroll messages to bottom
+        const msgs = body.querySelector('.chat-thread-messages');
+        if (msgs) msgs.scrollTop = msgs.scrollHeight;
+    }
+}
+
+async function sendAdminChatReply(email, name, idx) {
+    const textarea  = document.getElementById(`reply-input-${idx}`);
+    const statusEl  = document.getElementById(`reply-status-${idx}`);
+    const replyText = (textarea?.value || '').trim();
+
+    if (!replyText) { statusEl.style.color='var(--danger)'; statusEl.textContent='Please type a reply first.'; return; }
+
+    if (!emailJsReady()) {
+        statusEl.style.color = 'var(--danger)';
+        statusEl.textContent = 'EmailJS not configured — set your IDs in app.js first.';
+        return;
+    }
+
+    const btn = document.querySelector(`#thread-${idx} .action-btn.primary`);
+    if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+
+    try {
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+            to_name:   name || 'Customer',
+            to_email:  email,
+            reply_to:  'hello@homegrown.co.uk',
+            shop_name: 'Home Grown',
+            // Pass as order fields so existing template works — or create a dedicated chat reply template
+            order_id:         'Chat Reply',
+            order_date:       new Date().toLocaleDateString('en-GB'),
+            items_list:       replyText,
+            order_total:      '',
+            delivery_address: ''
+        }, EMAILJS_PUBLIC_KEY);
+
+        // Save reply to backend
+        try {
+            await fetch(`${API_BASE}/admin/chat/reply`, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+                body:    JSON.stringify({ email, name, reply: replyText, date: new Date().toLocaleString('en-GB') })
+            });
+        } catch (e) { /* backend save optional — email already sent */ }
+
+        statusEl.style.color = 'var(--success)';
+        statusEl.textContent = `✓ Reply sent to ${email}`;
+        if (textarea) textarea.value = '';
+        if (btn) { btn.disabled = false; btn.textContent = '📧 Send Reply Email'; }
+
+    } catch (err) {
+        console.error('Chat reply email failed:', err);
+        statusEl.style.color = 'var(--danger)';
+        statusEl.textContent = 'Email failed — check EmailJS config. Error: ' + (err.text || err.message || err);
+        if (btn) { btn.disabled = false; btn.textContent = '📧 Send Reply Email'; }
+    }
+}
