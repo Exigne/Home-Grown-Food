@@ -20,11 +20,14 @@ const pool = new Pool({
 });
 
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host:   'smtp-mail.outlook.com',
+    port:   587,
+    secure: false,
     auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-    }
+        user: process.env.EMAIL_USER,  // your Hotmail address
+        pass: process.env.EMAIL_PASS   // your Hotmail password
+    },
+    tls: { ciphers: 'SSLv3' }
 });
 
 const ADMIN_USER = process.env.ADMIN_USER;
