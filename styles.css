@@ -53,7 +53,7 @@ input, select, textarea { font-family: var(--font-body); }
   border-bottom: 4px solid var(--yellow);
 }
 .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
-.brand-logo { width: 42px; height: 42px; flex-shrink: 0; }
+.brand-logo { width: 52px; height: 52px; flex-shrink: 0; }
 .brand-name { font-family: var(--font-brand); font-size: 1.55rem; color: var(--yellow); line-height: 1; }
 .brand-tagline { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--green-leaf); margin-top: 2px; }
 .nav-links { display: flex; gap: 4px; }
@@ -1349,26 +1349,7 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
   .chat-widget  { bottom: 1rem; right: 1rem; }
 }
 
-/* ══════════════════════════════════════════════
-   HERO LOGO — bigger and centred
-══════════════════════════════════════════════ */
-.hero-logo-wrap {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 1.25rem;
-  position: relative;
-  z-index: 1;
-}
-.hero-logo-wrap svg {
-  width: 130px;
-  height: 130px;
-  filter: drop-shadow(0 8px 24px rgba(22,74,46,0.2));
-  animation: heroLogoBounce 3s ease-in-out infinite;
-}
-@keyframes heroLogoBounce {
-  0%, 100% { transform: translateY(0); }
-  50%       { transform: translateY(-8px); }
-}
+/* hero-logo section removed */
 
 /* ══════════════════════════════════════════════
    CHAT WIDGET — bottom LEFT, pill with label
