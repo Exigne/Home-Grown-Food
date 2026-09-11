@@ -643,9 +643,40 @@ app.post('/api/admin/chat/reply', authenticateAdmin, async (req, res) => {
             return res.status(404).json({ error: 'No messages found for that email' });
         }
 
-        res.json({ message: 'Reply saved' });
+        // Send reply email to the customer via Nodemailer
+        await transporter.sendMail({
+            from:    `"Home Grown" <${process.env.EMAIL_USER}>`,
+            to:      email,
+            replyTo: process.env.EMAIL_USER,
+            subject: `Re: Your message to Home Grown 🌿`,
+            html: `
+                <div style="font-family:Arial,sans-serif; max-width:600px; margin:0 auto; border:3px solid #164A2E; border-radius:16px; overflow:hidden;">
+                    <div style="background:#164A2E; padding:24px; text-align:center;">
+                        <h1 style="color:#FFD93D; margin:0; font-size:2rem; letter-spacing:0.03em;">Home Grown</h1>
+                        <p style="color:#6BBF4A; margin:6px 0 0; font-size:0.8rem; letter-spacing:0.12em; text-transform:uppercase;">Food That Makes You Feel Good</p>
+                    </div>
+                    <div style="padding:32px; background:#FFFBE8;">
+                        <p style="color:#0E3019; font-size:1rem;">Hi <strong>${name}</strong>,</p>
+                        <p style="color:#2D6040;">Thanks for getting in touch! Here's our reply:</p>
+                        <div style="background:white; border-left:5px solid #FFD93D; padding:16px 20px; margin:24px 0; border-radius:8px; color:#0E3019; line-height:1.7;">
+                            ${reply.replace(/
+/g, '<br>')}
+                        </div>
+                        <p style="color:#5A8A6A; font-size:0.9rem;">If you have any more questions, just reply to this email or message us on the website.</p>
+                        <div style="text-align:center; margin-top:28px;">
+                            <a href="https://homegrownfoods.online" style="background:#164A2E; color:#FFD93D; padding:12px 28px; border-radius:999px; text-decoration:none; font-weight:bold; font-size:0.95rem;">Visit Our Shop →</a>
+                        </div>
+                    </div>
+                    <div style="background:#164A2E; padding:14px; text-align:center;">
+                        <p style="color:#A8D97F; margin:0; font-size:0.78rem;">Home Grown · Handmade in Sheffield · homegrownfoods.online</p>
+                    </div>
+                </div>
+            `
+        });
+
+        res.json({ message: 'Reply sent and saved' });
     } catch (err) {
-        console.error('Chat reply save error:', err);
+        console.error('Chat reply error:', err);
         res.status(500).json({ error: err.message });
     }
 });
