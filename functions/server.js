@@ -108,7 +108,6 @@ app.post('/api/create-payment-intent', async (req, res) => {
             const result = await client.query('SELECT price, stock FROM products WHERE id = $1', [item.id]);
             if (result.rows.length === 0) throw new Error(`Product ID ${item.id} not found.`);
 
-            // Check stock is available before creating payment intent
             const product = result.rows[0];
             if (product.stock !== null && product.stock < item.qty) {
                 return res.status(400).json({ error: `Sorry, not enough stock available for product ID ${item.id}.` });
@@ -117,7 +116,6 @@ app.post('/api/create-payment-intent', async (req, res) => {
             subtotalCents += Math.round(parseFloat(product.price) * 100) * item.qty;
         }
 
-        // Apply promo discount server-side
         let discountCents = 0;
         if (promoCode) {
             const promoResult = await client.query(
@@ -132,14 +130,13 @@ app.post('/api/create-payment-intent', async (req, res) => {
             }
         }
 
-        // Sheffield-only delivery
         let shippingCents = 0;
         if (!pickup) {
             const cleanPostcode = (postcode || '').trim().toUpperCase();
             if (!cleanPostcode.startsWith('S')) {
                 return res.status(400).json({ error: 'Delivery is only available for Sheffield (S) postcodes.' });
             }
-            shippingCents = 300; // £3.00
+            shippingCents = 300;
         }
 
         const totalCents = Math.max(50, subtotalCents - discountCents + shippingCents);
@@ -287,22 +284,19 @@ app.post('/api/orders', async (req, res) => {
 
         // ─── NTFY PUSH NOTIFICATION ───────────────────────────────────────────
         try {
-            // 👇 Make sure this matches your Ntfy app subscription EXACTLY
-            const NTFY_TOPIC = 'homegrownfoods-orders'; 
-            const typeLabel = pickup ? '🏠 PICKUP' : '🚚 DELIVERY';
-            
+            const NTFY_TOPIC = 'homegrownfoods-orders';
+            const typeLabel  = pickup ? '🏠 PICKUP' : '🚚 DELIVERY';
             await fetch('https://ntfy.sh', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    topic: NTFY_TOPIC,
-                    title: `🌿 £${calculatedTotal.toFixed(2)} — New Order (${typeLabel})`,
-                    message: `Customer: ${fname} ${lname}\n\nItems:\n${itemsString.replace(/, /g, '\n')}`,
-                    tags: ['tada', 'package'],
+                    topic:    NTFY_TOPIC,
+                    title:    `🌿 £${calculatedTotal.toFixed(2)} — New Order (${typeLabel})`,
+                    message:  `Customer: ${fname} ${lname}\n\nItems:\n${itemsString.replace(/, /g, '\n')}`,
+                    tags:     ['tada', 'package'],
                     priority: 3
                 })
             });
-            console.log('✓ Ntfy push sent successfully');
         } catch (ntfyErr) {
             console.warn('Ntfy push failed:', ntfyErr);
         }
@@ -465,6 +459,207 @@ app.delete('/api/admin/promos/:id', authenticateAdmin, async (req, res) => {
     try {
         await pool.query('DELETE FROM promo_codes WHERE id = $1', [req.params.id]);
         res.json({ message: 'Promo code deleted' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── WISHLIST ─────────────────────────────────────────────────────────────────
+// Public: customer signs up to be notified when a product is back in stock
+app.post('/api/wishlist', async (req, res) => {
+    const { productId, email } = req.body;
+    if (!productId || !email) {
+        return res.status(400).json({ error: 'productId and email are required' });
+    }
+    try {
+        await pool.query(
+            `INSERT INTO wishlist (product_id, email)
+             VALUES ($1, $2)
+             ON CONFLICT (product_id, email) DO NOTHING`,
+            [productId, email.toLowerCase().trim()]
+        );
+        res.status(201).json({ message: 'Added to wishlist' });
+    } catch (err) {
+        console.error('Wishlist save error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Admin: get all wishlist entries, enriched with product name
+app.get('/api/admin/wishlist', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                w.id,
+                w.product_id,
+                w.email,
+                w.created_at,
+                TO_CHAR(w.created_at AT TIME ZONE 'Europe/London', 'DD Mon YYYY HH24:MI') AS date,
+                p.name AS product_name
+            FROM wishlist w
+            LEFT JOIN products p ON p.id = w.product_id
+            ORDER BY w.created_at DESC
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Admin wishlist fetch error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Admin: clear all wishlist entries for a specific product (after notifying)
+app.delete('/api/admin/wishlist/:productId', authenticateAdmin, async (req, res) => {
+    try {
+        await pool.query('DELETE FROM wishlist WHERE product_id = $1', [req.params.productId]);
+        res.json({ message: 'Wishlist cleared for product' });
+    } catch (err) {
+        console.error('Wishlist clear error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Admin: remove a single wishlist entry
+app.delete('/api/admin/wishlist/entry/:id', authenticateAdmin, async (req, res) => {
+    try {
+        await pool.query('DELETE FROM wishlist WHERE id = $1', [req.params.id]);
+        res.json({ message: 'Wishlist entry removed' });
+    } catch (err) {
+        console.error('Wishlist entry delete error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── CHAT ─────────────────────────────────────────────────────────────────────
+// Public: customer sends a chat message
+app.post('/api/chat', async (req, res) => {
+    const { name, email, message, ts } = req.body;
+    if (!name || !email || !message) {
+        return res.status(400).json({ error: 'name, email and message are required' });
+    }
+    try {
+        await pool.query(
+            `INSERT INTO chat_messages (name, email, message, ts)
+             VALUES ($1, $2, $3, $4)`,
+            [name.trim(), email.toLowerCase().trim(), message.trim(), ts || Date.now()]
+        );
+
+        // Email notification to business owner
+        transporter.sendMail({
+            from:    process.env.EMAIL_USER,
+            to:      process.env.EMAIL_USER,
+            subject: `💬 New Chat Message from ${name}`,
+            html: `
+                <h2>New chat message on Home Grown</h2>
+                <p><strong>From:</strong> ${name} &lt;${email}&gt;</p>
+                <p><strong>Message:</strong></p>
+                <blockquote style="border-left:4px solid #164A2E; padding:8px 16px; margin:0; color:#333;">
+                    ${message}
+                </blockquote>
+                <br>
+                <p>
+                    <a href="https://homegrownfoods.online/#admin" style="background:#164A2E; color:#FFD93D; padding:10px 20px; border-radius:8px; text-decoration:none; font-weight:bold;">
+                        Reply in Admin Panel →
+                    </a>
+                </p>
+                <p style="color:#999; font-size:12px;">
+                    You can reply directly to this email to respond to ${name},
+                    or log in to the admin panel and use the Inbox section.
+                </p>
+            `
+        }).catch(err => console.warn('Chat notification email failed:', err));
+
+        // Ntfy push notification for new chat
+        try {
+            await fetch('https://ntfy.sh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    topic:    'homegrownfoods-orders',
+                    title:    `💬 New message from ${name}`,
+                    message:  message.substring(0, 200),
+                    tags:     ['speech_balloon'],
+                    priority: 2
+                })
+            });
+        } catch (ntfyErr) {
+            console.warn('Chat ntfy push failed:', ntfyErr);
+        }
+
+        res.status(201).json({ message: 'Message sent' });
+    } catch (err) {
+        console.error('Chat save error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Admin: get all chat messages ordered by most recent
+app.get('/api/admin/chats', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                id,
+                name,
+                email,
+                message,
+                ts,
+                read,
+                replies,
+                TO_CHAR(created_at AT TIME ZONE 'Europe/London', 'DD Mon YYYY HH24:MI') AS date,
+                created_at
+            FROM chat_messages
+            ORDER BY created_at ASC
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Admin chats fetch error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Admin: reply to a customer — appends reply to the most recent message from that email
+app.post('/api/admin/chat/reply', authenticateAdmin, async (req, res) => {
+    const { email, name, reply, date } = req.body;
+    if (!email || !reply) {
+        return res.status(400).json({ error: 'email and reply are required' });
+    }
+    try {
+        const newReply = JSON.stringify({ text: reply, date: date || new Date().toLocaleString('en-GB') });
+
+        // Append to the replies JSONB array on the most recent message from this email
+        const result = await pool.query(`
+            UPDATE chat_messages
+            SET replies = replies || $1::jsonb,
+                read    = true
+            WHERE id = (
+                SELECT id FROM chat_messages
+                WHERE email = $2
+                ORDER BY created_at DESC
+                LIMIT 1
+            )
+            RETURNING id
+        `, [`[${newReply}]`, email.toLowerCase().trim()]);
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'No messages found for that email' });
+        }
+
+        res.json({ message: 'Reply saved' });
+    } catch (err) {
+        console.error('Chat reply save error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Admin: mark all messages from an email as read
+app.put('/api/admin/chats/read', authenticateAdmin, async (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'email required' });
+    try {
+        await pool.query(
+            'UPDATE chat_messages SET read = true WHERE email = $1',
+            [email.toLowerCase().trim()]
+        );
+        res.json({ message: 'Marked as read' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
