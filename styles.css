@@ -1444,3 +1444,140 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
   .chat-widget { bottom: 1rem; left: 1rem; right: auto; }
   .chat-window  { width: calc(100vw - 2rem); max-height: 70vh; }
 }
+
+/* ══════════════════════════════════════════════
+   TWO-TONE HEADER (Option B+C)
+══════════════════════════════════════════════ */
+
+/* Sticky wrapper for both strips */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+/* ── Yellow tagline strip ── */
+.header-tagline-bar {
+  background: var(--yellow);
+  color: var(--green-dark);
+  text-align: center;
+  padding: 7px 2rem;
+  font-family: var(--font-brand);
+  font-size: 0.88rem;
+  letter-spacing: 0.04em;
+  border-bottom: 2px solid var(--yellow-deep);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Main green nav bar ── */
+.topbar {
+  background: var(--green-dark);
+  background-image:
+    radial-gradient(ellipse at 0% 50%, rgba(107,191,74,0.12) 0%, transparent 60%),
+    radial-gradient(ellipse at 100% 50%, rgba(107,191,74,0.08) 0%, transparent 60%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2rem;
+  height: 76px;           /* taller than before */
+  border-bottom: 5px solid var(--yellow);
+  position: static;       /* parent .site-header is sticky */
+  z-index: auto;
+}
+
+/* ── Brand area ── */
+.brand { display: flex; align-items: center; gap: 14px; text-decoration: none; }
+.brand-logo { width: 58px; height: 58px; flex-shrink: 0; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25)); }
+.brand-name {
+  font-family: var(--font-brand);
+  font-size: 1.85rem;
+  color: var(--yellow);
+  line-height: 1;
+  letter-spacing: 0.03em;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+.brand-tagline {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--green-leaf);
+  margin-top: 3px;
+}
+
+/* ── Nav pill buttons ── */
+.nav-btn {
+  background: rgba(255,255,255,0.08);
+  border: 2px solid rgba(255,255,255,0.15);
+  color: var(--green-light);
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 8px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.nav-btn:hover {
+  background: rgba(255,217,61,0.15);
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+.nav-btn.active {
+  background: var(--yellow);
+  border-color: var(--yellow);
+  color: var(--green-dark);
+}
+
+/* ── Cart button ── */
+.cart-btn {
+  background: var(--yellow);
+  color: var(--green-dark);
+  border: 3px solid var(--yellow);
+  border-radius: 999px;
+  padding: 10px 22px;
+  font-family: var(--font-brand);
+  font-size: 1rem;
+  font-weight: 400;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 0 var(--yellow-deep);
+}
+.cart-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 0 var(--yellow-deep);
+}
+.cart-btn:active {
+  transform: translateY(2px);
+  box-shadow: none;
+}
+.cart-count {
+  background: var(--green-dark);
+  color: var(--yellow);
+  border-radius: 999px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 800;
+  font-family: var(--font-body);
+}
+
+/* ── Mobile: hide tagline bar, keep nav compact ── */
+@media (max-width: 768px) {
+  .header-tagline-bar { display: none; }
+  .topbar { height: 64px; padding: 0 1rem; }
+  .brand-logo { width: 44px; height: 44px; }
+  .brand-name { font-size: 1.4rem; }
+  .brand-tagline { display: none; }
+  .nav-links { display: none; }
+  .cart-btn { padding: 8px 14px; font-size: 0.88rem; }
+}
