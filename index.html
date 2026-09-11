@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://js.stripe.com/v3/"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<link rel="stylesheet" href="styles.css?v=9">
+<link rel="stylesheet" href="styles.css?v=10">
 </head>
 <body>
 
@@ -37,15 +37,17 @@
         <div class="brand-tagline">Food that makes you feel good</div>
       </div>
     </a>
-    <div class="nav-links">
-      <button class="nav-btn active" id="nav-shop" onclick="showView('shop',event)">🛍 Shop</button>
-      <!-- Admin button hidden from customers. Access via: click logo 7x, or add #admin to URL -->
-      <button class="nav-btn admin-tab" id="nav-admin" onclick="showView('admin',event)" style="display:none;">Admin Panel</button>
+    <div class="nav-right">
+      <div class="nav-links">
+        <button class="nav-btn active" id="nav-shop" onclick="showView('shop',event)">🛍 Shop</button>
+        <!-- Admin button hidden from customers. Access via: click logo 7x, or add #admin to URL -->
+        <button class="nav-btn admin-tab" id="nav-admin" onclick="showView('admin',event)" style="display:none;">Admin Panel</button>
+      </div>
+      <button class="cart-btn" onclick="toggleCart()">
+        🛒 Basket
+        <span class="cart-count" id="cart-count">0</span>
+      </button>
     </div>
-    <button class="cart-btn" onclick="toggleCart()">
-      🛒 Basket
-      <span class="cart-count" id="cart-count">0</span>
-    </button>
   </nav>
 
 </header>
