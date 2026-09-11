@@ -1348,3 +1348,113 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
   .chat-window { width: calc(100vw - 2rem); max-height: 70vh; }
   .chat-widget  { bottom: 1rem; right: 1rem; }
 }
+
+/* ══════════════════════════════════════════════
+   HERO LOGO — bigger and centred
+══════════════════════════════════════════════ */
+.hero-logo-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+  position: relative;
+  z-index: 1;
+}
+.hero-logo-wrap svg {
+  width: 130px;
+  height: 130px;
+  filter: drop-shadow(0 8px 24px rgba(22,74,46,0.2));
+  animation: heroLogoBounce 3s ease-in-out infinite;
+}
+@keyframes heroLogoBounce {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-8px); }
+}
+
+/* ══════════════════════════════════════════════
+   CHAT WIDGET — bottom LEFT, pill with label
+══════════════════════════════════════════════ */
+.chat-widget {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 1.5rem;
+  right: auto;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.chat-toggle-btn {
+  width: auto;
+  height: 52px;
+  padding: 0 20px 0 14px;
+  border-radius: 999px;
+  background: var(--green-dark);
+  border: 3px solid var(--yellow);
+  color: var(--yellow);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(22,74,46,0.35);
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  font-family: var(--font-brand);
+  font-size: 1rem;
+}
+.chat-toggle-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 8px 28px rgba(22,74,46,0.45);
+  background: var(--green-mid);
+}
+.chat-toggle-label {
+  color: var(--yellow);
+  font-family: var(--font-brand);
+  font-size: 1rem;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.chat-toggle-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Unread badge repositioned for pill shape */
+.chat-unread-badge {
+  position: absolute;
+  top: -6px;
+  left: 32px;
+  background: var(--danger);
+  color: white;
+  border-radius: 999px;
+  min-width: 20px;
+  height: 20px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid white;
+  padding: 0 4px;
+}
+
+/* Chat popup opens above and to the right of the left-side button */
+.chat-window {
+  display: none;
+  flex-direction: column;
+  width: 340px;
+  max-height: 520px;
+  background: var(--white);
+  border-radius: var(--radius-xl);
+  border: 3px solid var(--green-dark);
+  box-shadow: 0 12px 48px rgba(22,74,46,0.22);
+  overflow: hidden;
+  animation: chatSlideUp 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .chat-widget { bottom: 1rem; left: 1rem; right: auto; }
+  .chat-window  { width: calc(100vw - 2rem); max-height: 70vh; }
+}
