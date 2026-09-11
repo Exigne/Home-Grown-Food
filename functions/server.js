@@ -659,8 +659,7 @@ app.post('/api/admin/chat/reply', authenticateAdmin, async (req, res) => {
                         <p style="color:#0E3019; font-size:1rem;">Hi <strong>${name}</strong>,</p>
                         <p style="color:#2D6040;">Thanks for getting in touch! Here's our reply:</p>
                         <div style="background:white; border-left:5px solid #FFD93D; padding:16px 20px; margin:24px 0; border-radius:8px; color:#0E3019; line-height:1.7;">
-                            ${reply.replace(/
-/g, '<br>')}
+                            ${reply.split('\n').join('<br>')}
                         </div>
                         <p style="color:#5A8A6A; font-size:0.9rem;">If you have any more questions, just reply to this email or message us on the website.</p>
                         <div style="text-align:center; margin-top:28px;">
