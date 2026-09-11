@@ -20,7 +20,7 @@ const pool = new Pool({
 });
 
 // Initialize Resend
-const resend = new Resend('re_VE9CuboL_74hzNFaRDvjAmEEUyPCz3jzn');
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Important: Resend requires a verified domain to send emails. 
 // You cannot send "from" a Hotmail/Gmail address. 
