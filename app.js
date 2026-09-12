@@ -219,7 +219,7 @@ function showAdminSection(s, el) {
     const menuEl = el instanceof Element ? el : el?.currentTarget;
     if (menuEl && menuEl.classList.contains('admin-menu-item')) menuEl.classList.add('active');
     if (s === 'products') startStockPolling(); else stopStockPolling();
-    loadAdminData();
+    if (s === 'crm') loadCRM(); else loadAdminData();
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -1530,3 +1530,321 @@ function showToast(msg) {
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 initApp();
+
+// ═══════════════════════════════════════════════
+//  CRM & CUSTOMERS
+// ═══════════════════════════════════════════════
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let crmCustomers      = [];
+let crmCurrentProfile = null;   // { email, orders, messages, notes, wishlist }
+
+// ─── LOAD & RENDER LIST ───────────────────────────────────────────────────────
+async function loadCRM() {
+    if (!adminToken) return;
+    try {
+        const res = await fetch(`${API_BASE}/admin/crm`, {
+            headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        if (res.ok) {
+            crmCustomers = await res.json();
+            renderCRM();
+        }
+    } catch (err) { console.error('CRM load failed:', err); }
+}
+
+function renderCRM() {
+    const tbody   = document.getElementById('crm-tbody');
+    const countEl = document.getElementById('crm-count');
+    if (!tbody) return;
+
+    if (countEl) countEl.textContent = crmCustomers.length;
+
+    if (!crmCustomers.length) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:3rem;">No customers yet — they appear here once someone places an order or messages you.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = crmCustomers.map(c => {
+        const initial = (c.name || c.email || '?')[0].toUpperCase();
+        const ltv     = parseFloat(c.ltv || 0);
+        return `
+        <tr class="crm-row" onclick="openCustomerProfile('${c.email.replace(/'/g,"\\'")}')">
+          <td>
+            <div class="crm-avatar">${initial}</div>
+          </td>
+          <td>
+            <div style="font-weight:800;color:var(--green-dark);">${c.name || '—'}</div>
+            <small style="color:var(--text-muted);">${c.email}</small>
+          </td>
+          <td><strong>${c.order_count || 0}</strong></td>
+          <td><strong style="color:${ltv > 0 ? 'var(--success)' : 'var(--text-muted)'};">£${ltv.toFixed(2)}</strong></td>
+          <td style="color:var(--text-muted);font-size:0.85rem;">${c.last_contact || '—'}</td>
+        </tr>`;
+    }).join('');
+}
+
+function filterCRM(q) {
+    document.querySelectorAll('#crm-tbody .crm-row').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
+    });
+}
+
+// ─── CUSTOMER PROFILE ─────────────────────────────────────────────────────────
+async function openCustomerProfile(email) {
+    const modal = document.getElementById('crm-profile-modal');
+    if (!modal) return;
+
+    // Show modal immediately with loading state
+    modal.classList.add('open');
+    document.getElementById('crm-profile-name').textContent   = 'Loading…';
+    document.getElementById('crm-profile-email').textContent  = email;
+    document.getElementById('crm-profile-ltv').textContent    = '£—';
+    document.getElementById('crm-profile-orders').textContent = '—';
+    document.getElementById('crm-profile-avatar').textContent = email[0].toUpperCase();
+    document.getElementById('crm-notes-list').innerHTML       = '';
+    document.getElementById('crm-wishlist').innerHTML         = '';
+    document.getElementById('crm-orders-list').innerHTML      = '<p style="color:var(--text-muted);padding:1rem 0;">Loading…</p>';
+    document.getElementById('crm-comms-thread').innerHTML     = '';
+
+    switchCRMTab('overview');
+
+    try {
+        const res = await fetch(`${API_BASE}/admin/crm/customer?email=${encodeURIComponent(email)}`, {
+            headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        if (!res.ok) throw new Error('Failed to load profile');
+        const data = await res.json();
+        crmCurrentProfile = { email, ...data };
+        renderCustomerProfile();
+    } catch (err) {
+        showToast('Failed to load customer profile');
+        console.error(err);
+    }
+}
+
+function closeCustomerProfile() {
+    const modal = document.getElementById('crm-profile-modal');
+    if (modal) modal.classList.remove('open');
+    crmCurrentProfile = null;
+}
+
+function switchCRMTab(tab) {
+    document.querySelectorAll('.crm-tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tab);
+    });
+    document.querySelectorAll('.crm-tab-panel').forEach(panel => {
+        panel.style.display = panel.dataset.tab === tab ? 'block' : 'none';
+    });
+}
+
+function renderCustomerProfile() {
+    const c = crmCurrentProfile;
+    if (!c) return;
+
+    // Derive display name from orders or messages
+    const firstName = c.orders?.[0]?.fname || '';
+    const lastName  = c.orders?.[0]?.lname || '';
+    const name      = (firstName + ' ' + lastName).trim() || c.messages?.[0]?.name || c.email;
+    const ltv       = (c.orders || []).reduce((s, o) => s + parseFloat(o.total || 0), 0);
+
+    document.getElementById('crm-profile-name').textContent   = name;
+    document.getElementById('crm-profile-email').textContent  = c.email;
+    document.getElementById('crm-profile-ltv').textContent    = '£' + ltv.toFixed(2);
+    document.getElementById('crm-profile-orders').textContent = (c.orders || []).length;
+    document.getElementById('crm-profile-avatar').textContent = name[0].toUpperCase();
+
+    renderCRMOverview(c);
+    renderCRMOrders(c);
+    renderCRMComms(c);
+}
+
+// ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
+function renderCRMOverview(c) {
+    // Notes
+    const notes = c.notes || [];
+    document.getElementById('crm-notes-list').innerHTML = notes.length
+        ? notes.map(n => `
+            <div class="crm-note">
+              <div class="crm-note-text">${n.note.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+              <div class="crm-note-meta">
+                ${new Date(n.created_at).toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}
+                <button class="action-btn danger" onclick="deleteCRMNote(${n.id})" style="margin-left:10px;padding:2px 8px;font-size:0.72rem;">Remove</button>
+              </div>
+            </div>`).join('')
+        : '<p style="color:var(--text-muted);font-weight:600;font-size:0.9rem;">No notes yet.</p>';
+
+    // Wishlist
+    const wishlist = c.wishlist || [];
+    document.getElementById('crm-wishlist').innerHTML = wishlist.length
+        ? wishlist.map(w => `<span class="badge badge-pending">${w.emoji || ''}${w.emoji ? ' ' : ''}${w.product_name || 'Product #' + w.product_id}</span>`).join('')
+        : '<p style="color:var(--text-muted);font-weight:600;font-size:0.9rem;">Not watching any products.</p>';
+}
+
+// ─── ORDERS TAB ───────────────────────────────────────────────────────────────
+function renderCRMOrders(c) {
+    const orders = c.orders || [];
+    const el     = document.getElementById('crm-orders-list');
+    if (!orders.length) {
+        el.innerHTML = '<p style="color:var(--text-muted);font-weight:600;padding:1rem 0;">No orders yet.</p>';
+        return;
+    }
+    el.innerHTML = `
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Order #</th><th>Items</th><th>Total</th><th>Type</th><th>Status</th><th>Date</th></tr></thead>
+            <tbody>
+              ${orders.map(o => `
+                <tr>
+                  <td><strong>${o.id}</strong></td>
+                  <td style="font-size:0.82rem;color:var(--text-muted);">${o.items || ''}</td>
+                  <td><strong>£${parseFloat(o.total).toFixed(2)}</strong></td>
+                  <td>${o.pickup ? '🏠 Pickup' : '🚚 Delivery'}</td>
+                  <td><span class="badge badge-${o.status}">${o.status}</span></td>
+                  <td style="color:var(--text-muted);font-size:0.85rem;">${o.date || ''}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+}
+
+// ─── COMMUNICATIONS TAB ───────────────────────────────────────────────────────
+function renderCRMComms(c) {
+    const messages = c.messages || [];
+    const el       = document.getElementById('crm-comms-thread');
+    if (!el) return;
+
+    if (!messages.length) {
+        el.innerHTML = '<p style="color:var(--text-muted);font-weight:600;">No messages yet — this is where chat messages from the website appear.</p>';
+        return;
+    }
+
+    el.innerHTML = messages.map(m => `
+        <div class="chat-admin-bubble-wrap">
+          <div class="chat-admin-bubble">
+            <div class="chat-admin-bubble-meta">
+              <strong>${m.name || 'Customer'}</strong>
+              <span>${m.date || (m.ts ? new Date(m.ts).toLocaleString('en-GB') : '')}</span>
+            </div>
+            <div class="chat-admin-bubble-text">${m.message || ''}</div>
+          </div>
+        </div>
+        ${(m.replies || []).map(r => `
+          <div class="chat-admin-bubble-wrap chat-admin-reply-wrap">
+            <div class="chat-admin-bubble chat-admin-reply">
+              <div class="chat-admin-bubble-meta">
+                <strong>You (Home Grown)</strong>
+                <span>${r.date || ''}</span>
+              </div>
+              <div class="chat-admin-bubble-text">${r.text}</div>
+            </div>
+          </div>`).join('')}`
+    ).join('');
+
+    // Scroll thread to bottom
+    el.scrollTop = el.scrollHeight;
+}
+
+// ─── NOTES ────────────────────────────────────────────────────────────────────
+async function addCRMNote() {
+    const textarea = document.getElementById('crm-note-input');
+    const note     = (textarea?.value || '').trim();
+    if (!note || !crmCurrentProfile) return;
+
+    const btn = document.querySelector('[onclick="addCRMNote()"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+    try {
+        const res = await fetch(`${API_BASE}/admin/crm/notes`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+            body:    JSON.stringify({ email: crmCurrentProfile.email, note })
+        });
+        if (!res.ok) throw new Error('Failed to save');
+        textarea.value = '';
+        showToast('✓ Note saved');
+        // Refresh just the notes section
+        const profileRes = await fetch(`${API_BASE}/admin/crm/customer?email=${encodeURIComponent(crmCurrentProfile.email)}`, {
+            headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        if (profileRes.ok) {
+            const data = await profileRes.json();
+            crmCurrentProfile.notes = data.notes;
+            renderCRMOverview(crmCurrentProfile);
+        }
+    } catch (err) {
+        showToast('Failed to save note');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '+ Add Note'; }
+    }
+}
+
+async function deleteCRMNote(id) {
+    if (!confirm('Delete this note?')) return;
+    try {
+        await fetch(`${API_BASE}/admin/crm/notes/${id}`, {
+            method:  'DELETE',
+            headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        showToast('Note deleted');
+        const profileRes = await fetch(`${API_BASE}/admin/crm/customer?email=${encodeURIComponent(crmCurrentProfile.email)}`, {
+            headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        if (profileRes.ok) {
+            const data = await profileRes.json();
+            crmCurrentProfile.notes = data.notes;
+            renderCRMOverview(crmCurrentProfile);
+        }
+    } catch (err) {
+        showToast('Failed to delete note');
+    }
+}
+
+// ─── SEND REPLY FROM CRM ──────────────────────────────────────────────────────
+async function sendCRMReply() {
+    if (!crmCurrentProfile) return;
+    const textarea  = document.getElementById('crm-reply-input');
+    const statusEl  = document.getElementById('crm-reply-status');
+    const replyText = (textarea?.value || '').trim();
+    if (!replyText) { statusEl.style.color='var(--danger)'; statusEl.textContent='Please type a reply first.'; return; }
+
+    const btn = document.getElementById('crm-reply-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+    statusEl.textContent = '';
+
+    const name = document.getElementById('crm-profile-name').textContent;
+
+    try {
+        const res = await fetch(`${API_BASE}/admin/chat/reply`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+            body:    JSON.stringify({
+                email: crmCurrentProfile.email,
+                name,
+                reply: replyText,
+                date:  new Date().toLocaleString('en-GB')
+            })
+        });
+        if (!res.ok) throw new Error((await res.json().catch(()=>({}))).error || `Error ${res.status}`);
+
+        textarea.value        = '';
+        statusEl.style.color  = 'var(--success)';
+        statusEl.textContent  = `✓ Reply sent to ${crmCurrentProfile.email}`;
+        setTimeout(() => { statusEl.textContent = ''; }, 4000);
+
+        // Refresh messages in comms tab
+        const profileRes = await fetch(`${API_BASE}/admin/crm/customer?email=${encodeURIComponent(crmCurrentProfile.email)}`, {
+            headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        if (profileRes.ok) {
+            const data = await profileRes.json();
+            crmCurrentProfile.messages = data.messages;
+            renderCRMComms(crmCurrentProfile);
+        }
+    } catch (err) {
+        statusEl.style.color = 'var(--danger)';
+        statusEl.textContent = 'Failed: ' + err.message;
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '📧 Send Reply'; }
+    }
+}
