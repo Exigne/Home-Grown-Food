@@ -1441,12 +1441,17 @@ function renderCRM() {
         return;
     }
     tbody.innerHTML = crmCustomers.map(function(c, idx) {
-        const initial = (c.name || c.email || '?')[0].toUpperCase();
+        const name    = c.display_name || c.name || (c.emails && c.emails[0]) || c.email || '?';
+        const initial = name[0].toUpperCase();
         const ltv     = parseFloat(c.ltv || 0);
+        const emails  = c.emails || (c.email ? [c.email] : []);
+        const emailDisplay = emails.length > 1
+            ? emails[0] + ' <span style="color:var(--green-mid);font-weight:800;">+' + (emails.length - 1) + ' more</span>'
+            : (emails[0] || '—');
         return '<tr class="crm-row" onclick="openCRMCustomer(' + idx + ')">' +
             '<td><div class="crm-avatar">' + initial + '</div></td>' +
-            '<td><div style="font-weight:800;color:var(--green-dark);">' + (c.name || '—') + '</div>' +
-            '<small style="color:var(--text-muted);">' + c.email + '</small></td>' +
+            '<td><div style="font-weight:800;color:var(--green-dark);">' + name + '</div>' +
+            '<small style="color:var(--text-muted);">' + emailDisplay + '</small></td>' +
             '<td><strong>' + (c.order_count || 0) + '</strong></td>' +
             '<td><strong style="color:' + (ltv > 0 ? 'var(--success)' : 'var(--text-muted)') + ';">£' + ltv.toFixed(2) + '</strong></td>' +
             '<td style="color:var(--text-muted);font-size:0.85rem;">' + (c.last_contact || '—') + '</td>' +
@@ -1454,9 +1459,14 @@ function renderCRM() {
     }).join('');
 }
 
-// Index-based lookup avoids string escaping issues with email addresses
+// Index-based lookup — passes all emails for this consolidated customer
 function openCRMCustomer(idx) {
-    if (crmCustomers[idx]) openCustomerProfile(crmCustomers[idx].email);
+    const customer = crmCustomers[idx];
+    if (!customer) return;
+    // emails is an array from the backend; fall back to single email field
+    const emails = customer.emails || [customer.email];
+    const name   = customer.display_name || customer.name || emails[0];
+    openCustomerProfile(emails, name);
 }
 
 function filterCRM(q) {
@@ -1466,18 +1476,23 @@ function filterCRM(q) {
 }
 
 // ─── OPEN & CLOSE PROFILE ─────────────────────────────────────────────────────
-async function openCustomerProfile(email) {
+async function openCustomerProfile(emailsOrEmail, displayName) {
     const modal = document.getElementById('crm-profile-modal');
     if (!modal) return;
     modal.classList.add('open');
+
+    // Normalise: accept single email string or array
+    const emails = Array.isArray(emailsOrEmail) ? emailsOrEmail : [emailsOrEmail];
+    const name   = displayName || emails[0];
 
     ['crm-profile-name','crm-profile-ltv','crm-profile-orders',
      'crm-profile-last-order','crm-profile-since'].forEach(function(id) {
         const el = document.getElementById(id);
         if (el) el.textContent = '…';
     });
-    document.getElementById('crm-profile-email').textContent  = email;
-    document.getElementById('crm-profile-avatar').textContent = email[0].toUpperCase();
+    document.getElementById('crm-profile-name').textContent   = name;
+    document.getElementById('crm-profile-avatar').textContent = name[0].toUpperCase();
+    document.getElementById('crm-profile-emails').innerHTML   = '<span style="color:var(--green-light);font-size:0.82rem;">Loading…</span>';
     document.getElementById('crm-product-chart').innerHTML    = '<p style="color:var(--text-muted);font-size:0.88rem;">Loading…</p>';
     document.getElementById('crm-orders-list').innerHTML      = '<p style="color:var(--text-muted);font-size:0.88rem;">Loading…</p>';
     document.getElementById('crm-notes-list').innerHTML       = '';
@@ -1485,12 +1500,13 @@ async function openCustomerProfile(email) {
     document.getElementById('crm-comms-thread').innerHTML     = '';
 
     try {
-        const res = await fetch(API_BASE + '/admin/crm/customer?email=' + encodeURIComponent(email), {
+        const emailsQuery = emails.map(encodeURIComponent).join(',');
+        const res = await fetch(API_BASE + '/admin/crm/customer?emails=' + emailsQuery, {
             headers: { 'Authorization': 'Bearer ' + adminToken }
         });
         if (!res.ok) throw new Error('Failed to load');
         const data = await res.json();
-        crmCurrentProfile = Object.assign({ email: email }, data);
+        crmCurrentProfile = Object.assign({ emails: emails, display_name: name }, data);
         renderCustomerProfile();
     } catch (err) {
         showToast('Failed to load customer profile');
@@ -1519,11 +1535,33 @@ function renderCustomerProfile() {
 
     document.getElementById('crm-profile-avatar').textContent     = name[0].toUpperCase();
     document.getElementById('crm-profile-name').textContent       = name;
-    document.getElementById('crm-profile-email').textContent      = c.email;
     document.getElementById('crm-profile-ltv').textContent        = '£' + ltv.toFixed(2);
     document.getElementById('crm-profile-orders').textContent     = (c.orders || []).length;
     document.getElementById('crm-profile-last-order').textContent = timeAgo(lastOrder);
     document.getElementById('crm-profile-since').textContent      = memberSince(c.orders, c.messages);
+
+    // Show all email addresses as badges in the header
+    const allEmails = c.emails || [c.email];
+    const emailsEl  = document.getElementById('crm-profile-emails');
+    if (emailsEl) {
+        emailsEl.innerHTML = allEmails.map(function(em, i) {
+            const tag = i === 0 ? 'primary' : 'alt';
+            return '<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,0.12);' +
+                   'border:1px solid rgba(255,255,255,0.25);border-radius:999px;padding:3px 10px;' +
+                   'font-size:0.75rem;color:var(--yellow-pale);font-weight:600;">' +
+                   '<span style="width:6px;height:6px;border-radius:50%;background:' + (i === 0 ? 'var(--yellow)' : 'var(--green-light)') + ';flex-shrink:0;"></span>' +
+                   em + '</span>';
+        }).join('');
+    }
+
+    // Populate the email picker dropdown
+    const picker = document.getElementById('crm-reply-email');
+    if (picker) {
+        picker.innerHTML = allEmails.map(function(em, i) {
+            const label = i === 0 ? em + ' (primary)' : em;
+            return '<option value="' + em + '">' + label + '</option>';
+        }).join('');
+    }
 
     renderProductChart(c.orders || []);
     renderCRMOrders(c);
@@ -1695,8 +1733,11 @@ async function sendCRMReply() {
     const replyText = (textarea ? textarea.value : '').trim();
     if (!replyText) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Please type a reply.'; return; }
 
-    const btn  = document.getElementById('crm-reply-btn');
-    const name = document.getElementById('crm-profile-name').textContent;
+    const btn        = document.getElementById('crm-reply-btn');
+    const name       = document.getElementById('crm-profile-name').textContent;
+    const picker     = document.getElementById('crm-reply-email');
+    const targetEmail = picker ? picker.value : (crmCurrentProfile.emails && crmCurrentProfile.emails[0]) || crmCurrentProfile.email;
+    if (!targetEmail) { statusEl.style.color='var(--danger)'; statusEl.textContent='Please select an email address.'; return; }
     if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
     statusEl.textContent = '';
 
@@ -1704,14 +1745,15 @@ async function sendCRMReply() {
         const res = await fetch(API_BASE + '/admin/chat/reply', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
-            body: JSON.stringify({ email: crmCurrentProfile.email, name: name, reply: replyText, date: new Date().toLocaleString('en-GB') })
+            body: JSON.stringify({ email: targetEmail, name: name, reply: replyText, date: new Date().toLocaleString('en-GB') })
         });
         if (!res.ok) throw new Error((await res.json().catch(function(){return {};})).error || 'Error ' + res.status);
         textarea.value       = '';
         statusEl.style.color = 'var(--success)';
         statusEl.textContent = '✓ Sent to ' + crmCurrentProfile.email;
         setTimeout(function() { statusEl.textContent = ''; }, 4000);
-        const data = await (await fetch(API_BASE + '/admin/crm/customer?email=' + encodeURIComponent(crmCurrentProfile.email),
+        const emailsQuery = (crmCurrentProfile.emails || [crmCurrentProfile.email]).map(encodeURIComponent).join(',');
+        const data = await (await fetch(API_BASE + '/admin/crm/customer?emails=' + emailsQuery,
             { headers: { 'Authorization': 'Bearer ' + adminToken } })).json();
         crmCurrentProfile.messages = data.messages;
         renderCRMComms(crmCurrentProfile);
