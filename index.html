@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://js.stripe.com/v3/"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<link rel="stylesheet" href="styles.css?v=13">
+<link rel="stylesheet" href="styles.css?v=14">
 </head>
 <body>
 
@@ -268,6 +268,10 @@
         <div class="toolbar" style="margin-bottom:1.5rem;">
           <input class="search-input" placeholder="Search by name or email…" oninput="filterCRM(this.value)" style="width:280px;">
           <span style="color:var(--text-muted);font-weight:700;font-size:0.88rem;"><span id="crm-count">0</span> customers</span>
+          <button class="action-btn primary" onclick="openBroadcast()"
+            style="margin-left:auto;padding:10px 20px;font-size:0.88rem;display:flex;align-items:center;gap:8px;">
+            📢 Email All Customers
+          </button>
         </div>
         <div class="table-wrap">
           <table>
@@ -665,8 +669,45 @@
 </div>
 
 
+<!-- ══ BROADCAST EMAIL MODAL ══ -->
+<div class="modal-overlay" id="broadcast-modal" onclick="if(event.target.id==='broadcast-modal') closeBroadcast()">
+  <div class="modal" style="width:580px;">
+    <div class="modal-head">
+      <h2>📢 Email All Customers</h2>
+      <button class="close-btn" onclick="closeBroadcast()" style="color:var(--yellow);">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:#FFF9C4; border:2px solid #F0C820; border-radius:var(--radius); padding:12px 16px; margin-bottom:1.5rem; font-size:0.88rem; color:#5C4A00; font-weight:600;">
+        ⚠️ This will send an email to <strong id="broadcast-count">all</strong> unique customer addresses in your CRM. Use with care.
+      </div>
+      <div class="form-group">
+        <label>Subject Line *</label>
+        <input type="text" id="broadcast-subject" placeholder="e.g. New products just dropped! 🌿"
+               style="font-size:1rem;">
+      </div>
+      <div class="form-group">
+        <label>Message *</label>
+        <textarea id="broadcast-message" rows="8"
+          placeholder="Write your message here. Keep it friendly and personal — your customers know you!&#10;&#10;You can use line breaks to separate paragraphs."
+          style="width:100%; padding:12px 14px; border:2px solid var(--border); border-radius:var(--radius); font-family:var(--font-body); font-size:0.95rem; resize:vertical; outline:none; background:var(--yellow-pale); line-height:1.7;"
+          onfocus="this.style.borderColor='var(--green-leaf)';this.style.background='var(--white)'"
+          onblur="this.style.borderColor='var(--border)';this.style.background='var(--yellow-pale)'"></textarea>
+        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">Your Home Grown branding and a "Visit Our Shop" button are added automatically.</div>
+      </div>
+      <div id="broadcast-status" style="font-size:0.88rem; font-weight:700; min-height:1.5rem; margin-bottom:0.5rem;"></div>
+      <div style="display:flex; gap:10px;">
+        <button id="broadcast-send-btn" class="pay-btn" onclick="sendBroadcast()" style="margin:0; flex:1; padding:14px; font-size:1rem;">
+          📧 Send to All Customers
+        </button>
+        <button class="action-btn" onclick="closeBroadcast()" style="padding:14px 20px;">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <div class="toast" id="toast"></div>
 
-<script src="app.js?v=18"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>
