@@ -809,21 +809,20 @@ async function notifyWishlistProduct(productId) {
     const productName = product ? product.name : `Product #${productId}`;
     const entries     = wishlistEntries.filter(e => String(e.product_id || e.productId) === String(productId));
     if (!entries.length) { showToast('No customers to notify'); return; }
-    if (!emailJsReady()) { showToast('Configure EmailJS first — see app.js'); return; }
     if (!confirm(`Send back-in-stock emails to ${entries.length} customer${entries.length!==1?'s':''} for "${productName}"?`)) return;
-    const templateId = EMAILJS_WISHLIST_TEMPLATE_ID.startsWith('YOUR_') ? EMAILJS_TEMPLATE_ID : EMAILJS_WISHLIST_TEMPLATE_ID;
-    let sent = 0;
-    for (const entry of entries) {
-        try {
-            await emailjs.send(EMAILJS_SERVICE_ID, templateId, {
-                to_name: entry.email.split('@')[0], to_email: entry.email,
-                product_name: productName, shop_name: 'Home Grown',
-                shop_url: window.location.origin, reply_to: 'hello@homegrown.co.uk'
-            }, EMAILJS_PUBLIC_KEY);
-            sent++;
-        } catch (err) { console.warn('Failed to notify', entry.email, err); }
+
+    try {
+        const res = await fetch(`${API_BASE}/admin/wishlist/notify/${productId}`, {
+            method:  'POST',
+            headers: { 'Authorization': `Bearer ${adminToken}` }
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to send');
+        showToast(`✓ Notified ${data.sent} customer${data.sent!==1?'s':''} about "${productName}"`);
+        await loadAdminData();
+    } catch (err) {
+        showToast('Failed to send notifications: ' + err.message);
     }
-    showToast(`✓ Notified ${sent} customer${sent!==1?'s':''} about "${productName}"`);
 }
 
 async function clearWishlistProduct(productId) {
