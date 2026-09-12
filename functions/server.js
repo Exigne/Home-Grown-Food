@@ -815,33 +815,56 @@ app.put('/api/admin/chats/read', authenticateAdmin, async (req, res) => {
 //  CRM
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// All unique customers aggregated across orders, chat_messages and wishlist
+// CRM list — consolidated by customer name so multiple emails merge into one row
 app.get('/api/admin/crm', authenticateAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
+            WITH email_names AS (
+                -- Get the best known name for each email address
+                SELECT LOWER(TRIM(email)) AS email,
+                       NULLIF(TRIM(fname || ' ' || lname), '') AS name
+                FROM orders WHERE email IS NOT NULL AND email <> ''
+                UNION ALL
+                SELECT LOWER(TRIM(email)),
+                       NULLIF(TRIM(COALESCE(name, '')), '')
+                FROM chat_messages WHERE email IS NOT NULL AND email <> ''
+            ),
+            email_primary AS (
+                SELECT email, MAX(name) AS primary_name
+                FROM email_names
+                GROUP BY email
+            ),
+            -- Group emails that share the same name into one customer
+            grouped AS (
+                SELECT
+                    COALESCE(primary_name, email)            AS group_key,
+                    MAX(primary_name)                        AS display_name,
+                    ARRAY_AGG(DISTINCT email ORDER BY email) AS emails
+                FROM email_primary
+                GROUP BY COALESCE(primary_name, email)
+            ),
+            all_activity AS (
+                SELECT LOWER(TRIM(email)) AS email,
+                       total::numeric AS ltv, 1 AS order_count, created_at AS last_seen
+                FROM orders WHERE email IS NOT NULL
+                UNION ALL
+                SELECT LOWER(TRIM(email)), 0, 0, created_at FROM chat_messages WHERE email IS NOT NULL
+                UNION ALL
+                SELECT LOWER(TRIM(email)), 0, 0, created_at FROM wishlist WHERE email IS NOT NULL
+            )
             SELECT
-                email,
-                MAX(name)                                              AS name,
-                COUNT(DISTINCT order_id)                               AS order_count,
-                COALESCE(SUM(order_total), 0)                         AS ltv,
-                TO_CHAR(MAX(last_seen) AT TIME ZONE 'Europe/London',
-                         'DD Mon YYYY')                                AS last_contact,
-                MAX(last_seen)                                         AS last_seen_raw
-            FROM (
-                SELECT email,
-                       (fname || ' ' || lname) AS name,
-                       id                      AS order_id,
-                       total::numeric          AS order_total,
-                       created_at              AS last_seen
-                FROM   orders
-                UNION ALL
-                SELECT email, name, NULL, NULL, created_at FROM chat_messages
-                UNION ALL
-                SELECT email, NULL, NULL, NULL, created_at FROM wishlist
-            ) combined
-            WHERE  email IS NOT NULL AND email <> ''
-            GROUP  BY email
-            ORDER  BY MAX(last_seen) DESC NULLS LAST
+                g.group_key,
+                g.display_name,
+                g.emails,
+                COALESCE(SUM(a.order_count), 0)                              AS order_count,
+                COALESCE(SUM(a.ltv), 0)                                      AS ltv,
+                TO_CHAR(MAX(a.last_seen) AT TIME ZONE 'Europe/London',
+                        'DD Mon YYYY')                                        AS last_contact,
+                MAX(a.last_seen)                                              AS last_seen_raw
+            FROM grouped g
+            LEFT JOIN all_activity a ON a.email = ANY(g.emails)
+            GROUP BY g.group_key, g.display_name, g.emails
+            ORDER BY MAX(a.last_seen) DESC NULLS LAST
         `);
         res.json(result.rows);
     } catch (err) {
@@ -850,33 +873,36 @@ app.get('/api/admin/crm', authenticateAdmin, async (req, res) => {
     }
 });
 
-// Full profile for one customer — orders, messages, notes, wishlist
+// Full profile — accepts comma-separated emails to query across all of a customer's addresses
 app.get('/api/admin/crm/customer', authenticateAdmin, async (req, res) => {
-    const email = (req.query.email || '').toLowerCase().trim();
-    if (!email) return res.status(400).json({ error: 'email required' });
+    const emailsParam = (req.query.emails || req.query.email || '').toLowerCase().trim();
+    if (!emailsParam) return res.status(400).json({ error: 'emails required' });
+    const emails = emailsParam.split(',').map(e => e.trim()).filter(Boolean);
+
     try {
         const [ordersRes, chatsRes, notesRes, wishlistRes] = await Promise.all([
             pool.query(
-                'SELECT * FROM orders WHERE LOWER(email) = $1 ORDER BY created_at DESC',
-                [email]
+                'SELECT * FROM orders WHERE LOWER(email) = ANY($1) ORDER BY created_at DESC',
+                [emails]
             ),
             pool.query(
-                'SELECT * FROM chat_messages WHERE LOWER(email) = $1 ORDER BY created_at ASC',
-                [email]
+                'SELECT * FROM chat_messages WHERE LOWER(email) = ANY($1) ORDER BY created_at ASC',
+                [emails]
             ),
             pool.query(
-                'SELECT * FROM customer_notes WHERE LOWER(email) = $1 ORDER BY created_at DESC',
-                [email]
+                'SELECT * FROM customer_notes WHERE LOWER(email) = ANY($1) ORDER BY created_at DESC',
+                [emails]
             ),
             pool.query(
                 `SELECT w.*, p.name AS product_name, p.emoji
                  FROM   wishlist w
                  LEFT JOIN products p ON p.id = w.product_id
-                 WHERE  LOWER(w.email) = $1`,
-                [email]
+                 WHERE  LOWER(w.email) = ANY($1)`,
+                [emails]
             )
         ]);
         res.json({
+            emails:   emails,
             orders:   ordersRes.rows,
             messages: chatsRes.rows,
             notes:    notesRes.rows,
@@ -888,7 +914,7 @@ app.get('/api/admin/crm/customer', authenticateAdmin, async (req, res) => {
     }
 });
 
-// Add a note against a customer
+// Add a note — stored against the primary (first) email of the group
 app.post('/api/admin/crm/notes', authenticateAdmin, async (req, res) => {
     const { email, note } = req.body;
     if (!email || !note) return res.status(400).json({ error: 'email and note required' });
