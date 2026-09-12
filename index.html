@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://js.stripe.com/v3/"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<link rel="stylesheet" href="styles.css?v=12">
+<link rel="stylesheet" href="styles.css?v=13">
 </head>
 <body>
 
@@ -563,7 +563,7 @@
         <div class="crm-profile-avatar" id="crm-profile-avatar">?</div>
         <div>
           <div class="crm-modal-name" id="crm-profile-name">Loading…</div>
-          <div class="crm-modal-email" id="crm-profile-email"></div>
+          <div id="crm-profile-emails" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;"></div>
         </div>
       </div>
       <div class="crm-modal-stats">
@@ -634,9 +634,17 @@
         </div>
         <div id="crm-comms-thread" class="crm-comms-thread"></div>
         <div class="crm-reply-area">
-          <div style="font-size:0.75rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--green-mid);margin-bottom:8px;">Direct Message</div>
+          <div style="font-size:0.75rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--green-mid);margin-bottom:10px;">Send Direct Message</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+            <label style="font-size:0.78rem;font-weight:800;color:var(--text-mid);white-space:nowrap;">Send to:</label>
+            <select id="crm-reply-email" style="flex:1;padding:8px 12px;border:2px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);font-size:0.88rem;background:var(--yellow-pale);color:var(--text);outline:none;cursor:pointer;"
+              onfocus="this.style.borderColor='var(--green-leaf)'"
+              onblur="this.style.borderColor='var(--border)'">
+              <option value="">Loading emails…</option>
+            </select>
+          </div>
           <textarea id="crm-reply-input" rows="4"
-            placeholder="Type your reply… it will be emailed to the customer via Resend."
+            placeholder="Type your reply… it will be emailed to the selected address via Resend."
             style="width:100%;padding:12px 14px;border:2px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);font-size:0.92rem;background:var(--yellow-pale);resize:none;outline:none;line-height:1.6;"
             onfocus="this.style.borderColor='var(--green-leaf)';this.style.background='var(--white)'"
             onblur="this.style.borderColor='var(--border)';this.style.background='var(--yellow-pale)'"
@@ -646,9 +654,9 @@
               style="margin:0;flex:1;padding:12px;font-size:1rem;">
               📧 Send Reply
             </button>
-            <span id="crm-reply-status" style="font-size:0.82rem;font-weight:700;min-width:0;flex-shrink:1;"></span>
+            <span id="crm-reply-status" style="font-size:0.82rem;font-weight:700;min-width:0;"></span>
           </div>
-          <p style="font-size:0.72rem;color:var(--text-muted);margin-top:8px;font-weight:600;">Ctrl+Enter to send · Replies are emailed — customer cannot reply directly</p>
+          <p style="font-size:0.72rem;color:var(--text-muted);margin-top:8px;font-weight:600;">Ctrl+Enter to send · Customer cannot reply directly to this email</p>
         </div>
       </div>
 
@@ -659,6 +667,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="app.js?v=17"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>
