@@ -994,8 +994,8 @@ app.post('/api/admin/crm/broadcast', authenticateAdmin, async (req, res) => {
                         </div>
                         <div style="padding:32px; background:#FFFBE8;">
                             <div style="color:#0E3019; font-size:1rem; line-height:1.8;">
-                                ${message.split('
-').join('<br>')}
+                            ${message.split('\\n').join('<br>')}
+
                             </div>
                             <div style="text-align:center; margin-top:32px;">
                                 <a href="https://homegrownfoods.online" style="background:#164A2E; color:#FFD93D; padding:14px 32px; border-radius:999px; text-decoration:none; font-weight:bold; font-size:1rem;">Visit Our Shop →</a>
