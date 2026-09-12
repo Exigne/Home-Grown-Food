@@ -693,6 +693,22 @@ app.post('/api/admin/chat/reply', authenticateAdmin, async (req, res) => {
     }
 });
 
+// Admin: delete all messages in a conversation thread
+app.delete('/api/admin/chats/thread', authenticateAdmin, async (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'email required' });
+    try {
+        const result = await pool.query(
+            'DELETE FROM chat_messages WHERE email = $1',
+            [email.toLowerCase().trim()]
+        );
+        res.json({ message: `Deleted ${result.rowCount} message(s)` });
+    } catch (err) {
+        console.error('Delete chat thread error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Admin: mark all messages from an email as read
 app.put('/api/admin/chats/read', authenticateAdmin, async (req, res) => {
     const { email } = req.body;
