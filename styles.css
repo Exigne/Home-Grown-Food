@@ -143,9 +143,12 @@ input, select, textarea { font-family: var(--font-body); }
   box-shadow: 10px 10px 0px var(--green-dark);
 }
 .product-card.out-of-stock {
-  opacity: 0.65;
-  pointer-events: none;
+  opacity: 0.75;
   order: 999; /* Push out-of-stock items to the end */
+}
+.product-card.out-of-stock .product-body,
+.product-card.out-of-stock .product-img {
+  pointer-events: none; /* block card body clicks but NOT the footer/button */
 }
 .product-card.out-of-stock .product-img {
   filter: grayscale(1) opacity(0.8);
