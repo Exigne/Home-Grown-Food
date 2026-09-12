@@ -985,6 +985,7 @@ function renderAdminChats() {
             <div class="chat-thread-meta">
               <div class="chat-thread-time">${lastTime}</div>
               <div class="chat-thread-count">${thread.messages.length} msg${thread.messages.length!==1?'s':''}</div>
+              <button class="action-btn danger" style="margin-top:6px;font-size:0.72rem;padding:4px 10px;" onclick="event.stopPropagation(); deleteChatThread('${thread.email}','${(thread.name||'').replace(/'/g,"\'")}')">🗑 Delete</button>
             </div>
           </div>
           <div class="chat-thread-body" id="thread-body-${idx}" style="display:none;">
@@ -1019,7 +1020,7 @@ function renderAdminChats() {
                 onblur="this.style.borderColor='var(--border)';this.style.background='var(--yellow-pale)'"></textarea>
               <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
                 <button class="action-btn primary" onclick="sendAdminChatReply('${thread.email}','${(thread.name||'').replace(/'/g,"\\'")}',${idx})" style="padding:10px 20px;">📧 Send Reply Email</button>
-                <span style="font-size:0.78rem;font-weight:700;color:var(--text-muted);">Sends via EmailJS to customer's inbox</span>
+                <span style="font-size:0.78rem;font-weight:700;color:var(--text-muted);">Sends email to customer via Resend</span>
               </div>
               <div id="reply-status-${idx}" style="font-size:0.82rem;font-weight:700;margin-top:6px;min-height:1.2rem;"></div>
             </div>
@@ -1029,6 +1030,22 @@ function renderAdminChats() {
     const totalUnread = sortedThreads.reduce((s, t) => s + t.messages.filter(m => !m.read).length, 0);
     const badge = document.getElementById('chat-sidebar-badge');
     if (badge) { badge.textContent = totalUnread || ''; badge.style.display = totalUnread ? 'inline-flex' : 'none'; }
+}
+
+async function deleteChatThread(email, name) {
+    if (!confirm(`Delete all messages from ${name || email}? This cannot be undone.`)) return;
+    try {
+        const res = await fetch(`${API_BASE}/admin/chats/thread`, {
+            method:  'DELETE',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+            body:    JSON.stringify({ email })
+        });
+        if (!res.ok) throw new Error('Failed to delete');
+        showToast(`✓ Conversation with ${name || email} deleted`);
+        await loadAdminData();
+    } catch (err) {
+        showToast('Failed to delete conversation');
+    }
 }
 
 function toggleThread(idx) {
