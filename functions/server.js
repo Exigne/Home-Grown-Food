@@ -810,6 +810,109 @@ app.put('/api/admin/chats/read', authenticateAdmin, async (req, res) => {
     }
 });
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  CRM
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// All unique customers aggregated across orders, chat_messages and wishlist
+app.get('/api/admin/crm', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                email,
+                MAX(name)                                              AS name,
+                COUNT(DISTINCT order_id)                               AS order_count,
+                COALESCE(SUM(order_total), 0)                         AS ltv,
+                TO_CHAR(MAX(last_seen) AT TIME ZONE 'Europe/London',
+                         'DD Mon YYYY')                                AS last_contact,
+                MAX(last_seen)                                         AS last_seen_raw
+            FROM (
+                SELECT email,
+                       (fname || ' ' || lname) AS name,
+                       id                      AS order_id,
+                       total::numeric          AS order_total,
+                       created_at              AS last_seen
+                FROM   orders
+                UNION ALL
+                SELECT email, name, NULL, NULL, created_at FROM chat_messages
+                UNION ALL
+                SELECT email, NULL, NULL, NULL, created_at FROM wishlist
+            ) combined
+            WHERE  email IS NOT NULL AND email <> ''
+            GROUP  BY email
+            ORDER  BY MAX(last_seen) DESC NULLS LAST
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        console.error('CRM list error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Full profile for one customer — orders, messages, notes, wishlist
+app.get('/api/admin/crm/customer', authenticateAdmin, async (req, res) => {
+    const email = (req.query.email || '').toLowerCase().trim();
+    if (!email) return res.status(400).json({ error: 'email required' });
+    try {
+        const [ordersRes, chatsRes, notesRes, wishlistRes] = await Promise.all([
+            pool.query(
+                'SELECT * FROM orders WHERE LOWER(email) = $1 ORDER BY created_at DESC',
+                [email]
+            ),
+            pool.query(
+                'SELECT * FROM chat_messages WHERE LOWER(email) = $1 ORDER BY created_at ASC',
+                [email]
+            ),
+            pool.query(
+                'SELECT * FROM customer_notes WHERE LOWER(email) = $1 ORDER BY created_at DESC',
+                [email]
+            ),
+            pool.query(
+                `SELECT w.*, p.name AS product_name, p.emoji
+                 FROM   wishlist w
+                 LEFT JOIN products p ON p.id = w.product_id
+                 WHERE  LOWER(w.email) = $1`,
+                [email]
+            )
+        ]);
+        res.json({
+            orders:   ordersRes.rows,
+            messages: chatsRes.rows,
+            notes:    notesRes.rows,
+            wishlist: wishlistRes.rows
+        });
+    } catch (err) {
+        console.error('CRM profile error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Add a note against a customer
+app.post('/api/admin/crm/notes', authenticateAdmin, async (req, res) => {
+    const { email, note } = req.body;
+    if (!email || !note) return res.status(400).json({ error: 'email and note required' });
+    try {
+        const result = await pool.query(
+            'INSERT INTO customer_notes (email, note) VALUES ($1, $2) RETURNING *',
+            [email.toLowerCase().trim(), note.trim()]
+        );
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete a note
+app.delete('/api/admin/crm/notes/:id', authenticateAdmin, async (req, res) => {
+    try {
+        await pool.query('DELETE FROM customer_notes WHERE id = $1', [req.params.id]);
+        res.json({ message: 'Note deleted' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ─── SERVERLESS EXPORT ────────────────────────────────────────────────────────
 const serverlessHandler = serverless(app);
 exports.handler = async (event, context) => {
