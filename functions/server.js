@@ -732,8 +732,20 @@ app.post('/api/admin/chat/reply', authenticateAdmin, async (req, res) => {
             RETURNING id
         `, [`[${newReply}]`, email.toLowerCase().trim()]);
 
+        // If no existing chat message (customer only ordered, never chatted),
+        // create a new outbound message record so the reply is tracked
         if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'No messages found for that email' });
+            await pool.query(
+                `INSERT INTO chat_messages (name, email, message, ts, read, replies)
+                 VALUES ($1, $2, $3, $4, true, $5::jsonb)`,
+                [
+                    name || email,
+                    email.toLowerCase().trim(),
+                    '[Direct message initiated from admin CRM]',
+                    Date.now(),
+                    '[' + newReply + ']'
+                ]
+            );
         }
 
         // Send reply email to the customer via Resend
@@ -935,6 +947,79 @@ app.delete('/api/admin/crm/notes/:id', authenticateAdmin, async (req, res) => {
         await pool.query('DELETE FROM customer_notes WHERE id = $1', [req.params.id]);
         res.json({ message: 'Note deleted' });
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+// ─── BROADCAST EMAIL ──────────────────────────────────────────────────────────
+// Send a composed email to ALL unique customer email addresses
+app.post('/api/admin/crm/broadcast', authenticateAdmin, async (req, res) => {
+    const { subject, message } = req.body;
+    if (!subject || !message) {
+        return res.status(400).json({ error: 'subject and message are required' });
+    }
+    try {
+        // Collect every unique email across orders, chat_messages and wishlist
+        const emailRes = await pool.query(`
+            SELECT DISTINCT LOWER(TRIM(email)) AS email
+            FROM (
+                SELECT email FROM orders        WHERE email IS NOT NULL AND email <> ''
+                UNION
+                SELECT email FROM chat_messages WHERE email IS NOT NULL AND email <> ''
+                UNION
+                SELECT email FROM wishlist      WHERE email IS NOT NULL AND email <> ''
+            ) all_emails
+            ORDER BY email
+        `);
+
+        const allEmails = emailRes.rows.map(r => r.email);
+        if (!allEmails.length) {
+            return res.status(400).json({ error: 'No customer emails found' });
+        }
+
+        let sent = 0;
+        let failed = 0;
+
+        for (const toEmail of allEmails) {
+            const { error } = await resend.emails.send({
+                from:    `Home Grown <${SENDER_EMAIL}>`,
+                to:      [toEmail],
+                subject: subject,
+                html: `
+                    <div style="font-family:Arial,sans-serif; max-width:600px; margin:0 auto; border:3px solid #164A2E; border-radius:16px; overflow:hidden;">
+                        <div style="background:#164A2E; padding:24px; text-align:center;">
+                            <h1 style="color:#FFD93D; margin:0; font-size:2rem; letter-spacing:0.03em;">Home Grown</h1>
+                            <p style="color:#6BBF4A; margin:6px 0 0; font-size:0.8rem; letter-spacing:0.12em; text-transform:uppercase;">Food That Makes You Feel Good</p>
+                        </div>
+                        <div style="padding:32px; background:#FFFBE8;">
+                            <div style="color:#0E3019; font-size:1rem; line-height:1.8;">
+                                ${message.split('
+').join('<br>')}
+                            </div>
+                            <div style="text-align:center; margin-top:32px;">
+                                <a href="https://homegrownfoods.online" style="background:#164A2E; color:#FFD93D; padding:14px 32px; border-radius:999px; text-decoration:none; font-weight:bold; font-size:1rem;">Visit Our Shop →</a>
+                            </div>
+                        </div>
+                        <div style="background:#164A2E; padding:14px; text-align:center;">
+                            <p style="color:#A8D97F; margin:0; font-size:0.78rem;">Home Grown · Handmade in Sheffield · homegrownfoods.online</p>
+                            <p style="color:#6BBF4A; margin:4px 0 0; font-size:0.72rem;">⚠️ Please do not reply to this email directly.</p>
+                        </div>
+                    </div>
+                `
+            });
+            if (error) { console.warn('Broadcast failed for', toEmail, error); failed++; }
+            else sent++;
+        }
+
+        res.json({
+            message: 'Broadcast complete',
+            sent,
+            failed,
+            total: allEmails.length
+        });
+    } catch (err) {
+        console.error('Broadcast error:', err);
         res.status(500).json({ error: err.message });
     }
 });
