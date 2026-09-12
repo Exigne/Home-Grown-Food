@@ -1082,6 +1082,18 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
   transform: translateY(-2px);
 }
 
+/* FIX: Re-enables clicking on the button when the parent card is disabled */
+.out-of-stock form,
+.out-of-stock .notify-btn {
+  pointer-events: auto; 
+}
+
+/* ADD THIS TO FIX THE UNCLICKABLE BUTTON */
+.out-of-stock form,
+.out-of-stock .notify-btn {
+  pointer-events: auto; 
+}
+
 /* ══════════════════════════════════════════════
    CHAT WIDGET — CUSTOMER FACING
 ══════════════════════════════════════════════ */
