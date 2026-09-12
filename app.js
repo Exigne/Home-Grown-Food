@@ -1440,22 +1440,23 @@ function renderCRM() {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:3rem;">No customers yet.</td></tr>';
         return;
     }
-    tbody.innerHTML = crmCustomers.map(function(c) {
+    tbody.innerHTML = crmCustomers.map(function(c, idx) {
         const initial = (c.name || c.email || '?')[0].toUpperCase();
         const ltv     = parseFloat(c.ltv || 0);
-        const row     = document.createElement('tr');
-        row.className = 'crm-row';
-        row.dataset.email = c.email;
-        row.innerHTML =
+        return '<tr class="crm-row" onclick="openCRMCustomer(' + idx + ')">' +
             '<td><div class="crm-avatar">' + initial + '</div></td>' +
             '<td><div style="font-weight:800;color:var(--green-dark);">' + (c.name || '—') + '</div>' +
             '<small style="color:var(--text-muted);">' + c.email + '</small></td>' +
             '<td><strong>' + (c.order_count || 0) + '</strong></td>' +
             '<td><strong style="color:' + (ltv > 0 ? 'var(--success)' : 'var(--text-muted)') + ';">£' + ltv.toFixed(2) + '</strong></td>' +
-            '<td style="color:var(--text-muted);font-size:0.85rem;">' + (c.last_contact || '—') + '</td>';
-        row.addEventListener('click', function() { openCustomerProfile(this.dataset.email); });
-        return row.outerHTML;
+            '<td style="color:var(--text-muted);font-size:0.85rem;">' + (c.last_contact || '—') + '</td>' +
+            '</tr>';
     }).join('');
+}
+
+// Index-based lookup avoids string escaping issues with email addresses
+function openCRMCustomer(idx) {
+    if (crmCustomers[idx]) openCustomerProfile(crmCustomers[idx].email);
 }
 
 function filterCRM(q) {
