@@ -555,85 +555,100 @@
 
 <!-- ══ CRM CUSTOMER PROFILE MODAL ══ -->
 <div class="modal-overlay" id="crm-profile-modal" onclick="if(event.target.id==='crm-profile-modal') closeCustomerProfile()">
-  <div class="modal crm-profile-modal">
+  <div class="crm-profile-modal">
 
-    <!-- Header -->
-    <div class="modal-head" style="border-radius:calc(var(--radius-xl) - 3px) calc(var(--radius-xl) - 3px) 0 0;">
-      <div style="display:flex;align-items:center;gap:14px;">
+    <!-- ── HEADER ── -->
+    <div class="crm-modal-head">
+      <div class="crm-modal-head-left">
         <div class="crm-profile-avatar" id="crm-profile-avatar">?</div>
         <div>
-          <h2 id="crm-profile-name" style="font-size:1.35rem;margin:0;color:var(--yellow);">Loading…</h2>
-          <div id="crm-profile-email" style="color:var(--green-light);font-size:0.82rem;margin-top:2px;font-weight:600;"></div>
+          <div class="crm-modal-name" id="crm-profile-name">Loading…</div>
+          <div class="crm-modal-email" id="crm-profile-email"></div>
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:20px;">
-        <div style="text-align:right;">
-          <div style="font-size:0.68rem;color:var(--green-light);text-transform:uppercase;letter-spacing:0.1em;font-weight:700;">Lifetime Value</div>
-          <div id="crm-profile-ltv" style="font-family:var(--font-brand);font-size:1.6rem;color:var(--yellow);line-height:1;">£0.00</div>
+      <div class="crm-modal-stats">
+        <div class="crm-stat">
+          <div class="crm-stat-label">Lifetime Value</div>
+          <div class="crm-stat-value" id="crm-profile-ltv">£—</div>
         </div>
-        <div style="text-align:right;">
-          <div style="font-size:0.68rem;color:var(--green-light);text-transform:uppercase;letter-spacing:0.1em;font-weight:700;">Orders</div>
-          <div id="crm-profile-orders" style="font-family:var(--font-brand);font-size:1.6rem;color:var(--yellow);line-height:1;">0</div>
+        <div class="crm-stat">
+          <div class="crm-stat-label">Orders</div>
+          <div class="crm-stat-value" id="crm-profile-orders">—</div>
         </div>
-        <button class="close-btn" onclick="closeCustomerProfile()" style="color:var(--yellow);font-size:1.4rem;margin-left:8px;">✕</button>
+        <div class="crm-stat">
+          <div class="crm-stat-label">Last Ordered</div>
+          <div class="crm-stat-value" id="crm-profile-last-order">—</div>
+        </div>
+        <div class="crm-stat">
+          <div class="crm-stat-label">Customer Since</div>
+          <div class="crm-stat-value" id="crm-profile-since">—</div>
+        </div>
       </div>
+      <button class="close-btn" onclick="closeCustomerProfile()" style="color:var(--yellow);font-size:1.5rem;margin-left:1rem;flex-shrink:0;">✕</button>
     </div>
 
-    <!-- Tabs -->
-    <div class="crm-tabs">
-      <button class="crm-tab-btn active" data-tab="overview" onclick="switchCRMTab('overview')">📋 Overview</button>
-      <button class="crm-tab-btn" data-tab="orders"   onclick="switchCRMTab('orders')">📦 Orders</button>
-      <button class="crm-tab-btn" data-tab="comms"    onclick="switchCRMTab('comms')">💬 Communications</button>
-    </div>
+    <!-- ── BODY: two-column layout ── -->
+    <div class="crm-modal-body">
 
-    <!-- Tab panels -->
-    <div class="crm-tab-content">
+      <!-- LEFT PANEL -->
+      <div class="crm-left-panel">
 
-      <!-- OVERVIEW -->
-      <div class="crm-tab-panel" data-tab="overview">
-        <div class="crm-overview-grid">
-
-          <!-- Notes -->
-          <div class="crm-panel">
-            <h3 class="crm-panel-title">📝 Internal Notes</h3>
-            <div id="crm-notes-list"></div>
-            <textarea id="crm-note-input" rows="3"
-              placeholder="Add a private note about this customer…"
-              style="width:100%;margin-top:10px;padding:10px 12px;border:2px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);font-size:0.88rem;resize:vertical;outline:none;background:var(--yellow-pale);"
-              onfocus="this.style.borderColor='var(--green-leaf)';this.style.background='var(--white)'"
-              onblur="this.style.borderColor='var(--border)';this.style.background='var(--yellow-pale)'"
-              onkeydown="if(event.key==='Enter'&&event.metaKey) addCRMNote()"></textarea>
-            <button class="action-btn primary" onclick="addCRMNote()" style="margin-top:8px;">+ Add Note</button>
-          </div>
-
-          <!-- Wishlist -->
-          <div class="crm-panel">
-            <h3 class="crm-panel-title">🔔 Wishlist Items</h3>
-            <div id="crm-wishlist" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
-          </div>
-
+        <!-- Product chart -->
+        <div class="crm-panel">
+          <div class="crm-panel-title">📊 Products Ordered</div>
+          <div id="crm-product-chart"><p style="color:var(--text-muted);font-size:0.88rem;">No orders yet.</p></div>
         </div>
+
+        <!-- Order history -->
+        <div class="crm-panel">
+          <div class="crm-panel-title">📦 Order History</div>
+          <div id="crm-orders-list"></div>
+        </div>
+
+        <!-- Notes -->
+        <div class="crm-panel">
+          <div class="crm-panel-title">📝 Internal Notes</div>
+          <div id="crm-notes-list"></div>
+          <textarea id="crm-note-input" rows="2"
+            placeholder="Add a private note… (Cmd+Enter to save)"
+            style="width:100%;margin-top:10px;padding:9px 12px;border:2px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);font-size:0.85rem;resize:vertical;outline:none;background:var(--yellow-pale);"
+            onfocus="this.style.borderColor='var(--green-leaf)';this.style.background='var(--white)'"
+            onblur="this.style.borderColor='var(--border)';this.style.background='var(--yellow-pale)'"
+            onkeydown="if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)) addCRMNote()"></textarea>
+          <button class="action-btn primary" onclick="addCRMNote()" style="margin-top:8px;width:100%;padding:8px;">+ Add Note</button>
+        </div>
+
+        <!-- Watchlist -->
+        <div class="crm-panel">
+          <div class="crm-panel-title">🔔 Watching</div>
+          <div id="crm-wishlist" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+        </div>
+
       </div>
 
-      <!-- ORDERS -->
-      <div class="crm-tab-panel" data-tab="orders" style="display:none;">
-        <div id="crm-orders-list"></div>
-      </div>
-
-      <!-- COMMUNICATIONS -->
-      <div class="crm-tab-panel" data-tab="comms" style="display:none;">
+      <!-- RIGHT PANEL: Communications -->
+      <div class="crm-right-panel">
+        <div class="crm-comms-header">
+          💬 Message History
+          <span id="crm-comms-count" style="font-size:0.78rem;font-weight:600;color:var(--green-light);margin-left:8px;"></span>
+        </div>
         <div id="crm-comms-thread" class="crm-comms-thread"></div>
         <div class="crm-reply-area">
-          <div style="font-size:0.78rem;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:var(--green-mid);margin-bottom:8px;">Send Reply</div>
-          <textarea id="crm-reply-input" rows="3"
-            placeholder="Type your reply to the customer…"
-            style="width:100%;padding:10px 14px;border:2px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);font-size:0.92rem;background:var(--yellow-pale);resize:vertical;outline:none;"
+          <div style="font-size:0.75rem;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;color:var(--green-mid);margin-bottom:8px;">Direct Message</div>
+          <textarea id="crm-reply-input" rows="4"
+            placeholder="Type your reply… it will be emailed to the customer via Resend."
+            style="width:100%;padding:12px 14px;border:2px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);font-size:0.92rem;background:var(--yellow-pale);resize:none;outline:none;line-height:1.6;"
             onfocus="this.style.borderColor='var(--green-leaf)';this.style.background='var(--white)'"
-            onblur="this.style.borderColor='var(--border)';this.style.background='var(--yellow-pale)'"></textarea>
+            onblur="this.style.borderColor='var(--border)';this.style.background='var(--yellow-pale)'"
+            onkeydown="if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)) sendCRMReply()"></textarea>
           <div style="display:flex;gap:10px;align-items:center;margin-top:10px;">
-            <button id="crm-reply-btn" class="action-btn primary" onclick="sendCRMReply()" style="padding:10px 22px;">📧 Send Reply</button>
-            <span id="crm-reply-status" style="font-size:0.82rem;font-weight:700;"></span>
+            <button id="crm-reply-btn" class="pay-btn" onclick="sendCRMReply()"
+              style="margin:0;flex:1;padding:12px;font-size:1rem;">
+              📧 Send Reply
+            </button>
+            <span id="crm-reply-status" style="font-size:0.82rem;font-weight:700;min-width:0;flex-shrink:1;"></span>
           </div>
+          <p style="font-size:0.72rem;color:var(--text-muted);margin-top:8px;font-weight:600;">Ctrl+Enter to send · Replies are emailed — customer cannot reply directly</p>
         </div>
       </div>
 
@@ -644,6 +659,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>
