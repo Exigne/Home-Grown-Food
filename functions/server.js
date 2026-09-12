@@ -354,11 +354,24 @@ app.post('/api/admin/products', authenticateAdmin, async (req, res) => {
 app.put('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
     const { name, emoji, price, description, bg_color, badge, image_url, stock } = req.body;
     try {
+        // Check current stock before updating so we know if it just came back in stock
+        const currentRes = await pool.query('SELECT stock FROM products WHERE id = $1', [req.params.id]);
+        const currentStock = currentRes.rows[0]?.stock ?? null;
+
         await pool.query(
             `UPDATE products SET name=$1, emoji=$2, price=$3, description=$4,
             bg_color=$5, badge=$6, image_url=$7, stock=$8 WHERE id=$9`,
             [name, emoji, price, description, bg_color, badge, image_url, stock !== undefined ? stock : 0, req.params.id]
         );
+
+        // If product just came back in stock, notify everyone on the wishlist
+        const wasOutOfStock = currentStock !== null && currentStock <= 0;
+        const isNowInStock  = stock !== null && stock > 0;
+
+        if (wasOutOfStock && isNowInStock) {
+            await sendWishlistNotifications(req.params.id, name);
+        }
+
         res.json({ message: 'Product updated' });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -490,6 +503,78 @@ app.post('/api/wishlist', async (req, res) => {
 });
 
 // Admin: get all wishlist entries, enriched with product name
+// ─── WISHLIST NOTIFICATIONS ──────────────────────────────────────────────────
+// Shared helper — sends back-in-stock emails and clears the wishlist for a product
+async function sendWishlistNotifications(productId, productName) {
+    try {
+        const wishlistRes = await pool.query(
+            'SELECT id, email FROM wishlist WHERE product_id = $1',
+            [productId]
+        );
+
+        if (!wishlistRes.rows.length) return 0;
+
+        let sent = 0;
+        for (const entry of wishlistRes.rows) {
+            const { error } = await resend.emails.send({
+                from:    `Home Grown <${SENDER_EMAIL}>`,
+                to:      [entry.email],
+                subject: `🌿 ${productName} is back in stock!`,
+                html: `
+                    <div style="font-family:Arial,sans-serif; max-width:600px; margin:0 auto; border:3px solid #164A2E; border-radius:16px; overflow:hidden;">
+                        <div style="background:#164A2E; padding:24px; text-align:center;">
+                            <h1 style="color:#FFD93D; margin:0; font-size:2rem;">Home Grown</h1>
+                            <p style="color:#6BBF4A; margin:6px 0 0; font-size:0.8rem; letter-spacing:0.12em; text-transform:uppercase;">Food That Makes You Feel Good</p>
+                        </div>
+                        <div style="padding:32px; background:#FFFBE8; text-align:center;">
+                            <p style="font-size:2rem; margin:0 0 16px;">🎉</p>
+                            <h2 style="color:#164A2E; font-size:1.5rem; margin:0 0 12px;">Good news — it's back!</h2>
+                            <p style="color:#2D6040; font-size:1rem; margin:0 0 24px;">
+                                <strong>${productName}</strong> is back in stock and ready to order.
+                            </p>
+                            <a href="https://homegrownfoods.online" style="display:inline-block; background:#164A2E; color:#FFD93D; padding:14px 32px; border-radius:999px; text-decoration:none; font-weight:bold; font-size:1rem;">
+                                Shop Now →
+                            </a>
+                            <p style="color:#999; font-size:0.78rem; margin-top:24px;">
+                                You signed up to be notified when this item was available.<br>
+                                ⚠️ Please do not reply to this email.
+                            </p>
+                        </div>
+                        <div style="background:#164A2E; padding:14px; text-align:center;">
+                            <p style="color:#A8D97F; margin:0; font-size:0.78rem;">Home Grown · Handmade in Sheffield · homegrownfoods.online</p>
+                        </div>
+                    </div>
+                `
+            });
+            if (!error) sent++;
+            else console.warn(`Wishlist email failed for ${entry.email}:`, error);
+        }
+
+        // Clear wishlist entries now that everyone has been notified
+        await pool.query('DELETE FROM wishlist WHERE product_id = $1', [productId]);
+        console.log(`Wishlist: notified ${sent} customer(s) about ${productName}`);
+        return sent;
+    } catch (err) {
+        console.error('sendWishlistNotifications error:', err);
+        return 0;
+    }
+}
+
+// Admin: manually trigger wishlist notifications for a product
+app.post('/api/admin/wishlist/notify/:productId', authenticateAdmin, async (req, res) => {
+    const { productId } = req.params;
+    try {
+        const productRes = await pool.query('SELECT name FROM products WHERE id = $1', [productId]);
+        if (!productRes.rows.length) return res.status(404).json({ error: 'Product not found' });
+        const productName = productRes.rows[0].name;
+        const sent = await sendWishlistNotifications(productId, productName);
+        res.json({ message: `Notified ${sent} customer(s) about ${productName}`, sent });
+    } catch (err) {
+        console.error('Manual wishlist notify error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/admin/wishlist', authenticateAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
@@ -565,9 +650,9 @@ app.post('/api/chat', async (req, res) => {
                         Reply in Admin Panel →
                     </a>
                 </p>
-                <p style="color:#999; font-size:12px;">
-                    You can reply directly to this email to respond to ${name},
-                    or log in to the admin panel and use the Inbox section.
+                <p style="color:#999; font-size:12px; border-top:1px solid #eee; padding-top:12px; margin-top:12px;">
+                    ⚠️ Do not reply to this email — replies will not be delivered.<br>
+                    Use the Admin Panel link above to respond to ${name}.
                 </p>
             `
         });
@@ -655,7 +740,7 @@ app.post('/api/admin/chat/reply', authenticateAdmin, async (req, res) => {
         const { error: replyEmailError } = await resend.emails.send({
             from: `Home Grown <${SENDER_EMAIL}>`,
             to: [email],
-            replyTo: SENDER_EMAIL,
+            // no replyTo — replies not supported without email forwarding
             subject: `Re: Your message to Home Grown 🌿`,
             html: `
                 <div style="font-family:Arial,sans-serif; max-width:600px; margin:0 auto; border:3px solid #164A2E; border-radius:16px; overflow:hidden;">
@@ -669,7 +754,8 @@ app.post('/api/admin/chat/reply', authenticateAdmin, async (req, res) => {
                         <div style="background:white; border-left:5px solid #FFD93D; padding:16px 20px; margin:24px 0; border-radius:8px; color:#0E3019; line-height:1.7;">
                             ${reply.split('\n').join('<br>')}
                         </div>
-                        <p style="color:#5A8A6A; font-size:0.9rem;">If you have any more questions, just reply to this email or message us on the website.</p>
+                        <p style="color:#5A8A6A; font-size:0.9rem;">If you have any more questions, please use the chat widget on our website — we'd love to hear from you!</p>
+                        <p style="color:#999; font-size:0.8rem; margin-top:8px;">⚠️ Please do not reply directly to this email as replies cannot be received.</p>
                         <div style="text-align:center; margin-top:28px;">
                             <a href="https://homegrownfoods.online" style="background:#164A2E; color:#FFD93D; padding:12px 28px; border-radius:999px; text-decoration:none; font-weight:bold; font-size:0.95rem;">Visit Our Shop →</a>
                         </div>
