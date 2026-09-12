@@ -1771,3 +1771,77 @@ function switchCRMTab() {}
 function toggleThread() {}
 function sendAdminChatReply() {}
 function deleteChatThread() {}
+
+// ─── BROADCAST EMAIL ──────────────────────────────────────────────────────────
+function openBroadcast() {
+    const modal     = document.getElementById('broadcast-modal');
+    const countEl   = document.getElementById('broadcast-count');
+    const statusEl  = document.getElementById('broadcast-status');
+    const subjectEl = document.getElementById('broadcast-subject');
+    const msgEl     = document.getElementById('broadcast-message');
+    const btn       = document.getElementById('broadcast-send-btn');
+
+    if (countEl) countEl.textContent = crmCustomers.length + ' customer email address' + (crmCustomers.length !== 1 ? 'es' : '');
+    if (statusEl)  statusEl.textContent  = '';
+    if (subjectEl) subjectEl.value       = '';
+    if (msgEl)     msgEl.value           = '';
+    if (btn)     { btn.disabled = false; btn.textContent = '📧 Send to All Customers'; }
+    if (modal)     modal.classList.add('open');
+
+    setTimeout(function() {
+        var s = document.getElementById('broadcast-subject');
+        if (s) s.focus();
+    }, 150);
+}
+
+function closeBroadcast() {
+    var modal = document.getElementById('broadcast-modal');
+    if (modal) modal.classList.remove('open');
+}
+
+async function sendBroadcast() {
+    var subject  = (document.getElementById('broadcast-subject').value || '').trim();
+    var message  = (document.getElementById('broadcast-message').value || '').trim();
+    var statusEl = document.getElementById('broadcast-status');
+    var btn      = document.getElementById('broadcast-send-btn');
+
+    if (!subject) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Please enter a subject line.'; return; }
+    if (!message) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Please write a message.'; return; }
+
+    if (!confirm('Send this email to ALL customers? This cannot be undone.')) return;
+
+    btn.disabled    = true;
+    btn.textContent = 'Sending…';
+    statusEl.style.color = 'var(--text-muted)';
+    statusEl.textContent = 'Sending — this may take a moment…';
+
+    try {
+        var res = await fetch(API_BASE + '/admin/crm/broadcast', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+            body:    JSON.stringify({ subject: subject, message: message })
+        });
+        var data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Broadcast failed');
+
+        statusEl.style.color = 'var(--success)';
+        statusEl.textContent = '✓ Sent to ' + data.sent + ' customer' + (data.sent !== 1 ? 's' : '') +
+            (data.failed ? ' · ' + data.failed + ' failed' : '') + '.';
+        btn.textContent = '✓ Sent!';
+        showToast('📢 Broadcast sent to ' + data.sent + ' customers');
+
+        // Clear the form after a delay
+        setTimeout(function() {
+            document.getElementById('broadcast-subject').value = '';
+            document.getElementById('broadcast-message').value = '';
+            btn.disabled    = false;
+            btn.textContent = '📧 Send to All Customers';
+        }, 3000);
+
+    } catch (err) {
+        statusEl.style.color = 'var(--danger)';
+        statusEl.textContent = 'Failed: ' + err.message;
+        btn.disabled    = false;
+        btn.textContent = '📧 Send to All Customers';
+    }
+}
