@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://js.stripe.com/v3/"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<link rel="stylesheet" href="styles.css?v=19">
+<link rel="stylesheet" href="styles.css?v=20">
 </head>
 <body>
 
@@ -343,7 +343,7 @@
           <div class="form-group"><label>Last Name</label><input type="text" id="ch-lname" placeholder="Smith" autocomplete="family-name"></div>
         </div>
         <div class="form-group"><label>Email</label><input type="email" id="ch-email" placeholder="jane@example.com" autocomplete="email"></div>
-        <div class="form-group"><label>Delivery Address</label><input type="text" id="ch-address" placeholder="123 High Street" autocomplete="street-address"></div>
+        <div class="form-group"><label>Delivery Address <span style="font-weight:600;color:var(--text-muted);font-size:0.78rem;">(UK-wide delivery £3.99)</span></label><input type="text" id="ch-address" placeholder="123 High Street" autocomplete="street-address"></div>
         <div class="form-row">
           <div class="form-group"><label>City / Town</label><input type="text" id="ch-city" placeholder="Sheffield" autocomplete="address-level2" oninput="updateCheckoutTotals()"></div>
           <div class="form-group"><label>Postcode</label><input type="text" id="ch-postcode" placeholder="S1 2AB" autocomplete="postal-code" oninput="updateCheckoutTotals()"></div>
@@ -455,9 +455,16 @@
         <div class="form-group"><label>Card Colour</label><input type="color" id="pem-bg" value="#FFFBE8" style="height:48px; cursor:pointer; width:100%;"></div>
       </div>
       <div class="form-group">
-        <label>Stripe Recurring Price ID <span style="font-weight:600;color:var(--text-muted);">(for Subscribe &amp; Save)</span></label>
-        <input type="text" id="pem-stripe-recurring" placeholder="price_1ABC... — create in Stripe Dashboard → Products → Add recurring price">
-        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;">Leave blank if you don't offer a subscription for this product. 10% discount is applied automatically.</div>
+        <label>Stripe Recurring Price ID <span style="font-weight:600;color:var(--text-muted);">(monthly subscription)</span></label>
+        <input type="text" id="pem-stripe-recurring" placeholder="price_1ABC... — create in Stripe Dashboard → Products → Add monthly price">
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;">Create a monthly recurring price in Stripe and paste the price_xxx ID here. £3.99 delivery is added automatically on top.</div>
+      </div>
+      <div class="form-group" style="flex-direction:row;align-items:center;gap:12px;background:#E8F5E9;border:2px solid #A5D6A7;border-radius:var(--radius);padding:14px 16px;">
+        <input type="checkbox" id="pem-subscription-enabled" style="width:20px;height:20px;cursor:pointer;accent-color:var(--green-dark);flex-shrink:0;">
+        <div>
+          <label for="pem-subscription-enabled" style="cursor:pointer;font-weight:800;color:var(--green-dark);font-size:0.95rem;">Enable Monthly Subscription</label>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Shows a One-time / 📦 Monthly toggle on the product card. Requires a Stripe recurring price ID above.</div>
+        </div>
       </div>
       <div class="form-group full">
         <label>Description</label>
@@ -792,6 +799,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="app.js?v=29"></script>
+<script src="app.js?v=30"></script>
 </body>
 </html>
