@@ -711,7 +711,7 @@ app.get('/api/admin/chats', authenticateAdmin, async (req, res) => {
 
 // Admin: reply to a customer — appends reply to the most recent message from that email
 app.post('/api/admin/chat/reply', authenticateAdmin, async (req, res) => {
-    const { email, name, reply, date } = req.body;
+    const { email, name, reply, date, direct } = req.body;
     if (!email || !reply) {
         return res.status(400).json({ error: 'email and reply are required' });
     }
@@ -753,7 +753,7 @@ app.post('/api/admin/chat/reply', authenticateAdmin, async (req, res) => {
             from: `Home Grown <${SENDER_EMAIL}>`,
             to: [email],
             // no replyTo — replies not supported without email forwarding
-            subject: `Re: Your message to Home Grown 🌿`,
+            subject: direct ? 'A message from Home Grown 🌿' : 'Re: Your message to Home Grown 🌿',
             html: `
                 <div style="font-family:Arial,sans-serif; max-width:600px; margin:0 auto; border:3px solid #164A2E; border-radius:16px; overflow:hidden;">
                     <div style="background:#164A2E; padding:24px; text-align:center;">
@@ -762,7 +762,7 @@ app.post('/api/admin/chat/reply', authenticateAdmin, async (req, res) => {
                     </div>
                     <div style="padding:32px; background:#FFFBE8;">
                         <p style="color:#0E3019; font-size:1rem;">Hi <strong>${name}</strong>,</p>
-                        <p style="color:#2D6040;">Thanks for getting in touch! Here's our reply:</p>
+                        ${direct ? '<p style="color:#2D6040;">We have a message for you from the Home Grown team:</p>' : '<p style="color:#2D6040;">Thanks for getting in touch! Here\'s our reply:</p>'}
                         <div style="background:white; border-left:5px solid #FFD93D; padding:16px 20px; margin:24px 0; border-radius:8px; color:#0E3019; line-height:1.7;">
                             ${reply.split('\n').join('<br>')}
                         </div>
@@ -832,7 +832,6 @@ app.get('/api/admin/crm', authenticateAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
             WITH email_names AS (
-                -- Get the best known name for each email address
                 SELECT LOWER(TRIM(email)) AS email,
                        NULLIF(TRIM(fname || ' ' || lname), '') AS name
                 FROM orders WHERE email IS NOT NULL AND email <> ''
@@ -846,7 +845,6 @@ app.get('/api/admin/crm', authenticateAdmin, async (req, res) => {
                 FROM email_names
                 GROUP BY email
             ),
-            -- Group emails that share the same name into one customer
             grouped AS (
                 SELECT
                     COALESCE(primary_name, email)            AS group_key,
@@ -868,11 +866,15 @@ app.get('/api/admin/crm', authenticateAdmin, async (req, res) => {
                 g.group_key,
                 g.display_name,
                 g.emails,
-                COALESCE(SUM(a.order_count), 0)                              AS order_count,
-                COALESCE(SUM(a.ltv), 0)                                      AS ltv,
-                TO_CHAR(MAX(a.last_seen) AT TIME ZONE 'Europe/London',
-                        'DD Mon YYYY')                                        AS last_contact,
-                MAX(a.last_seen)                                              AS last_seen_raw
+                COALESCE(SUM(a.order_count), 0) AS order_count,
+                COALESCE(SUM(a.ltv), 0)         AS ltv,
+                TO_CHAR(MAX(a.last_seen) AT TIME ZONE 'Europe/London', 'DD Mon YYYY') AS last_contact,
+                MAX(a.last_seen) AS last_seen_raw,
+                -- Message stats for badge
+                (SELECT COUNT(*) FROM chat_messages cm
+                 WHERE LOWER(cm.email) = ANY(g.emails))::int AS message_count,
+                (SELECT COUNT(*) FROM chat_messages cm
+                 WHERE LOWER(cm.email) = ANY(g.emails) AND cm.read = false)::int AS unread_count
             FROM grouped g
             LEFT JOIN all_activity a ON a.email = ANY(g.emails)
             GROUP BY g.group_key, g.display_name, g.emails
