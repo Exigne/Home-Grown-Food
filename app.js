@@ -1455,6 +1455,45 @@ function updateBroadcastPreview() {
         '</div></div>';
 }
 
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function timeAgo(dateStr) {
+    if (!dateStr) return '—';
+    var d = new Date(dateStr);
+    if (isNaN(d)) return '—';
+    var days = Math.floor((Date.now() - d.getTime()) / 86400000);
+    if (days === 0)  return 'Today';
+    if (days === 1)  return 'Yesterday';
+    if (days < 7)    return days + ' days ago';
+    if (days < 30)   return Math.floor(days / 7) + ' week' + (Math.floor(days / 7) > 1 ? 's' : '') + ' ago';
+    if (days < 365)  return Math.floor(days / 30) + ' month' + (Math.floor(days / 30) > 1 ? 's' : '') + ' ago';
+    return Math.floor(days / 365) + ' year' + (Math.floor(days / 365) > 1 ? 's' : '') + ' ago';
+}
+
+function memberSince(orders, messages) {
+    var dates = [];
+    if (orders   && orders.length)   dates.push(new Date(orders[orders.length - 1].created_at));
+    if (messages && messages.length) dates.push(new Date(messages[0].created_at));
+    if (!dates.length) return '—';
+    var earliest = new Date(Math.min.apply(null, dates.map(function(d) { return d.getTime(); })));
+    return earliest.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+}
+
+function parseOrderItems(orders) {
+    var counts = {};
+    orders.forEach(function(order) {
+        (order.items || '').split(',').forEach(function(item) {
+            var trimmed = item.trim();
+            var xIdx    = trimmed.search(/[x×]\s*\d+/i);
+            if (xIdx === -1) return;
+            var name     = trimmed.substring(0, xIdx).trim();
+            var qtyMatch = trimmed.match(/\d+$/);
+            var qty      = qtyMatch ? parseInt(qtyMatch[0]) : 1;
+            if (name) counts[name] = (counts[name] || 0) + qty;
+        });
+    });
+    return counts;
+}
+
 // ─── LOAD & RENDER LIST ───────────────────────────────────────────────────────
 async function loadCRM() {
     if (!adminToken) return;
