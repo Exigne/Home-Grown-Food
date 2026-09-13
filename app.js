@@ -13,6 +13,7 @@ let products         = [];
 let promos           = [];
 let wishlistEntries  = [];
 let chatMessages     = [];
+let shopFilter       = 'all';
 let stripeInstance   = null;
 let cardElement      = null;
 let appliedPromo     = null;
