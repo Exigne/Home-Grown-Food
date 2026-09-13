@@ -245,10 +245,13 @@ app.post('/api/orders', async (req, res) => {
         const calculatedTotal = Math.max(0, subtotal - discount + shipping);
         const itemsString = generatedItemsText.join(', ');
 
+        const marketingConsent = req.body.marketingConsent === true;
+
         await client.query(
-            `INSERT INTO orders (id, fname, lname, email, address, items, total, status, date, postcode, pickup)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-            [id, fname, lname, email, address, itemsString, calculatedTotal.toFixed(2), status, date, postcode, pickup || false]
+            `INSERT INTO orders (id, fname, lname, email, address, items, total, status, date, postcode, pickup, marketing_consent)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+            [id, fname, lname, email, address, itemsString, calculatedTotal.toFixed(2),
+             status, date, postcode, pickup || false, marketingConsent]
         );
 
         if (promoCode) {
@@ -352,7 +355,7 @@ app.post('/api/admin/products', authenticateAdmin, async (req, res) => {
 });
 
 app.put('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
-    const { name, emoji, price, description, bg_color, badge, image_url, stock } = req.body;
+    const { name, emoji, price, description, bg_color, badge, image_url, stock, stripe_recurring_price_id } = req.body;
     try {
         // Check current stock before updating so we know if it just came back in stock
         const currentRes = await pool.query('SELECT stock FROM products WHERE id = $1', [req.params.id]);
@@ -360,8 +363,11 @@ app.put('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
 
         await pool.query(
             `UPDATE products SET name=$1, emoji=$2, price=$3, description=$4,
-            bg_color=$5, badge=$6, image_url=$7, stock=$8 WHERE id=$9`,
-            [name, emoji, price, description, bg_color, badge, image_url, stock !== undefined ? stock : 0, req.params.id]
+            bg_color=$5, badge=$6, image_url=$7, stock=$8, stripe_recurring_price_id=$9 WHERE id=$10`,
+            [name, emoji, price, description, bg_color, badge, image_url,
+             stock !== undefined ? stock : 0,
+             stripe_recurring_price_id || null,
+             req.params.id]
         );
 
         // If product just came back in stock, notify everyone on the wishlist
@@ -1023,6 +1029,32 @@ app.post('/api/admin/crm/broadcast', authenticateAdmin, async (req, res) => {
         });
     } catch (err) {
         console.error('Broadcast error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+// ─── STRIPE SUBSCRIPTION CHECKOUT ────────────────────────────────────────────
+// Creates a Stripe Checkout Session in subscription mode.
+// Requires: product must have stripe_recurring_price_id set in admin panel.
+app.post('/api/create-subscription-session', async (req, res) => {
+    const { priceId, productName, customerEmail } = req.body;
+    if (!priceId) {
+        return res.status(400).json({ error: 'No Stripe recurring price ID configured for this product. Set it in Admin → Products → Edit.' });
+    }
+    try {
+        const session = await stripe.checkout.sessions.create({
+            mode:                 'subscription',
+            payment_method_types: ['card'],
+            line_items: [{ price: priceId, quantity: 1 }],
+            customer_email:    customerEmail || undefined,
+            success_url:       'https://homegrownfoods.online?subscribed=1&product=' + encodeURIComponent(productName || ''),
+            cancel_url:        'https://homegrownfoods.online',
+            metadata:          { product_name: productName || '' }
+        });
+        res.json({ url: session.url });
+    } catch (err) {
+        console.error('Stripe subscription session error:', err);
         res.status(500).json({ error: err.message });
     }
 });
