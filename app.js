@@ -1463,11 +1463,13 @@ function applyMessageTemplate(context) {
     if (!t) return;
 
     // Store last used key for preview
-    selectEl.dataset.lastKey = key;
+    // Store selected template key in module-level variable (more reliable than dataset)
     if (context === 'broadcast') {
+        window._broadcastTemplateKey = key;
         var sEl = document.getElementById('broadcast-subject');
-        if (sEl && !sEl.value) sEl.value = t.subject;
+        if (sEl) sEl.value = t.subject;  // always update subject when template changes
     }
+    updateBroadcastPreview();  // show preview immediately on template select
 
     // Update placeholder and clear textarea so admin just types the core message
     var msgId = context === 'crm' ? 'crm-reply-input' : 'broadcast-message';
@@ -1480,6 +1482,7 @@ function applyMessageTemplate(context) {
     }
 
     if (context === 'broadcast') updateBroadcastPreview();
+    if (context === 'crm') window._crmTemplateKey = key;
     selectEl.value = '';
 }
 
@@ -1488,29 +1491,22 @@ function applyMessageTemplate(context) {
 function updateBroadcastPreview() {
     var previewEl = document.getElementById('broadcast-preview-frame');
     if (!previewEl) return;
-    var subject = (document.getElementById('broadcast-subject').value || '').trim();
+
+    var tKey    = window._broadcastTemplateKey || 'general';
     var bMsgEl  = document.getElementById('broadcast-message');
-    var message = (bMsgEl ? (bMsgEl.tagName === 'TEXTAREA' ? bMsgEl.value : bMsgEl.innerHTML) : '').trim();
-    if (!message && !subject) {
-        previewEl.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-muted);"><div style="font-size:2rem;margin-bottom:0.5rem;">\u{1F4E7}</div><p style="font-weight:700;">Start typing to see a preview</p></div>';
-        return;
+    var message = bMsgEl ? (bMsgEl.tagName === 'TEXTAREA' ? bMsgEl.value : bMsgEl.innerHTML).trim() : '';
+    var subject = (document.getElementById('broadcast-subject').value || '').trim();
+
+    // Always show preview — placeholder styling when no message yet
+    var previewMsg = message || '<span style="color:#bbb;font-style:italic;">(type your message on the left to see it here)</span>';
+    var html = buildEmailHTML(tKey, '[Customer Name]', previewMsg);
+
+    if (subject) {
+        html = '<div style="background:#f5f5f5;padding:8px 14px;border-bottom:2px solid #ddd;font-size:0.82rem;color:#444;">'
+             + '<strong>Subject:</strong> ' + subject.replace(/&/g,'&amp;').replace(/</g,'&lt;')
+             + '</div>' + html;
     }
-    var safeMsg = message.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').split('\n').join('<br>');
-    var safeSubj = subject.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    previewEl.innerHTML =
-        '<div style="font-family:Arial,sans-serif;border:2px solid #164A2E;border-radius:12px;overflow:hidden;font-size:13px;">' +
-        '<div style="background:#164A2E;padding:18px;text-align:center;">' +
-        '<div style="color:#FFD93D;font-size:1.3rem;font-weight:bold;">Home Grown</div>' +
-        '<div style="color:#6BBF4A;font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;margin-top:3px;">Food That Makes You Feel Good</div>' +
-        '</div>' +
-        (safeSubj ? '<div style="background:#f5f5f5;padding:8px 14px;font-size:0.8rem;color:#555;border-bottom:1px solid #ddd;"><strong>Subject:</strong> ' + safeSubj + '</div>' : '') +
-        '<div style="padding:20px 24px;background:#FFFBE8;line-height:1.8;color:#0E3019;">' + safeMsg + '</div>' +
-        '<div style="background:#FFFBE8;padding:10px;text-align:center;border-top:1px solid #C8E6C0;">' +
-        '<span style="display:inline-block;background:#164A2E;color:#FFD93D;padding:8px 20px;border-radius:999px;font-size:0.82rem;font-weight:bold;">Visit Our Shop \u2192</span>' +
-        '</div>' +
-        '<div style="background:#164A2E;padding:10px;text-align:center;">' +
-        '<div style="color:#A8D97F;font-size:0.68rem;">Home Grown \u00B7 Handmade in Sheffield \u00B7 homegrownfoods.online</div>' +
-        '</div></div>';
+    previewEl.innerHTML = html;
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -1698,8 +1694,7 @@ async function openCustomerProfile(emailsOrEmail, displayName) {
         crmCustomers.forEach(function(c) {
             var cEmails = c.emails || (c.email ? [c.email] : []);
             if (emails.some(function(e) { return cEmails.indexOf(e) !== -1; })) {
-                c.unread_count = 0;
-                c.message_count = Math.max(parseInt(c.message_count || 0), 1);
+                c.unread_count = 0;  // clear unread — do NOT touch message_count
             }
         });
         renderCRM();
@@ -1934,8 +1929,7 @@ async function sendCRMReply() {
     const name        = document.getElementById('crm-profile-name').textContent;
     const picker      = document.getElementById('crm-reply-email');
     const targetEmail = picker ? picker.value : (crmCurrentProfile.emails && crmCurrentProfile.emails[0]) || crmCurrentProfile.email;
-    const tSelect     = document.getElementById('crm-template-select');
-    const templateKey = (tSelect && tSelect.dataset.lastKey) ? tSelect.dataset.lastKey : 'general';
+    const templateKey = window._crmTemplateKey || 'general';
     const t           = EMAIL_TEMPLATES[templateKey] || EMAIL_TEMPLATES.general;
     if (!targetEmail) { statusEl.style.color='var(--danger)'; statusEl.textContent='Please select an email address.'; return; }
     if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
