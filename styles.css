@@ -1814,3 +1814,56 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
   .crm-modal-stats { gap: 1rem; }
   .crm-stat-value  { font-size: 1.1rem; }
 }
+
+/* ══════════════════════════════════════════════
+   BROADCAST EMAIL MODAL
+══════════════════════════════════════════════ */
+.broadcast-modal {
+  background: var(--white) !important;
+  border-radius: 20px !important;
+  border: 3px solid var(--green-dark) !important;
+  box-shadow: 0 32px 80px rgba(10,35,20,0.45) !important;
+  width: 92vw !important;
+  max-width: 1200px !important;
+  max-height: 90vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.broadcast-body {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  flex: 1 !important;
+  overflow: hidden !important;
+  min-height: 0 !important;
+}
+
+.broadcast-compose {
+  padding: 1.5rem;
+  overflow-y: auto;
+  border-right: 2px solid var(--border);
+  background: var(--yellow-pale);
+}
+
+.broadcast-preview {
+  padding: 1.5rem;
+  overflow-y: auto;
+  background: var(--white);
+  display: flex;
+  flex-direction: column;
+}
+
+.broadcast-preview-frame {
+  flex: 1;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow-y: auto;
+  background: #f9f9f9;
+  padding: 1rem;
+}
+
+@media (max-width: 900px) {
+  .broadcast-body { grid-template-columns: 1fr !important; }
+  .broadcast-preview { display: none; }
+}
