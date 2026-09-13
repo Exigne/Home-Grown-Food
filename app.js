@@ -14,6 +14,7 @@ let promos           = [];
 let wishlistEntries  = [];
 let chatMessages     = [];
 let shopFilter       = 'all';
+var productMode      = {}; // { [productId]: 'once' | 'sub' }
 let stripeInstance   = null;
 let cardElement      = null;
 let appliedPromo     = null;
@@ -322,19 +323,34 @@ function renderShop() {
             <div class="product-name">${p.name}</div>
             <div class="product-desc">${formatDesc(p.description)}</div>
           </div>
-          <div class="product-footer">
-            <span class="product-price">£${Number(p.price).toFixed(2)}</span>
-            ${outOfStock
-              ? `<button class="notify-btn" onclick="event.stopPropagation(); openWishlistModal(${p.id})">🔔 Notify Me</button>`
-              : `<button class="add-btn" id="add-btn-${p.id}" onclick="event.stopPropagation(); addToCart(${p.id})">+ Add to Basket</button>`
-            }
-          </div>
-          ${!outOfStock && p.stripe_recurring_price_id ? `
-          <div class="product-subscribe-bar">
-            <span class="subscribe-saving">Subscribe &amp; Save 10%</span>
-            <span class="subscribe-price">£${(Number(p.price) * 0.9).toFixed(2)}/wk</span>
-            <button class="subscribe-btn" id="sub-btn-${p.id}" onclick="event.stopPropagation(); subscribeToProduct(${p.id})">📦 Subscribe</button>
-          </div>` : ''}
+          ${outOfStock
+            ? `<div class="product-footer">
+                 <span class="product-price">£${Number(p.price).toFixed(2)}</span>
+                 <button class="notify-btn" onclick="event.stopPropagation(); openWishlistModal(${p.id})">🔔 Notify Me</button>
+               </div>`
+            : p.subscription_enabled
+              ? `<div class="product-footer product-footer-toggle">
+                   <div class="mode-toggle" onclick="event.stopPropagation()">
+                     <button class="mode-btn mode-active" id="mode-once-${p.id}"
+                             onclick="setProductMode(${p.id},'once')">
+                       <span class="mode-label">One-time</span>
+                       <span class="mode-price">£${Number(p.price).toFixed(2)}</span>
+                     </button>
+                     <button class="mode-btn" id="mode-sub-${p.id}"
+                             onclick="setProductMode(${p.id},'sub')">
+                       <span class="mode-label">📦 Monthly</span>
+                       <span class="mode-price">£${(Number(p.price)+3.99).toFixed(2)}/mo</span>
+                     </button>
+                   </div>
+                   <button class="add-btn" id="add-btn-${p.id}"
+                           onclick="event.stopPropagation(); addToCart(${p.id})">+ Add</button>
+                 </div>`
+              : `<div class="product-footer">
+                   <span class="product-price">£${Number(p.price).toFixed(2)}</span>
+                   <button class="add-btn" id="add-btn-${p.id}"
+                           onclick="event.stopPropagation(); addToCart(${p.id})">+ Add to Basket</button>
+                 </div>`
+          }
         </div>`;
     }).join('');
 }
@@ -694,9 +710,12 @@ function openProductModal(id) {
         document.getElementById('pem-stock').value = p.stock     ?? '';
         var stripePriceEl = document.getElementById('pem-stripe-recurring');
         if (stripePriceEl) stripePriceEl.value = p.stripe_recurring_price_id || '';
+        var subEnabledEl = document.getElementById('pem-subscription-enabled');
+        if (subEnabledEl) subEnabledEl.checked = !!p.subscription_enabled;
         updateImagePreview(p.image_url || '');
     } else {
         ['pem-id','pem-name','pem-price','pem-emoji','pem-badge','pem-image','pem-stock'].forEach(id => document.getElementById(id).value = '');
+        var subEl2 = document.getElementById('pem-subscription-enabled'); if (subEl2) subEl2.checked = false;
         document.getElementById('pem-desc').innerHTML = '';
         document.getElementById('pem-bg').value = '#FFFBE8';
         updateImagePreview('');
@@ -718,7 +737,8 @@ async function saveProductFromModal() {
         description: document.getElementById('pem-desc').innerHTML.trim(),
         bg_color: document.getElementById('pem-bg').value,
         stock: parseInt(document.getElementById('pem-stock').value) || 0,
-        stripe_recurring_price_id: stripeEl ? stripeEl.value.trim() : ''
+        stripe_recurring_price_id: stripeEl ? stripeEl.value.trim() : '',
+        subscription_enabled: (function(){ var el = document.getElementById('pem-subscription-enabled'); return el ? el.checked : false; })()
     };
     const saveBtn = document.getElementById('pem-save-btn');
     saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
@@ -1020,14 +1040,33 @@ function showChatIdentityStatus(msg, type) {
 
 // ─── BASKET ───────────────────────────────────────────────────────────────────
 function addToCart(id) {
-    const p  = products.find(x => x.id === id);
+    const p    = products.find(x => x.id === id);
     if (!p) return;
+    const mode = productMode[id] || 'once';
+    // Monthly subscription: product price + £3.99 mandatory delivery
+    const displayPrice = mode === 'sub' ? Number(p.price) + 3.99 : Number(p.price);
+    // Find existing item with same id — update mode & price if changed
     const ex = cart.find(x => x.id === id);
-    if (ex) ex.qty++; else cart.push({ ...p, qty: 1 });
+    if (ex) {
+        ex.qty++;
+        ex.mode         = mode;
+        ex.displayPrice = displayPrice;
+    } else {
+        cart.push({ ...p, qty: 1, mode, displayPrice });
+    }
     updateCartUI();
     const btn = document.getElementById('add-btn-' + id);
-    if (btn) { btn.textContent = '✓ Added'; btn.classList.add('added'); setTimeout(() => { btn.textContent = '+ Add to Basket'; btn.classList.remove('added'); }, 1500); }
-    showToast(`${p.emoji || '🍪'} ${p.name} added!`);
+    const label = mode === 'sub' ? '✓ Subscribed' : '✓ Added';
+    if (btn) { btn.textContent = label; btn.classList.add('added'); setTimeout(() => { btn.textContent = '+ Add'; btn.classList.remove('added'); }, 1500); }
+    showToast((mode === 'sub' ? '📦 ' : (p.emoji || '🍪') + ' ') + p.name + (mode === 'sub' ? ' — weekly subscription!' : ' added!'));
+}
+
+function setProductMode(id, mode) {
+    productMode[id] = mode;
+    var onceBtn = document.getElementById('mode-once-' + id);
+    var subBtn  = document.getElementById('mode-sub-' + id);
+    if (onceBtn) onceBtn.classList.toggle('mode-active', mode === 'once');
+    if (subBtn)  subBtn.classList.toggle('mode-active', mode === 'sub');
 }
 function changeQty(id, d) {
     const item = cart.find(x => x.id === id);
@@ -1048,12 +1087,18 @@ function updateCartUI() {
         itemsEl.innerHTML = `<div class="empty-cart"><span class="ec-icon">🧺</span><p>Your basket is empty</p></div>`;
         footerEl.style.display = 'none';
     } else {
-        itemsEl.innerHTML = cart.map(item => `
-            <div class="cart-item">
+        itemsEl.innerHTML = cart.map(item => {
+            const isSub     = item.mode === 'sub';
+            const unitPrice = item.displayPrice !== undefined ? item.displayPrice : parseFloat(item.price);
+            const lineTotal = (unitPrice * item.qty).toFixed(2);
+            const priceLabel = isSub
+                ? `£${unitPrice.toFixed(2)}/wk <span style="background:#E8F5E9;color:var(--green-dark);border-radius:999px;padding:1px 7px;font-size:0.7rem;font-weight:800;margin-left:4px;">📦 Weekly</span>`
+                : `£${unitPrice.toFixed(2)} each`;
+            return `<div class="cart-item">
               <div class="cart-item-emoji">${item.emoji || '🍪'}</div>
               <div class="cart-item-info">
                 <div class="cart-item-name">${item.name}</div>
-                <div class="cart-item-price">£${parseFloat(item.price).toFixed(2)} each</div>
+                <div class="cart-item-price">${priceLabel}</div>
                 <div class="cart-item-qty">
                   <button class="qty-btn" onclick="changeQty(${item.id},-1)">−</button>
                   <span class="qty-num">${item.qty}</span>
@@ -1061,11 +1106,17 @@ function updateCartUI() {
                 </div>
               </div>
               <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
-                <span style="font-weight:800;font-size:0.95rem;color:var(--green-dark);">£${(parseFloat(item.price)*item.qty).toFixed(2)}</span>
+                <span style="font-weight:800;font-size:0.95rem;color:var(--green-dark);">£${lineTotal}${isSub ? '/wk' : ''}</span>
                 <button class="remove-item" onclick="removeFromCart(${item.id})" title="Remove">🗑</button>
               </div>
-            </div>`).join('');
-        document.getElementById('cart-total-amount').textContent = '£' + subtotal.toFixed(2);
+            </div>`;
+        }).join('');
+        // Use displayPrice for subtotal
+        const displaySubtotal = cart.reduce((s, x) => {
+            const up = x.displayPrice !== undefined ? x.displayPrice : parseFloat(x.price);
+            return s + up * x.qty;
+        }, 0);
+        document.getElementById('cart-total-amount').textContent = '£' + displaySubtotal.toFixed(2);
         footerEl.style.display = 'block';
     }
 }
@@ -1074,10 +1125,10 @@ function toggleCart() { document.getElementById('cart-overlay').classList.toggle
 function closeCartOnOverlay(e) { if (e.target.id === 'cart-overlay') toggleCart(); }
 
 // ─── CHECKOUT ─────────────────────────────────────────────────────────────────
-function isSheffieldDelivery() {
-    const city     = (document.getElementById('ch-city')?.value || '').trim().toLowerCase();
-    const postcode = (document.getElementById('ch-postcode')?.value || '').trim().toUpperCase();
-    return city === 'sheffield' && /^S\d/.test(postcode);
+function hasDeliveryAddress() {
+    const city     = (document.getElementById('ch-city')?.value || '').trim();
+    const postcode = (document.getElementById('ch-postcode')?.value || '').trim();
+    return city.length > 0 && postcode.length > 0;
 }
 
 function updateCheckoutTotals() {
@@ -1099,26 +1150,16 @@ function updateCheckoutTotals() {
         const infoEl = document.getElementById('checkout-fulfilment-info');
         if (infoEl) { infoEl.style.display='block'; infoEl.style.background=msg.bg; infoEl.style.borderColor=msg.border; infoEl.style.color=msg.color; infoEl.innerHTML=msg.html; }
     } else {
-        const hasCity = city.length > 0, hasPostcode = postcode.length > 0;
-        if (!hasCity && !hasPostcode) {
-            shipping = 0; shippingLabel = 'Delivery (enter city & postcode above)';
+        const hasAddr = city.length > 0 && postcode.length > 0;
+        if (!hasAddr) {
+            shipping = 0; shippingLabel = '🚚 UK Delivery £3.99 (enter address above)';
             btn.disabled = false; msgEl.textContent = '';
             const infoEl = document.getElementById('checkout-fulfilment-info'); if (infoEl) infoEl.style.display='none';
-        } else if (isSheffieldDelivery()) {
-            shipping = 3.00; shippingLabel = '🚚 Sheffield Delivery (+£3.00)';
-            btn.disabled = false;
-            msgEl.style.color = 'var(--green-mid)'; msgEl.textContent = '✓ Great news — we deliver to your area!';
-            if (errEl) errEl.textContent = '';
-            const msg = getFulfilmentMessage(false);
-            const infoEl = document.getElementById('checkout-fulfilment-info');
-            if (infoEl) { infoEl.style.display='block'; infoEl.style.background=msg.bg; infoEl.style.borderColor=msg.border; infoEl.style.color=msg.color; infoEl.innerHTML=msg.html; }
         } else {
-            shipping = 0; shippingLabel = '<span style="color:var(--danger);">Delivery unavailable</span>';
-            btn.disabled = true;
-            msgEl.style.color = 'var(--danger)';
-            msgEl.textContent = (city === 'sheffield' && hasPostcode && !/^S\d/.test(postcode))
-                ? "✗ That postcode doesn't look like a Sheffield postcode (should start with S)."
-                : '✗ Sorry, we only deliver within Sheffield. Please select Home Pickup instead.';
+            shipping = 3.99; shippingLabel = '🚚 UK Delivery (+£3.99)';
+            btn.disabled = false;
+            msgEl.style.color = 'var(--green-mid)'; msgEl.textContent = '✓ We deliver anywhere in the UK!';
+            if (errEl) errEl.textContent = '';
             const infoEl = document.getElementById('checkout-fulfilment-info'); if (infoEl) infoEl.style.display='none';
         }
     }
@@ -1248,11 +1289,11 @@ async function processPayment() {
     const isPickup    = document.getElementById('pickup-check')?.checked || false;
     const subtotal    = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
     const discount    = appliedPromo ? subtotal * (appliedPromo.discount / 100) : 0;
-    const shipping    = isPickup ? 0 : (isSheffieldDelivery() ? 3.00 : 0);
+    const shipping    = isPickup ? 0 : (hasDeliveryAddress() ? 3.99 : 0);
     const total       = Math.max(0, subtotal - discount + shipping).toFixed(2);
 
-    if (!isPickup && !isSheffieldDelivery()) {
-        showToast('Delivery is only available in Sheffield. Please select pickup or update your address.');
+    if (!isPickup && !hasDeliveryAddress()) {
+        showToast('Please enter your delivery address and postcode.');
         btn.disabled = false; btn.innerHTML = `🌿 Place Order — <span id="pay-amount">£${total}</span>`;
         return;
     }
@@ -2135,44 +2176,20 @@ async function sendBroadcast() {
 var _countdownTimer = null;
 
 function getNextCutoff() {
-    // Get current London time
+    // Always counts down to the next Friday 5pm pickup cut-off only
     var londonStr = new Date().toLocaleString('en-US', { timeZone: 'Europe/London' });
-    var now = new Date(londonStr);
-    var day  = now.getDay();   // 0 Sun … 4 Thu … 5 Fri … 6 Sat
+    var now  = new Date(londonStr);
+    var day  = now.getDay();
     var mins = now.getHours() * 60 + now.getMinutes();
 
-    // Thursday 13:00 = delivery cut-off  (780 mins)
-    // Friday   17:00 = pickup cut-off   (1020 mins)
-    var THU_CUTOFF = 4 * 60 * 60 * 1000 + 13 * 60 * 60 * 1000;  // unused, use deadline Date instead
-
     var deadline = new Date(now);
-    var label, type;
+    // Days until next Friday (5), wrapping if past Friday 5pm
+    var daysToFri = (5 - day + 7) % 7;
+    if (daysToFri === 0 && mins >= 17 * 60) daysToFri = 7; // past cutoff, next week
+    deadline.setDate(now.getDate() + daysToFri);
+    deadline.setHours(17, 0, 0, 0);
 
-    if ((day < 4) || (day === 4 && mins < 13 * 60)) {
-        // Before Thursday 1pm → next deadline: Thursday 1pm (delivery)
-        var daysToThurs = (4 - day + 7) % 7 || (day === 4 ? 0 : 7);
-        if (day === 4 && mins < 13 * 60) daysToThurs = 0;
-        deadline.setDate(now.getDate() + daysToThurs);
-        deadline.setHours(13, 0, 0, 0);
-        label = 'Thursday Sheffield Delivery';
-        type  = 'delivery';
-    } else if ((day === 4 && mins >= 13 * 60) || (day === 5 && mins < 17 * 60)) {
-        // Thursday 1pm to Friday 5pm → next deadline: Friday 5pm (pickup)
-        var daysToFri = (5 - day + 7) % 7;
-        deadline.setDate(now.getDate() + daysToFri);
-        deadline.setHours(17, 0, 0, 0);
-        label = 'Friday / Saturday Home Pickup';
-        type  = 'pickup';
-    } else {
-        // Past Friday 5pm (Fri evening, Sat, Sun) → next Thursday 1pm
-        var dToThurs = (4 - day + 7) % 7 || 7;
-        deadline.setDate(now.getDate() + dToThurs);
-        deadline.setHours(13, 0, 0, 0);
-        label = 'Thursday Sheffield Delivery';
-        type  = 'delivery';
-    }
-
-    return { label: label, type: type, deadline: deadline };
+    return { label: 'Friday &amp; Saturday Home Pickup', type: 'pickup', deadline: deadline };
 }
 
 function startCountdown() {
