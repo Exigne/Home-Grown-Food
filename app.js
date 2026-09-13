@@ -1419,11 +1419,22 @@ function buildEmailHTML(templateKey, recipientName, coreMessage) {
     var t     = EMAIL_TEMPLATES[templateKey] || EMAIL_TEMPLATES.general;
     var name  = recipientName || 'there';
     var intro = t.intro.split('[name]').join(name);
-    var lines = coreMessage.split('\n');
-    var safeMsg = lines.map(function(line) {
-        return line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    }).join('<br>');
-
+    var isHtml   = /<[a-z][\s\S]*>/i.test(coreMessage);
+    var bodyHtml = isHtml ? coreMessage
+        : coreMessage.split('\n').map(function(l) {
+            return l.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+          }).join('<br>');
+    var contentWrapper;
+    if (templateKey === 'promo') {
+        contentWrapper = '<div style="background:#FFF9C4;border:2px solid #F0C820;border-radius:12px;padding:20px 24px;margin:20px 0;color:#0E3019;line-height:1.8;">'
+            + '<div style="font-size:1rem;font-weight:bold;color:#5C4A00;margin-bottom:8px;">Special Offer</div>'
+            + bodyHtml + '</div>';
+    } else if (templateKey === 'new_product') {
+        contentWrapper = '<div style="background:#164A2E;color:#FFD93D;border-radius:8px;padding:10px 16px;margin-bottom:16px;font-weight:bold;font-size:0.9rem;text-align:center;letter-spacing:0.08em;">Just Launched</div>'
+            + '<div style="color:#0E3019;line-height:1.8;margin-bottom:20px;">' + bodyHtml + '</div>';
+    } else {
+        contentWrapper = '<div style="color:#0E3019;line-height:1.8;margin-bottom:20px;">' + bodyHtml + '</div>';
+    }
     return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:3px solid #164A2E;border-radius:16px;overflow:hidden;">'
         + '<div style="background:#164A2E;padding:24px;text-align:center;">'
         + '<h1 style="color:#FFD93D;margin:0;font-size:2rem;letter-spacing:0.03em;">Home Grown</h1>'
@@ -1431,18 +1442,16 @@ function buildEmailHTML(templateKey, recipientName, coreMessage) {
         + '</div>'
         + '<div style="padding:32px;background:#FFFBE8;">'
         + '<p style="color:#0E3019;font-size:1rem;margin-bottom:16px;">' + intro + '</p>'
-        + '<div style="color:#0E3019;line-height:1.8;margin-bottom:24px;">' + safeMsg + '</div>'
+        + contentWrapper
         + '<p style="color:#5A8A6A;font-size:0.9rem;">' + t.outro + '</p>'
-        + '<p style="color:#999;font-size:0.8rem;margin-top:8px;">Please do not reply directly to this email as replies cannot be received.</p>'
+        + '<p style="color:#999;font-size:0.8rem;margin-top:8px;">Please do not reply directly to this email.</p>'
         + '<div style="text-align:center;margin-top:28px;">'
         + '<a href="https://homegrownfoods.online" style="background:#164A2E;color:#FFD93D;padding:14px 32px;border-radius:999px;text-decoration:none;font-weight:bold;font-size:0.95rem;">'
         + t.cta + ' &rarr;</a>'
-        + '</div>'
-        + '</div>'
+        + '</div></div>'
         + '<div style="background:#164A2E;padding:14px;text-align:center;">'
         + '<p style="color:#A8D97F;margin:0;font-size:0.78rem;">Home Grown &middot; Handmade in Sheffield &middot; homegrownfoods.online</p>'
-        + '</div>'
-        + '</div>';
+        + '</div></div>';
 }
 
 function applyMessageTemplate(context) {
@@ -1463,42 +1472,25 @@ function applyMessageTemplate(context) {
     // Update placeholder and clear textarea so admin just types the core message
     var msgId = context === 'crm' ? 'crm-reply-input' : 'broadcast-message';
     var mEl   = document.getElementById(msgId);
-    if (mEl) { mEl.placeholder = t.placeholder; mEl.value = ''; mEl.focus(); }
+    if (mEl) {
+        mEl.setAttribute('data-placeholder', t.placeholder);
+        if (mEl.tagName === 'TEXTAREA') { mEl.placeholder = t.placeholder; mEl.value = ''; }
+        else mEl.innerHTML = '';
+        mEl.focus();
+    }
 
     if (context === 'broadcast') updateBroadcastPreview();
     selectEl.value = '';
 }
 
 // ─── BROADCAST LIVE PREVIEW ───────────────────────────────────────────────────
-function updateBroadcastPreview() {
-    var previewEl = document.getElementById('broadcast-preview-frame');
-    if (!previewEl) return;
-    var selectEl  = document.getElementById('broadcast-template-select');
-    var tKey      = (selectEl && selectEl.dataset.lastKey) ? selectEl.dataset.lastKey : 'general';
-    var message   = (document.getElementById('broadcast-message').value || '').trim();
-    var subject   = (document.getElementById('broadcast-subject').value || '').trim();
-
-    if (!message && !subject) {
-        previewEl.innerHTML = '<div style="text-align:center;padding:2rem;color:#999;"><div style="font-size:2rem;margin-bottom:0.5rem;">&#128231;</div><p style="font-weight:700;">Choose a template then type your message to see a preview</p></div>';
-        return;
-    }
-
-    var html = buildEmailHTML(tKey, '[Customer Name]', message || '(your message will appear here)');
-    if (subject) {
-        html = '<div style="background:#f5f5f5;padding:8px 14px;border-bottom:2px solid #ddd;font-size:0.82rem;color:#444;">'
-             + '<strong>Subject:</strong> ' + subject.replace(/&/g,'&amp;').replace(/</g,'&lt;')
-             + '</div>' + html;
-    }
-    previewEl.innerHTML = html;
-}
-
-
 // ─── BROADCAST LIVE PREVIEW ───────────────────────────────────────────────────
 function updateBroadcastPreview() {
     var previewEl = document.getElementById('broadcast-preview-frame');
     if (!previewEl) return;
     var subject = (document.getElementById('broadcast-subject').value || '').trim();
-    var message = (document.getElementById('broadcast-message').value || '').trim();
+    var bMsgEl  = document.getElementById('broadcast-message');
+    var message = (bMsgEl ? (bMsgEl.tagName === 'TEXTAREA' ? bMsgEl.value : bMsgEl.innerHTML) : '').trim();
     if (!message && !subject) {
         previewEl.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-muted);"><div style="font-size:2rem;margin-bottom:0.5rem;">\u{1F4E7}</div><p style="font-weight:700;">Start typing to see a preview</p></div>';
         return;
@@ -1693,6 +1685,24 @@ async function openCustomerProfile(emailsOrEmail, displayName) {
         const data = await res.json();
         crmCurrentProfile = Object.assign({ emails: emails, display_name: name }, data);
         renderCustomerProfile();
+
+        // Mark all messages from these emails as read and update the CRM badge
+        emails.forEach(function(em) {
+            fetch(API_BASE + '/admin/chats/read', {
+                method:  'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+                body:    JSON.stringify({ email: em })
+            }).catch(function() {});
+        });
+        // Clear unread badge locally without needing a full reload
+        crmCustomers.forEach(function(c) {
+            var cEmails = c.emails || (c.email ? [c.email] : []);
+            if (emails.some(function(e) { return cEmails.indexOf(e) !== -1; })) {
+                c.unread_count = 0;
+                c.message_count = Math.max(parseInt(c.message_count || 0), 1);
+            }
+        });
+        renderCRM();
     } catch (err) {
         showToast('Failed to load profile: ' + err.message);
         console.error('CRM profile error:', err);
@@ -1915,9 +1925,9 @@ async function deleteCRMNote(id) {
 // ─── SEND REPLY ───────────────────────────────────────────────────────────────
 async function sendCRMReply() {
     if (!crmCurrentProfile) return;
-    const textarea  = document.getElementById('crm-reply-input');
+    const editor    = document.getElementById('crm-reply-input');
     const statusEl  = document.getElementById('crm-reply-status');
-    const replyText = (textarea ? textarea.value : '').trim();
+    const replyText = editor ? (editor.tagName === 'TEXTAREA' ? editor.value : editor.innerHTML).trim() : '';
     if (!replyText) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Please type a reply.'; return; }
 
     const btn         = document.getElementById('crm-reply-btn');
@@ -1948,7 +1958,7 @@ async function sendCRMReply() {
             })
         });
         if (!res.ok) throw new Error((await res.json().catch(function(){return {};})).error || 'Error ' + res.status);
-        textarea.value       = '';
+        if (editor) { if (editor.tagName === 'TEXTAREA') editor.value = ''; else editor.innerHTML = ''; }
         statusEl.style.color = 'var(--success)';
         statusEl.textContent = '✓ Sent to ' + crmCurrentProfile.email;
         setTimeout(function() { statusEl.textContent = ''; }, 4000);
@@ -2001,7 +2011,8 @@ function closeBroadcast() {
 
 async function sendBroadcast() {
     var subject  = (document.getElementById('broadcast-subject').value || '').trim();
-    var message  = (document.getElementById('broadcast-message').value || '').trim();
+    var bcMsgEl  = document.getElementById('broadcast-message');
+    var message  = (bcMsgEl ? (bcMsgEl.tagName === 'TEXTAREA' ? bcMsgEl.value : bcMsgEl.innerHTML) : '').trim();
     var statusEl = document.getElementById('broadcast-status');
     var btn      = document.getElementById('broadcast-send-btn');
 
@@ -2033,7 +2044,8 @@ async function sendBroadcast() {
         // Clear the form after a delay
         setTimeout(function() {
             document.getElementById('broadcast-subject').value = '';
-            document.getElementById('broadcast-message').value = '';
+            var bcEl = document.getElementById('broadcast-message');
+            if (bcEl) { if (bcEl.tagName === 'TEXTAREA') bcEl.value = ''; else bcEl.innerHTML = ''; }
             btn.disabled    = false;
             btn.textContent = '📧 Send to All Customers';
         }, 3000);
