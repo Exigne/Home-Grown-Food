@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://js.stripe.com/v3/"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<link rel="stylesheet" href="styles.css?v=18">
+<link rel="stylesheet" href="styles.css?v=19">
 </head>
 <body>
 
@@ -53,6 +53,11 @@
 </header>
 
 <!-- ══ SHOP ══ -->
+<!-- ══ FULFILMENT COUNTDOWN BANNER ══ -->
+<div class="cutoff-banner" id="cutoff-banner" style="display:none;">
+  <span id="cutoff-text"></span>
+</div>
+
 <div class="view active" id="view-shop">
   <div class="shop-hero">
     <svg class="hero-leaves" viewBox="0 0 1200 320" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
@@ -347,6 +352,15 @@
           <input type="checkbox" id="pickup-check" onclick="event.stopPropagation(); updateCheckoutTotals()">
           <label for="pickup-check">🏠 <strong>I'll collect my order</strong> — Home pickup (free, Sheffield only)</label>
         </div>
+
+        <!-- GDPR marketing consent -->
+        <div class="marketing-consent-wrap">
+          <input type="checkbox" id="marketing-consent" style="width:18px;height:18px;cursor:pointer;accent-color:var(--green-dark);flex-shrink:0;margin-top:2px;">
+          <label for="marketing-consent" style="cursor:pointer;font-size:0.85rem;font-weight:600;color:var(--text);line-height:1.5;">
+            I'm happy for Home Grown to keep my contact details and send me updates about new products and offers.
+            <span style="color:var(--text-muted);font-size:0.78rem;display:block;margin-top:2px;">Optional — you can unsubscribe at any time. Required to receive marketing emails.</span>
+          </label>
+        </div>
         <div id="delivery-message" style="font-weight:700; font-size:0.88rem; margin-bottom:0.5rem; min-height:1.4rem; color:var(--green-mid);"></div>
         <div id="checkout-fulfilment-info" style="display:none; margin-bottom:1rem; padding:0.85rem 1rem; border-radius:var(--radius); font-size:0.88rem; font-weight:700; line-height:1.6; border-width:2px; border-style:solid;"></div>
         <div class="promo-section" style="margin:1rem 0; padding:1rem; background:#f8f9fa; border-radius:var(--radius); border:2px solid var(--border);">
@@ -439,6 +453,11 @@
       <div class="form-row">
         <div class="form-group"><label>Badge Text</label><input type="text" id="pem-badge" placeholder="e.g. Best Seller"></div>
         <div class="form-group"><label>Card Colour</label><input type="color" id="pem-bg" value="#FFFBE8" style="height:48px; cursor:pointer; width:100%;"></div>
+      </div>
+      <div class="form-group">
+        <label>Stripe Recurring Price ID <span style="font-weight:600;color:var(--text-muted);">(for Subscribe &amp; Save)</span></label>
+        <input type="text" id="pem-stripe-recurring" placeholder="price_1ABC... — create in Stripe Dashboard → Products → Add recurring price">
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;">Leave blank if you don't offer a subscription for this product. 10% discount is applied automatically.</div>
       </div>
       <div class="form-group full">
         <label>Description</label>
@@ -773,6 +792,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="app.js?v=27"></script>
+<script src="app.js?v=29"></script>
 </body>
 </html>
