@@ -1524,11 +1524,24 @@ function renderCRM() {
 
 // Index-based lookup — passes all emails for this consolidated customer
 function openCRMCustomer(idx) {
-    const customer = crmCustomers[idx];
+    var customer = crmCustomers[idx];
     if (!customer) return;
-    // emails is an array from the backend; fall back to single email field
-    const emails = customer.emails || [customer.email];
-    const name   = customer.display_name || customer.name || emails[0];
+
+    // emails can be a JS array, a PostgreSQL array string "{a,b}", or null
+    var emails = customer.emails;
+    if (!emails) {
+        emails = customer.email ? [customer.email] : [];
+    } else if (typeof emails === 'string') {
+        // PostgreSQL array format: "{email1,email2}"
+        emails = emails.replace(/^\{|\}$/g, '').split(',')
+                       .map(function(e) { return e.replace(/^"|"$/g,'').trim(); })
+                       .filter(Boolean);
+    } else if (!Array.isArray(emails)) {
+        emails = [String(emails)];
+    }
+
+    if (!emails.length) { showToast('No email address found for this customer'); return; }
+    var name = customer.display_name || customer.name || emails[0];
     openCustomerProfile(emails, name);
 }
 
@@ -1563,17 +1576,21 @@ async function openCustomerProfile(emailsOrEmail, displayName) {
     document.getElementById('crm-comms-thread').innerHTML     = '';
 
     try {
-        const emailsQuery = emails.map(encodeURIComponent).join(',');
+        var emailsQuery = emails.filter(Boolean).map(encodeURIComponent).join(',');
+        if (!emailsQuery) throw new Error('No valid email addresses to query');
         const res = await fetch(API_BASE + '/admin/crm/customer?emails=' + emailsQuery, {
             headers: { 'Authorization': 'Bearer ' + adminToken }
         });
-        if (!res.ok) throw new Error('Failed to load');
+        if (!res.ok) {
+            var errData = await res.json().catch(function() { return {}; });
+            throw new Error(errData.error || ('Server returned ' + res.status));
+        }
         const data = await res.json();
         crmCurrentProfile = Object.assign({ emails: emails, display_name: name }, data);
         renderCustomerProfile();
     } catch (err) {
-        showToast('Failed to load customer profile');
-        console.error(err);
+        showToast('Failed to load profile: ' + err.message);
+        console.error('CRM profile error:', err);
     }
 }
 
@@ -1766,7 +1783,8 @@ async function addCRMNote() {
         if (!res.ok) throw new Error('Failed');
         textarea.value = '';
         showToast('✓ Note saved');
-        const data = await (await fetch(API_BASE + '/admin/crm/customer?email=' + encodeURIComponent(crmCurrentProfile.email),
+        var eQ2 = (crmCurrentProfile.emails || [crmCurrentProfile.email]).filter(Boolean).map(encodeURIComponent).join(',');
+        const data = await (await fetch(API_BASE + '/admin/crm/customer?emails=' + eQ2,
             { headers: { 'Authorization': 'Bearer ' + adminToken } })).json();
         crmCurrentProfile.notes = data.notes;
         renderCRMOverview(crmCurrentProfile);
@@ -1781,7 +1799,8 @@ async function deleteCRMNote(id) {
             method: 'DELETE', headers: { 'Authorization': 'Bearer ' + adminToken }
         });
         showToast('Note deleted');
-        const data = await (await fetch(API_BASE + '/admin/crm/customer?email=' + encodeURIComponent(crmCurrentProfile.email),
+        var eQ3 = (crmCurrentProfile.emails || [crmCurrentProfile.email]).filter(Boolean).map(encodeURIComponent).join(',');
+        const data = await (await fetch(API_BASE + '/admin/crm/customer?emails=' + eQ3,
             { headers: { 'Authorization': 'Bearer ' + adminToken } })).json();
         crmCurrentProfile.notes = data.notes;
         renderCRMOverview(crmCurrentProfile);
