@@ -1901,3 +1901,91 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
   color: var(--yellow) !important;
   box-shadow: 0 3px 0 var(--green-mid);
 }
+
+/* ══════════════════════════════════════════════
+   LIVE CUT-OFF COUNTDOWN BANNER
+══════════════════════════════════════════════ */
+.cutoff-banner {
+  background: var(--green-dark);
+  color: var(--yellow);
+  text-align: center;
+  padding: 10px 2rem;
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  font-weight: 700;
+  border-bottom: 3px solid var(--yellow);
+  position: sticky;
+  top: 0;
+  z-index: 99;
+  letter-spacing: 0.02em;
+}
+.cutoff-banner strong {
+  font-weight: 900;
+  color: var(--yellow);
+}
+@media (max-width: 768px) {
+  .cutoff-banner { font-size: 0.78rem; padding: 8px 1rem; }
+}
+
+/* ══════════════════════════════════════════════
+   SUBSCRIBE & SAVE
+══════════════════════════════════════════════ */
+.product-subscribe-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 1.6rem;
+  background: #E8F5E9;
+  border-top: 2px dashed var(--green-leaf);
+  flex-shrink: 0;
+}
+.subscribe-saving {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--green-dark);
+  flex: 1;
+  letter-spacing: 0.02em;
+}
+.subscribe-price {
+  font-family: var(--font-brand);
+  font-size: 1.1rem;
+  color: var(--green-mid);
+  flex-shrink: 0;
+}
+.subscribe-btn {
+  background: var(--green-dark);
+  color: var(--yellow);
+  border: 2px solid var(--green-dark);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.subscribe-btn:hover {
+  background: var(--green-mid);
+  transform: translateY(-1px);
+}
+.subscribe-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ══════════════════════════════════════════════
+   GDPR MARKETING CONSENT (CHECKOUT)
+══════════════════════════════════════════════ */
+.marketing-consent-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 1rem 0;
+  padding: 14px 16px;
+  background: #E3F2FD;
+  border-radius: var(--radius);
+  border: 2px solid #90CAF9;
+}
