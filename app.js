@@ -1377,55 +1377,121 @@ initApp();
 //  CRM & CUSTOMERS
 // ═══════════════════════════════════════════════
 
-// ─── STATE ────────────────────────────────────────────────────────────────────
-let crmCustomers      = [];
-let crmCurrentProfile = null;
-
-// ─── MESSAGE TEMPLATES ────────────────────────────────────────────────────────
-var MESSAGE_TEMPLATES = {
+// ─── EMAIL TEMPLATES (wrapper-based)
+// Template = the branded shell. Admin types only the core message.
+var EMAIL_TEMPLATES = {
     general: {
-        subject: 'A message from Home Grown \uD83C\uDF3F',
-        body: ['Hi [name],', '', 'Just a quick message from the Home Grown team. We hope you\'re enjoying your snacks!', '', 'If there\'s anything we can help with, please get in touch via the chat on our website.', '', 'Warm regards,', 'The Home Grown Team \uD83C\uDF3F'].join('\n')
+        label:       'General Message',
+        subject:     'A message from Home Grown',
+        intro:       'Hi [name],',
+        outro:       'If you have any questions, just use the chat widget on our website.',
+        cta:         'Visit Our Shop',
+        placeholder: 'Write your message here...'
     },
     reply: {
-        subject: 'Re: Your message to Home Grown \uD83C\uDF3F',
-        body: ['Hi [name],', '', 'Thank you so much for your message!', '', '[Your reply here]', '', 'If you have any other questions, please use the chat widget on our website.', '', 'Warm regards,', 'The Home Grown Team \uD83C\uDF3F'].join('\n')
+        label:       'Reply to Query',
+        subject:     'Re: Your message to Home Grown',
+        intro:       'Hi [name], thanks so much for getting in touch!',
+        outro:       'If you need anything else, drop us a message via the chat on our website.',
+        cta:         'Visit Our Shop',
+        placeholder: 'Type your reply here...'
     },
     promo: {
-        subject: 'A special offer just for you! \uD83C\uDF3F',
-        body: ['Hi [name],', '', 'We have an exciting offer just for you!', '', '[Describe your offer here]', '', 'Use code [PROMO CODE] at checkout to redeem.', 'Valid until [DATE]. Don\'t miss out!', '', 'Warm regards,', 'The Home Grown Team \uD83C\uDF3F'].join('\n')
+        label:       'Promo Offer',
+        subject:     'A special offer just for you!',
+        intro:       'Hi [name], we have an exciting offer just for you!',
+        outro:       "This offer won't last long - head to the shop to redeem it!",
+        cta:         'Shop Now & Redeem',
+        placeholder: 'Describe your promo offer here... (include the code!)'
     },
     new_product: {
-        subject: 'Something new just dropped at Home Grown! \uD83C\uDF3F',
-        body: ['Hi [name],', '', 'Exciting news \u2014 we\'ve just launched something brand new and we think you\'re going to love it!', '', '[Describe your new product here]', '', 'Head over to the shop to be one of the first to try it.', '', 'Warm regards,', 'The Home Grown Team \uD83C\uDF3F'].join('\n')
+        label:       'New Product',
+        subject:     'Something new just dropped at Home Grown!',
+        intro:       'Hi [name], exciting news - something brand new has just launched!',
+        outro:       'Be one of the first to try it - limited small batches available.',
+        cta:         'Shop the New Drop',
+        placeholder: 'Tell them about the new product... what makes it special?'
     }
 };
 
+// Build the full branded HTML email: template shell wraps the core message
+function buildEmailHTML(templateKey, recipientName, coreMessage) {
+    var t     = EMAIL_TEMPLATES[templateKey] || EMAIL_TEMPLATES.general;
+    var name  = recipientName || 'there';
+    var intro = t.intro.split('[name]').join(name);
+    var lines = coreMessage.split('\n');
+    var safeMsg = lines.map(function(line) {
+        return line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }).join('<br>');
+
+    return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:3px solid #164A2E;border-radius:16px;overflow:hidden;">'
+        + '<div style="background:#164A2E;padding:24px;text-align:center;">'
+        + '<h1 style="color:#FFD93D;margin:0;font-size:2rem;letter-spacing:0.03em;">Home Grown</h1>'
+        + '<p style="color:#6BBF4A;margin:6px 0 0;font-size:0.8rem;letter-spacing:0.12em;text-transform:uppercase;">Food That Makes You Feel Good</p>'
+        + '</div>'
+        + '<div style="padding:32px;background:#FFFBE8;">'
+        + '<p style="color:#0E3019;font-size:1rem;margin-bottom:16px;">' + intro + '</p>'
+        + '<div style="color:#0E3019;line-height:1.8;margin-bottom:24px;">' + safeMsg + '</div>'
+        + '<p style="color:#5A8A6A;font-size:0.9rem;">' + t.outro + '</p>'
+        + '<p style="color:#999;font-size:0.8rem;margin-top:8px;">Please do not reply directly to this email as replies cannot be received.</p>'
+        + '<div style="text-align:center;margin-top:28px;">'
+        + '<a href="https://homegrownfoods.online" style="background:#164A2E;color:#FFD93D;padding:14px 32px;border-radius:999px;text-decoration:none;font-weight:bold;font-size:0.95rem;">'
+        + t.cta + ' &rarr;</a>'
+        + '</div>'
+        + '</div>'
+        + '<div style="background:#164A2E;padding:14px;text-align:center;">'
+        + '<p style="color:#A8D97F;margin:0;font-size:0.78rem;">Home Grown &middot; Handmade in Sheffield &middot; homegrownfoods.online</p>'
+        + '</div>'
+        + '</div>';
+}
+
 function applyMessageTemplate(context) {
-    var selectEl = document.getElementById(context === 'crm' ? 'crm-template-select' : 'broadcast-template-select');
+    var selectId = context === 'crm' ? 'crm-template-select' : 'broadcast-template-select';
+    var selectEl = document.getElementById(selectId);
     if (!selectEl || !selectEl.value) return;
-    var template = MESSAGE_TEMPLATES[selectEl.value];
-    if (!template) return;
+    var key = selectEl.value;
+    var t   = EMAIL_TEMPLATES[key];
+    if (!t) return;
 
-    var name = context === 'crm'
-        ? (document.getElementById('crm-profile-name') ? document.getElementById('crm-profile-name').textContent : 'there')
-        : 'there';
-
-    var body    = template.body.split('[name]').join(name);
-    var subject = template.subject;
-
-    if (context === 'crm') {
-        var el = document.getElementById('crm-reply-input');
-        if (el) { el.value = body; el.focus(); }
-    } else {
+    // Store last used key for preview
+    selectEl.dataset.lastKey = key;
+    if (context === 'broadcast') {
         var sEl = document.getElementById('broadcast-subject');
-        var bEl = document.getElementById('broadcast-message');
-        if (sEl) sEl.value = subject;
-        if (bEl) { bEl.value = body; bEl.focus(); }
-        updateBroadcastPreview();
+        if (sEl && !sEl.value) sEl.value = t.subject;
     }
+
+    // Update placeholder and clear textarea so admin just types the core message
+    var msgId = context === 'crm' ? 'crm-reply-input' : 'broadcast-message';
+    var mEl   = document.getElementById(msgId);
+    if (mEl) { mEl.placeholder = t.placeholder; mEl.value = ''; mEl.focus(); }
+
+    if (context === 'broadcast') updateBroadcastPreview();
     selectEl.value = '';
 }
+
+// ─── BROADCAST LIVE PREVIEW ───────────────────────────────────────────────────
+function updateBroadcastPreview() {
+    var previewEl = document.getElementById('broadcast-preview-frame');
+    if (!previewEl) return;
+    var selectEl  = document.getElementById('broadcast-template-select');
+    var tKey      = (selectEl && selectEl.dataset.lastKey) ? selectEl.dataset.lastKey : 'general';
+    var message   = (document.getElementById('broadcast-message').value || '').trim();
+    var subject   = (document.getElementById('broadcast-subject').value || '').trim();
+
+    if (!message && !subject) {
+        previewEl.innerHTML = '<div style="text-align:center;padding:2rem;color:#999;"><div style="font-size:2rem;margin-bottom:0.5rem;">&#128231;</div><p style="font-weight:700;">Choose a template then type your message to see a preview</p></div>';
+        return;
+    }
+
+    var html = buildEmailHTML(tKey, '[Customer Name]', message || '(your message will appear here)');
+    if (subject) {
+        html = '<div style="background:#f5f5f5;padding:8px 14px;border-bottom:2px solid #ddd;font-size:0.82rem;color:#444;">'
+             + '<strong>Subject:</strong> ' + subject.replace(/&/g,'&amp;').replace(/</g,'&lt;')
+             + '</div>' + html;
+    }
+    previewEl.innerHTML = html;
+}
+
 
 // ─── BROADCAST LIVE PREVIEW ───────────────────────────────────────────────────
 function updateBroadcastPreview() {
@@ -1854,19 +1920,32 @@ async function sendCRMReply() {
     const replyText = (textarea ? textarea.value : '').trim();
     if (!replyText) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Please type a reply.'; return; }
 
-    const btn        = document.getElementById('crm-reply-btn');
-    const name       = document.getElementById('crm-profile-name').textContent;
-    const picker     = document.getElementById('crm-reply-email');
+    const btn         = document.getElementById('crm-reply-btn');
+    const name        = document.getElementById('crm-profile-name').textContent;
+    const picker      = document.getElementById('crm-reply-email');
     const targetEmail = picker ? picker.value : (crmCurrentProfile.emails && crmCurrentProfile.emails[0]) || crmCurrentProfile.email;
+    const tSelect     = document.getElementById('crm-template-select');
+    const templateKey = (tSelect && tSelect.dataset.lastKey) ? tSelect.dataset.lastKey : 'general';
+    const t           = EMAIL_TEMPLATES[templateKey] || EMAIL_TEMPLATES.general;
     if (!targetEmail) { statusEl.style.color='var(--danger)'; statusEl.textContent='Please select an email address.'; return; }
     if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
     statusEl.textContent = '';
+
+    // Build the full branded email HTML using the selected template wrapper
+    const htmlContent = buildEmailHTML(templateKey, name, replyText);
 
     try {
         const res = await fetch(API_BASE + '/admin/chat/reply', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
-            body: JSON.stringify({ email: targetEmail, name: name, reply: replyText, date: new Date().toLocaleString('en-GB') })
+            body: JSON.stringify({
+                email:       targetEmail,
+                name:        name,
+                reply:       replyText,
+                htmlContent: htmlContent,
+                subject:     t.subject,
+                date:        new Date().toLocaleString('en-GB')
+            })
         });
         if (!res.ok) throw new Error((await res.json().catch(function(){return {};})).error || 'Error ' + res.status);
         textarea.value       = '';
