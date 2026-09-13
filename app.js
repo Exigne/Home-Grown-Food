@@ -114,6 +114,7 @@ async function initApp() {
     }
 
     updateCartUI();
+    startCountdown(); // live cut-off timer
 
     // Secret admin access via URL hash
     if (window.location.hash === '#admin') {
@@ -232,23 +233,41 @@ function formatDesc(text) {
 
 // ─── RENDER SHOP ──────────────────────────────────────────────────────────────
 // ─── SHOP FILTER CHIPS ───────────────────────────────────────────────────────
+// Base chips always shown — shown only if matching products exist
+var BASE_CHIPS = [
+    { label: 'All',          key: 'all'        },
+    { label: 'In Stock',     key: 'instock'    },
+    { label: 'Best Sellers', key: 'Best Seller' },
+    { label: 'Vegan',        key: 'Vegan'      },
+    { label: 'Gluten-Free',  key: 'Gluten-Free'}
+];
 function renderShopChips() {
     var chipsEl = document.getElementById('shop-filter-chips');
     if (!chipsEl) return;
-
-    // Collect unique badge values from actual products
-    var badges = [];
+    // Collect any badge values not already covered by BASE_CHIPS
+    var baseKeys   = BASE_CHIPS.map(function(c) { return c.key; });
+    var extraChips = [];
     products.forEach(function(p) {
-        if (p.badge && badges.indexOf(p.badge) === -1) badges.push(p.badge);
+        if (p.badge && baseKeys.indexOf(p.badge) === -1 &&
+            !extraChips.some(function(c) { return c.key === p.badge; })) {
+            extraChips.push({ label: p.badge, key: p.badge });
+        }
     });
-
-    var chips = ['All'].concat(badges);
-    chipsEl.innerHTML = chips.map(function(chip) {
-        var key      = chip === 'All' ? 'all' : chip;
-        var isActive = shopFilter === key;
-        var btn = document.createElement('button'); btn.className = 'shop-chip' + (isActive ? ' shop-chip-active' : ''); btn.textContent = chip; btn.dataset.filter = key; btn.addEventListener('click', function(){ setShopFilter(this.dataset.filter); }); return btn.outerHTML;
+    // Only show chips that have at least one matching product
+    var visible = BASE_CHIPS.concat(extraChips).filter(function(chip) {
+        if (chip.key === 'all')     return true;
+        if (chip.key === 'instock') return products.some(function(p) {
+            return p.stock === null || p.stock === undefined || p.stock > 0;
+        });
+        return products.some(function(p) { return (p.badge || '') === chip.key; });
+    });
+    chipsEl.innerHTML = visible.map(function(chip) {
+        var active = shopFilter === chip.key ? ' shop-chip-active' : '';
+        return '<button class="shop-chip' + active + '" onclick="setShopFilter(this.dataset.key)" data-key="'
+            + chip.key.replace(/"/g, '&quot;') + '">' + chip.label + '</button>';
     }).join('');
 }
+
 
 function setShopFilter(filter) {
     shopFilter = filter;
@@ -274,9 +293,13 @@ function renderShop() {
         return 0;
     });
     // Apply chip filter
-    var filtered = shopFilter === 'all' ? sorted : sorted.filter(function(p) {
-        return (p.badge || '') === shopFilter;
-    });
+    var filtered = shopFilter === 'all' ? sorted
+        : shopFilter === 'instock' ? sorted.filter(function(p) {
+            return p.stock === null || p.stock === undefined || p.stock > 0;
+          })
+        : sorted.filter(function(p) {
+            return (p.badge || '') === shopFilter;
+          });
 
     if (!filtered.length) {
         grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--text-muted);">'
@@ -306,6 +329,12 @@ function renderShop() {
               : `<button class="add-btn" id="add-btn-${p.id}" onclick="event.stopPropagation(); addToCart(${p.id})">+ Add to Basket</button>`
             }
           </div>
+          ${!outOfStock && p.stripe_recurring_price_id ? `
+          <div class="product-subscribe-bar">
+            <span class="subscribe-saving">Subscribe &amp; Save 10%</span>
+            <span class="subscribe-price">£${(Number(p.price) * 0.9).toFixed(2)}/wk</span>
+            <button class="subscribe-btn" id="sub-btn-${p.id}" onclick="event.stopPropagation(); subscribeToProduct(${p.id})">📦 Subscribe</button>
+          </div>` : ''}
         </div>`;
     }).join('');
 }
@@ -663,6 +692,8 @@ function openProductModal(id) {
         document.getElementById('pem-desc').innerHTML = formatDesc(p.description || '');
         document.getElementById('pem-bg').value    = p.bg_color  || '#FFFBE8';
         document.getElementById('pem-stock').value = p.stock     ?? '';
+        var stripePriceEl = document.getElementById('pem-stripe-recurring');
+        if (stripePriceEl) stripePriceEl.value = p.stripe_recurring_price_id || '';
         updateImagePreview(p.image_url || '');
     } else {
         ['pem-id','pem-name','pem-price','pem-emoji','pem-badge','pem-image','pem-stock'].forEach(id => document.getElementById(id).value = '');
@@ -678,6 +709,7 @@ async function saveProductFromModal() {
     const id   = document.getElementById('pem-id').value;
     const name = document.getElementById('pem-name').value.trim();
     if (!name) { showToast('Product name is required'); return; }
+    const stripeEl = document.getElementById('pem-stripe-recurring');
     const payload = {
         name, price: parseFloat(document.getElementById('pem-price').value) || 0,
         emoji: document.getElementById('pem-emoji').value,
@@ -685,7 +717,8 @@ async function saveProductFromModal() {
         image_url: document.getElementById('pem-image').value,
         description: document.getElementById('pem-desc').innerHTML.trim(),
         bg_color: document.getElementById('pem-bg').value,
-        stock: parseInt(document.getElementById('pem-stock').value) || 0
+        stock: parseInt(document.getElementById('pem-stock').value) || 0,
+        stripe_recurring_price_id: stripeEl ? stripeEl.value.trim() : ''
     };
     const saveBtn = document.getElementById('pem-save-btn');
     saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
@@ -1262,7 +1295,8 @@ async function processPayment() {
             address: fullAddress, postcode: customer.postcode, cartItems: secureCartItems,
             status: 'pending', date: new Date().toLocaleDateString('en-GB'),
             timestamp: Date.now(), paymentIntentId, pickup: isPickup,
-            promoCode: appliedPromo ? appliedPromo.code : null
+            promoCode: appliedPromo ? appliedPromo.code : null,
+            marketingConsent: getMarketingConsent()
         };
 
         const orderRes = await fetch(`${API_BASE}/orders`, {
@@ -2093,4 +2127,128 @@ async function sendBroadcast() {
         btn.disabled    = false;
         btn.textContent = '📧 Send to All Customers';
     }
+}
+
+// ═══════════════════════════════════════════════
+//  LIVE CUT-OFF COUNTDOWN
+// ═══════════════════════════════════════════════
+var _countdownTimer = null;
+
+function getNextCutoff() {
+    // Get current London time
+    var londonStr = new Date().toLocaleString('en-US', { timeZone: 'Europe/London' });
+    var now = new Date(londonStr);
+    var day  = now.getDay();   // 0 Sun … 4 Thu … 5 Fri … 6 Sat
+    var mins = now.getHours() * 60 + now.getMinutes();
+
+    // Thursday 13:00 = delivery cut-off  (780 mins)
+    // Friday   17:00 = pickup cut-off   (1020 mins)
+    var THU_CUTOFF = 4 * 60 * 60 * 1000 + 13 * 60 * 60 * 1000;  // unused, use deadline Date instead
+
+    var deadline = new Date(now);
+    var label, type;
+
+    if ((day < 4) || (day === 4 && mins < 13 * 60)) {
+        // Before Thursday 1pm → next deadline: Thursday 1pm (delivery)
+        var daysToThurs = (4 - day + 7) % 7 || (day === 4 ? 0 : 7);
+        if (day === 4 && mins < 13 * 60) daysToThurs = 0;
+        deadline.setDate(now.getDate() + daysToThurs);
+        deadline.setHours(13, 0, 0, 0);
+        label = 'Thursday Sheffield Delivery';
+        type  = 'delivery';
+    } else if ((day === 4 && mins >= 13 * 60) || (day === 5 && mins < 17 * 60)) {
+        // Thursday 1pm to Friday 5pm → next deadline: Friday 5pm (pickup)
+        var daysToFri = (5 - day + 7) % 7;
+        deadline.setDate(now.getDate() + daysToFri);
+        deadline.setHours(17, 0, 0, 0);
+        label = 'Friday / Saturday Home Pickup';
+        type  = 'pickup';
+    } else {
+        // Past Friday 5pm (Fri evening, Sat, Sun) → next Thursday 1pm
+        var dToThurs = (4 - day + 7) % 7 || 7;
+        deadline.setDate(now.getDate() + dToThurs);
+        deadline.setHours(13, 0, 0, 0);
+        label = 'Thursday Sheffield Delivery';
+        type  = 'delivery';
+    }
+
+    return { label: label, type: type, deadline: deadline };
+}
+
+function startCountdown() {
+    var bannerEl = document.getElementById('cutoff-banner');
+    var textEl   = document.getElementById('cutoff-text');
+    if (!bannerEl || !textEl) return;
+
+    function tick() {
+        var info = getNextCutoff();
+        var diff = info.deadline.getTime() - Date.now();
+        if (diff <= 0) { tick(); return; } // just ticked over, recalculate
+
+        var h  = Math.floor(diff / 3600000);
+        var m  = Math.floor((diff % 3600000) / 60000);
+        var s  = Math.floor((diff % 60000) / 1000);
+        var hh = String(h).padStart(2, '0');
+        var mm = String(m).padStart(2, '0');
+        var ss = String(s).padStart(2, '0');
+
+        var emoji = info.type === 'delivery' ? '🚚' : '🏠';
+        textEl.innerHTML = emoji + ' Order in the next <strong>' + hh + 'h ' + mm + 'm ' + ss + 's</strong> for <strong>' + info.label + '</strong>!';
+        bannerEl.style.display = 'block';
+    }
+
+    tick();
+    if (_countdownTimer) clearInterval(_countdownTimer);
+    _countdownTimer = setInterval(tick, 1000);
+}
+
+// ═══════════════════════════════════════════════
+//  SUBSCRIBE & SAVE
+// ═══════════════════════════════════════════════
+
+async function subscribeToProduct(productId) {
+    var p = products.find(function(x) { return x.id === productId; });
+    if (!p) return;
+
+    var priceId = p.stripe_recurring_price_id;
+    if (!priceId) {
+        showToast('Subscription not yet available for this product — contact us to arrange!');
+        return;
+    }
+
+    var email = '';
+    try {
+        var stored = JSON.parse(localStorage.getItem('hg_chat_user') || 'null');
+        if (stored && stored.email) email = stored.email;
+    } catch(e) {}
+
+    var btn = document.getElementById('sub-btn-' + productId);
+    if (btn) { btn.disabled = true; btn.textContent = 'Setting up…'; }
+
+    try {
+        var res = await fetch(API_BASE + '/create-subscription-session', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+                priceId:       priceId,
+                productName:   p.name,
+                customerEmail: email
+            })
+        });
+        var data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not start subscription');
+        // Redirect to Stripe Checkout
+        window.location.href = data.url;
+    } catch (err) {
+        showToast('Subscription error: ' + err.message);
+        if (btn) { btn.disabled = false; btn.textContent = '📦 Subscribe & Save 10%'; }
+    }
+}
+
+// ═══════════════════════════════════════════════
+//  GDPR CONSENT HELPER
+// ═══════════════════════════════════════════════
+function getMarketingConsent() {
+    var el = document.getElementById('marketing-consent');
+    return el ? el.checked : false;
 }
