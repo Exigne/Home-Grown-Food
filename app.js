@@ -1381,43 +1381,78 @@ initApp();
 let crmCustomers      = [];
 let crmCurrentProfile = null;
 
-// ─── HELPERS ──────────────────────────────────────────────────────────────────
-function timeAgo(dateStr) {
-    if (!dateStr) return '—';
-    const d = new Date(dateStr);
-    if (isNaN(d)) return '—';
-    const days = Math.floor((Date.now() - d.getTime()) / 86400000);
-    if (days === 0)  return 'Today';
-    if (days === 1)  return 'Yesterday';
-    if (days < 7)    return days + ' days ago';
-    if (days < 30)   return Math.floor(days / 7) + ' week' + (Math.floor(days/7) > 1 ? 's' : '') + ' ago';
-    if (days < 365)  return Math.floor(days / 30) + ' month' + (Math.floor(days/30) > 1 ? 's' : '') + ' ago';
-    return Math.floor(days / 365) + ' year' + (Math.floor(days/365) > 1 ? 's' : '') + ' ago';
+// ─── MESSAGE TEMPLATES ────────────────────────────────────────────────────────
+var MESSAGE_TEMPLATES = {
+    general: {
+        subject: 'A message from Home Grown \uD83C\uDF3F',
+        body: ['Hi [name],', '', 'Just a quick message from the Home Grown team. We hope you\'re enjoying your snacks!', '', 'If there\'s anything we can help with, please get in touch via the chat on our website.', '', 'Warm regards,', 'The Home Grown Team \uD83C\uDF3F'].join('\n')
+    },
+    reply: {
+        subject: 'Re: Your message to Home Grown \uD83C\uDF3F',
+        body: ['Hi [name],', '', 'Thank you so much for your message!', '', '[Your reply here]', '', 'If you have any other questions, please use the chat widget on our website.', '', 'Warm regards,', 'The Home Grown Team \uD83C\uDF3F'].join('\n')
+    },
+    promo: {
+        subject: 'A special offer just for you! \uD83C\uDF3F',
+        body: ['Hi [name],', '', 'We have an exciting offer just for you!', '', '[Describe your offer here]', '', 'Use code [PROMO CODE] at checkout to redeem.', 'Valid until [DATE]. Don\'t miss out!', '', 'Warm regards,', 'The Home Grown Team \uD83C\uDF3F'].join('\n')
+    },
+    new_product: {
+        subject: 'Something new just dropped at Home Grown! \uD83C\uDF3F',
+        body: ['Hi [name],', '', 'Exciting news \u2014 we\'ve just launched something brand new and we think you\'re going to love it!', '', '[Describe your new product here]', '', 'Head over to the shop to be one of the first to try it.', '', 'Warm regards,', 'The Home Grown Team \uD83C\uDF3F'].join('\n')
+    }
+};
+
+function applyMessageTemplate(context) {
+    var selectEl = document.getElementById(context === 'crm' ? 'crm-template-select' : 'broadcast-template-select');
+    if (!selectEl || !selectEl.value) return;
+    var template = MESSAGE_TEMPLATES[selectEl.value];
+    if (!template) return;
+
+    var name = context === 'crm'
+        ? (document.getElementById('crm-profile-name') ? document.getElementById('crm-profile-name').textContent : 'there')
+        : 'there';
+
+    var body    = template.body.split('[name]').join(name);
+    var subject = template.subject;
+
+    if (context === 'crm') {
+        var el = document.getElementById('crm-reply-input');
+        if (el) { el.value = body; el.focus(); }
+    } else {
+        var sEl = document.getElementById('broadcast-subject');
+        var bEl = document.getElementById('broadcast-message');
+        if (sEl) sEl.value = subject;
+        if (bEl) { bEl.value = body; bEl.focus(); }
+        updateBroadcastPreview();
+    }
+    selectEl.value = '';
 }
 
-function memberSince(orders, messages) {
-    const dates = [];
-    if (orders   && orders.length)   dates.push(new Date(orders[orders.length - 1].created_at));
-    if (messages && messages.length) dates.push(new Date(messages[0].created_at));
-    if (!dates.length) return '—';
-    const earliest = new Date(Math.min(...dates.map(d => d.getTime())));
-    return earliest.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
-}
-
-function parseOrderItems(orders) {
-    const counts = {};
-    orders.forEach(function(order) {
-        (order.items || '').split(',').forEach(function(item) {
-            const trimmed = item.trim();
-            const xIdx = trimmed.search(/[×x]\s*\d+/i);
-            if (xIdx === -1) return;
-            const name = trimmed.substring(0, xIdx).trim();
-            const qtyMatch = trimmed.match(/\d+$/);
-            const qty = qtyMatch ? parseInt(qtyMatch[0]) : 1;
-            if (name) counts[name] = (counts[name] || 0) + qty;
-        });
-    });
-    return counts;
+// ─── BROADCAST LIVE PREVIEW ───────────────────────────────────────────────────
+function updateBroadcastPreview() {
+    var previewEl = document.getElementById('broadcast-preview-frame');
+    if (!previewEl) return;
+    var subject = (document.getElementById('broadcast-subject').value || '').trim();
+    var message = (document.getElementById('broadcast-message').value || '').trim();
+    if (!message && !subject) {
+        previewEl.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-muted);"><div style="font-size:2rem;margin-bottom:0.5rem;">\u{1F4E7}</div><p style="font-weight:700;">Start typing to see a preview</p></div>';
+        return;
+    }
+    var safeMsg = message.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').split('\n').join('<br>');
+    var safeSubj = subject.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    previewEl.innerHTML =
+        '<div style="font-family:Arial,sans-serif;border:2px solid #164A2E;border-radius:12px;overflow:hidden;font-size:13px;">' +
+        '<div style="background:#164A2E;padding:18px;text-align:center;">' +
+        '<div style="color:#FFD93D;font-size:1.3rem;font-weight:bold;">Home Grown</div>' +
+        '<div style="color:#6BBF4A;font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;margin-top:3px;">Food That Makes You Feel Good</div>' +
+        '</div>' +
+        (safeSubj ? '<div style="background:#f5f5f5;padding:8px 14px;font-size:0.8rem;color:#555;border-bottom:1px solid #ddd;"><strong>Subject:</strong> ' + safeSubj + '</div>' : '') +
+        '<div style="padding:20px 24px;background:#FFFBE8;line-height:1.8;color:#0E3019;">' + safeMsg + '</div>' +
+        '<div style="background:#FFFBE8;padding:10px;text-align:center;border-top:1px solid #C8E6C0;">' +
+        '<span style="display:inline-block;background:#164A2E;color:#FFD93D;padding:8px 20px;border-radius:999px;font-size:0.82rem;font-weight:bold;">Visit Our Shop \u2192</span>' +
+        '</div>' +
+        '<div style="background:#164A2E;padding:10px;text-align:center;">' +
+        '<div style="color:#A8D97F;font-size:0.68rem;">Home Grown \u00B7 Handmade in Sheffield \u00B7 homegrownfoods.online</div>' +
+        '</div></div>';
 }
 
 // ─── LOAD & RENDER LIST ───────────────────────────────────────────────────────
@@ -1435,28 +1470,56 @@ function renderCRM() {
     const tbody   = document.getElementById('crm-tbody');
     const countEl = document.getElementById('crm-count');
     if (!tbody) return;
-    if (countEl) countEl.textContent = crmCustomers.length;
+
     if (!crmCustomers.length) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:3rem;">No customers yet.</td></tr>';
+        if (countEl) countEl.textContent = '0';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:3rem;">No customers yet.</td></tr>';
         return;
     }
-    tbody.innerHTML = crmCustomers.map(function(c, idx) {
-        const name    = c.display_name || c.name || (c.emails && c.emails[0]) || c.email || '?';
-        const initial = name[0].toUpperCase();
-        const ltv     = parseFloat(c.ltv || 0);
-        const emails  = c.emails || (c.email ? [c.email] : []);
-        const emailDisplay = emails.length > 1
+
+    // Split into customers (have orders) and non-customers (chat/wishlist only)
+    var customers    = crmCustomers.filter(function(c) { return parseInt(c.order_count || 0) > 0; });
+    var nonCustomers = crmCustomers.filter(function(c) { return parseInt(c.order_count || 0) === 0; });
+    if (countEl) countEl.textContent = customers.length + (nonCustomers.length ? ' + ' + nonCustomers.length + ' non-customers' : '');
+
+    function buildRow(c, idx) {
+        var name         = c.display_name || c.name || (c.emails && c.emails[0]) || c.email || '?';
+        var initial      = name[0].toUpperCase();
+        var ltv          = parseFloat(c.ltv || 0);
+        var emails       = c.emails || (c.email ? [c.email] : []);
+        var emailDisplay = emails.length > 1
             ? emails[0] + ' <span style="color:var(--green-mid);font-weight:800;">+' + (emails.length - 1) + ' more</span>'
             : (emails[0] || '—');
+        var msgCount  = parseInt(c.message_count || 0);
+        var unread    = parseInt(c.unread_count  || 0);
+        var msgBadge  = '';
+        if (unread > 0) {
+            msgBadge = ' <span style="display:inline-flex;align-items:center;gap:3px;background:var(--danger);color:white;border-radius:999px;padding:2px 8px;font-size:0.68rem;font-weight:800;vertical-align:middle;">💬 ' + unread + ' new</span>';
+        } else if (msgCount > 0) {
+            msgBadge = ' <span style="display:inline-flex;align-items:center;gap:3px;background:var(--green-pale);color:var(--green-dark);border:1px solid var(--border);border-radius:999px;padding:2px 8px;font-size:0.68rem;font-weight:700;vertical-align:middle;">💬 messaged</span>';
+        }
         return '<tr class="crm-row" onclick="openCRMCustomer(' + idx + ')">' +
             '<td><div class="crm-avatar">' + initial + '</div></td>' +
-            '<td><div style="font-weight:800;color:var(--green-dark);">' + name + '</div>' +
+            '<td><div style="font-weight:800;color:var(--green-dark);">' + name + msgBadge + '</div>' +
             '<small style="color:var(--text-muted);">' + emailDisplay + '</small></td>' +
             '<td><strong>' + (c.order_count || 0) + '</strong></td>' +
             '<td><strong style="color:' + (ltv > 0 ? 'var(--success)' : 'var(--text-muted)') + ';">£' + ltv.toFixed(2) + '</strong></td>' +
             '<td style="color:var(--text-muted);font-size:0.85rem;">' + (c.last_contact || '—') + '</td>' +
             '</tr>';
-    }).join('');
+    }
+
+    var rows = customers.map(function(c, i) { return buildRow(c, crmCustomers.indexOf(c)); }).join('');
+
+    // Non-customers section divider
+    if (nonCustomers.length) {
+        rows += '<tr><td colspan="5" style="padding:12px 16px;background:var(--yellow-pale);border-top:2px solid var(--border);">' +
+            '<span style="font-size:0.72rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);">Non-Customers — Chat & Wishlist Only</span>' +
+            '<span style="margin-left:8px;font-size:0.72rem;color:var(--text-muted);font-weight:600;">(' + nonCustomers.length + ' contact' + (nonCustomers.length !== 1 ? 's' : '') + ' · moves to Customers when they place an order)</span>' +
+            '</td></tr>';
+        rows += nonCustomers.map(function(c, i) { return buildRow(c, crmCustomers.indexOf(c)); }).join('');
+    }
+
+    tbody.innerHTML = rows;
 }
 
 // Index-based lookup — passes all emails for this consolidated customer
