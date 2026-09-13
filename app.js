@@ -230,12 +230,41 @@ function formatDesc(text) {
 }
 
 // ─── RENDER SHOP ──────────────────────────────────────────────────────────────
+// ─── SHOP FILTER CHIPS ───────────────────────────────────────────────────────
+function renderShopChips() {
+    var chipsEl = document.getElementById('shop-filter-chips');
+    if (!chipsEl) return;
+
+    // Collect unique badge values from actual products
+    var badges = [];
+    products.forEach(function(p) {
+        if (p.badge && badges.indexOf(p.badge) === -1) badges.push(p.badge);
+    });
+
+    var chips = ['All'].concat(badges);
+    chipsEl.innerHTML = chips.map(function(chip) {
+        var key      = chip === 'All' ? 'all' : chip;
+        var isActive = shopFilter === key;
+        var btn = document.createElement('button'); btn.className = 'shop-chip' + (isActive ? ' shop-chip-active' : ''); btn.textContent = chip; btn.dataset.filter = key; btn.addEventListener('click', function(){ setShopFilter(this.dataset.filter); }); return btn.outerHTML;
+    }).join('');
+}
+
+function setShopFilter(filter) {
+    shopFilter = filter;
+    renderShopChips();
+    renderShop();
+}
+
 function renderShop() {
     const grid = document.getElementById('products-grid');
     if (!products.length) {
         grid.innerHTML = '<p style="color:var(--text-muted); font-weight:700;">No products available.</p>';
+        renderShopChips();
         return;
     }
+
+    renderShopChips();
+
     const sorted = [...products].sort((a, b) => {
         const aOut = a.stock !== undefined && a.stock !== null && a.stock <= 0;
         const bOut = b.stock !== undefined && b.stock !== null && b.stock <= 0;
@@ -243,7 +272,20 @@ function renderShop() {
         if (!aOut && bOut) return -1;
         return 0;
     });
-    grid.innerHTML = sorted.map(p => {
+    // Apply chip filter
+    var filtered = shopFilter === 'all' ? sorted : sorted.filter(function(p) {
+        return (p.badge || '') === shopFilter;
+    });
+
+    if (!filtered.length) {
+        grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--text-muted);">'
+            + '<div style="font-size:2.5rem;margin-bottom:1rem;">&#x1F50D;</div>'
+            + '<p style="font-weight:700;font-size:1rem;">No products match &ldquo;' + (shopFilter === 'all' ? 'All' : shopFilter) + '&rdquo;</p>'
+            + '</div>';
+        return;
+    }
+
+    grid.innerHTML = filtered.map(p => {
         const outOfStock = (p.stock !== undefined && p.stock !== null && p.stock <= 0);
         return `
         <div class="product-card ${outOfStock ? 'out-of-stock' : ''}" onclick="openProductDetail(${p.id})">
@@ -1585,12 +1627,9 @@ function renderCRM() {
             : (emails[0] || '—');
         var msgCount  = parseInt(c.message_count || 0);
         var unread    = parseInt(c.unread_count  || 0);
-        var msgBadge  = '';
-        if (unread > 0) {
-            msgBadge = ' <span style="display:inline-flex;align-items:center;gap:3px;background:var(--danger);color:white;border-radius:999px;padding:2px 8px;font-size:0.68rem;font-weight:800;vertical-align:middle;">💬 ' + unread + ' new</span>';
-        } else if (msgCount > 0) {
-            msgBadge = ' <span style="display:inline-flex;align-items:center;gap:3px;background:var(--green-pale);color:var(--green-dark);border:1px solid var(--border);border-radius:999px;padding:2px 8px;font-size:0.68rem;font-weight:700;vertical-align:middle;">💬 messaged</span>';
-        }
+        var msgBadge = unread > 0
+            ? ' <span style="background:var(--danger);color:white;border-radius:999px;padding:2px 8px;font-size:0.68rem;font-weight:800;margin-left:4px;display:inline-block;">&#x1F4AC; ' + unread + ' new</span>'
+            : '';
         return '<tr class="crm-row" onclick="openCRMCustomer(' + idx + ')">' +
             '<td><div class="crm-avatar">' + initial + '</div></td>' +
             '<td><div style="font-weight:800;color:var(--green-dark);">' + name + msgBadge + '</div>' +
@@ -1652,6 +1691,26 @@ async function openCustomerProfile(emailsOrEmail, displayName) {
 
     // Normalise: accept single email string or array
     const emails = Array.isArray(emailsOrEmail) ? emailsOrEmail : [emailsOrEmail];
+
+    // ── Optimistic badge clear: happens instantly, before profile even loads ──
+    var anyUnread = false;
+    crmCustomers.forEach(function(c) {
+        var cEmails = c.emails || (c.email ? [c.email] : []);
+        if (emails.some(function(e) { return cEmails.indexOf(e) !== -1; })) {
+            if (parseInt(c.unread_count || 0) > 0) anyUnread = true;
+            c.unread_count = 0;
+        }
+    });
+    if (anyUnread) renderCRM(); // only re-render if there was actually a badge to clear
+
+    // Fire-and-forget backend mark-as-read
+    emails.forEach(function(em) {
+        fetch(API_BASE + '/admin/chats/read', {
+            method:  'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+            body:    JSON.stringify({ email: em })
+        }).catch(function() {});
+    });
     const name   = displayName || emails[0];
 
     ['crm-profile-name','crm-profile-ltv','crm-profile-orders',
@@ -1681,23 +1740,6 @@ async function openCustomerProfile(emailsOrEmail, displayName) {
         const data = await res.json();
         crmCurrentProfile = Object.assign({ emails: emails, display_name: name }, data);
         renderCustomerProfile();
-
-        // Mark all messages from these emails as read and update the CRM badge
-        emails.forEach(function(em) {
-            fetch(API_BASE + '/admin/chats/read', {
-                method:  'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
-                body:    JSON.stringify({ email: em })
-            }).catch(function() {});
-        });
-        // Clear unread badge locally without needing a full reload
-        crmCustomers.forEach(function(c) {
-            var cEmails = c.emails || (c.email ? [c.email] : []);
-            if (emails.some(function(e) { return cEmails.indexOf(e) !== -1; })) {
-                c.unread_count = 0;  // clear unread — do NOT touch message_count
-            }
-        });
-        renderCRM();
     } catch (err) {
         showToast('Failed to load profile: ' + err.message);
         console.error('CRM profile error:', err);
