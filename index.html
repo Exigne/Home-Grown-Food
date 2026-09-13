@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://js.stripe.com/v3/"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<link rel="stylesheet" href="styles.css?v=16">
+<link rel="stylesheet" href="styles.css?v=17">
 </head>
 <body>
 
@@ -657,12 +657,20 @@
               <option value="">Loading emails…</option>
             </select>
           </div>
-          <textarea id="crm-reply-input" rows="4"
-            placeholder="Type your reply… it will be emailed to the selected address via Resend."
-            style="width:100%;padding:12px 14px;border:2px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);font-size:0.92rem;background:var(--yellow-pale);resize:none;outline:none;line-height:1.6;"
-            onfocus="this.style.borderColor='var(--green-leaf)';this.style.background='var(--white)'"
-            onblur="this.style.borderColor='var(--border)';this.style.background='var(--yellow-pale)'"
-            onkeydown="if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)) sendCRMReply()"></textarea>
+          <div class="rte-toolbar" style="border-radius:var(--radius) var(--radius) 0 0;">
+            <button type="button" class="rte-btn" onclick="document.execCommand('bold',false,null)"><strong>B</strong></button>
+            <button type="button" class="rte-btn" onclick="document.execCommand('italic',false,null)"><em>I</em></button>
+            <button type="button" class="rte-btn" onclick="document.execCommand('underline',false,null)"><u>U</u></button>
+            <span class="rte-divider"></span>
+            <button type="button" class="rte-btn" onclick="document.execCommand('insertUnorderedList',false,null)">• List</button>
+            <button type="button" class="rte-btn" onclick="document.execCommand('insertOrderedList',false,null)">1. List</button>
+            <span class="rte-divider"></span>
+            <button type="button" class="rte-btn rte-clear" onclick="document.getElementById('crm-reply-input').innerHTML=''">✕ Clear</button>
+          </div>
+          <div id="crm-reply-input" contenteditable="true" class="rte-editor"
+               style="min-height:100px;max-height:180px;border-radius:0 0 var(--radius) var(--radius);"
+               data-placeholder="Type your message here — use the toolbar above for formatting."
+               onkeydown="if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)) sendCRMReply()"></div>
           <div style="display:flex;gap:10px;align-items:center;margin-top:10px;">
             <button id="crm-reply-btn" class="pay-btn" onclick="sendCRMReply()"
               style="margin:0;flex:1;padding:12px;font-size:1rem;">
@@ -717,13 +725,21 @@
 
         <div class="form-group" style="margin-bottom:1rem;">
           <label>Message *</label>
-          <textarea id="broadcast-message" rows="10"
-            placeholder="Write your message here…&#10;&#10;Use [name] where you want the customer name inserted.&#10;Use line breaks to separate paragraphs."
-            style="width:100%;padding:12px 14px;border:2px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);font-size:0.92rem;resize:vertical;outline:none;background:var(--yellow-pale);line-height:1.7;"
-            onfocus="this.style.borderColor='var(--green-leaf)';this.style.background='var(--white)'"
-            onblur="this.style.borderColor='var(--border)';this.style.background='var(--yellow-pale)'"
-            oninput="updateBroadcastPreview()"></textarea>
-          <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;">Branding and shop button are added automatically. Use [name] for personalisation.</div>
+          <div class="rte-toolbar" style="border-radius:var(--radius) var(--radius) 0 0;">
+            <button type="button" class="rte-btn" onclick="document.execCommand('bold',false,null)"><strong>B</strong></button>
+            <button type="button" class="rte-btn" onclick="document.execCommand('italic',false,null)"><em>I</em></button>
+            <button type="button" class="rte-btn" onclick="document.execCommand('underline',false,null)"><u>U</u></button>
+            <span class="rte-divider"></span>
+            <button type="button" class="rte-btn" onclick="document.execCommand('insertUnorderedList',false,null)">• List</button>
+            <button type="button" class="rte-btn" onclick="document.execCommand('insertOrderedList',false,null)">1. List</button>
+            <span class="rte-divider"></span>
+            <button type="button" class="rte-btn rte-clear" onclick="document.getElementById('broadcast-message').innerHTML=''">✕ Clear</button>
+          </div>
+          <div id="broadcast-message" contenteditable="true" class="rte-editor"
+               style="min-height:180px;max-height:340px;border-radius:0 0 var(--radius) var(--radius);"
+               data-placeholder="Type your message here — use the toolbar above for formatting."
+               oninput="updateBroadcastPreview()"></div>
+          <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;">Branding, intro and footer are added automatically by the template. Use [name] for personalisation.</div>
         </div>
 
         <div id="broadcast-status" style="font-size:0.88rem;font-weight:700;min-height:1.5rem;margin-bottom:0.75rem;"></div>
@@ -756,6 +772,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="app.js?v=23"></script>
+<script src="app.js?v=24"></script>
 </body>
 </html>
