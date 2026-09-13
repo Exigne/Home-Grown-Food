@@ -1867,3 +1867,37 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
   .broadcast-body { grid-template-columns: 1fr !important; }
   .broadcast-preview { display: none; }
 }
+
+/* ══════════════════════════════════════════════
+   SHOP FILTER CHIPS
+══════════════════════════════════════════════ */
+.shop-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 2rem;
+}
+.shop-chip {
+  background: var(--white);
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 20px;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-mid);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.shop-chip:hover {
+  border-color: var(--green-leaf);
+  color: var(--green-dark);
+  background: var(--green-pale);
+}
+.shop-chip-active {
+  background: var(--green-dark) !important;
+  border-color: var(--green-dark) !important;
+  color: var(--yellow) !important;
+  box-shadow: 0 3px 0 var(--green-mid);
+}
