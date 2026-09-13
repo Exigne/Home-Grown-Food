@@ -355,7 +355,7 @@ app.post('/api/admin/products', authenticateAdmin, async (req, res) => {
 });
 
 app.put('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
-    const { name, emoji, price, description, bg_color, badge, image_url, stock, stripe_recurring_price_id } = req.body;
+    const { name, emoji, price, description, bg_color, badge, image_url, stock, stripe_recurring_price_id, subscription_enabled } = req.body;
     try {
         // Check current stock before updating so we know if it just came back in stock
         const currentRes = await pool.query('SELECT stock FROM products WHERE id = $1', [req.params.id]);
@@ -363,10 +363,12 @@ app.put('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
 
         await pool.query(
             `UPDATE products SET name=$1, emoji=$2, price=$3, description=$4,
-            bg_color=$5, badge=$6, image_url=$7, stock=$8, stripe_recurring_price_id=$9 WHERE id=$10`,
+            bg_color=$5, badge=$6, image_url=$7, stock=$8, stripe_recurring_price_id=$9,
+            subscription_enabled=$10 WHERE id=$11`,
             [name, emoji, price, description, bg_color, badge, image_url,
              stock !== undefined ? stock : 0,
              stripe_recurring_price_id || null,
+             subscription_enabled === true || subscription_enabled === 'true',
              req.params.id]
         );
 
@@ -1043,14 +1045,21 @@ app.post('/api/create-subscription-session', async (req, res) => {
         return res.status(400).json({ error: 'No Stripe recurring price ID configured for this product. Set it in Admin → Products → Edit.' });
     }
     try {
+        // Line items: the product recurring price + a delivery fee line
+        const lineItems = [{ price: priceId, quantity: 1 }];
+
+        // If no separate price ID for delivery, add delivery as a one-off in metadata
+        // (delivery is baked into the Stripe recurring price set by admin)
         const session = await stripe.checkout.sessions.create({
             mode:                 'subscription',
             payment_method_types: ['card'],
-            line_items: [{ price: priceId, quantity: 1 }],
+            billing_address_collection: 'required',
+            shipping_address_collection: { allowed_countries: ['GB'] },
+            line_items:        lineItems,
             customer_email:    customerEmail || undefined,
             success_url:       'https://homegrownfoods.online?subscribed=1&product=' + encodeURIComponent(productName || ''),
             cancel_url:        'https://homegrownfoods.online',
-            metadata:          { product_name: productName || '' }
+            metadata:          { product_name: productName || '', delivery_fee: '3.99' }
         });
         res.json({ url: session.url });
     } catch (err) {
