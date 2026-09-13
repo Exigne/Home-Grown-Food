@@ -711,7 +711,7 @@ app.get('/api/admin/chats', authenticateAdmin, async (req, res) => {
 
 // Admin: reply to a customer — appends reply to the most recent message from that email
 app.post('/api/admin/chat/reply', authenticateAdmin, async (req, res) => {
-    const { email, name, reply, date, direct } = req.body;
+    const { email, name, reply, date, direct, htmlContent, subject } = req.body;
     if (!email || !reply) {
         return res.status(400).json({ error: 'email and reply are required' });
     }
@@ -748,35 +748,36 @@ app.post('/api/admin/chat/reply', authenticateAdmin, async (req, res) => {
             );
         }
 
+        // Use pre-built HTML from frontend template if provided, otherwise use default
+        const emailSubject = subject || (direct ? 'A message from Home Grown' : 'Re: Your message to Home Grown');
+        const emailHtml    = htmlContent || (
+            '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:3px solid #164A2E;border-radius:16px;overflow:hidden;">'
+          + '<div style="background:#164A2E;padding:24px;text-align:center;">'
+          + '<h1 style="color:#FFD93D;margin:0;font-size:2rem;">Home Grown</h1>'
+          + '<p style="color:#6BBF4A;margin:6px 0 0;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.12em;">Food That Makes You Feel Good</p>'
+          + '</div>'
+          + '<div style="padding:32px;background:#FFFBE8;">'
+          + '<p style="color:#0E3019;">Hi <strong>' + name + '</strong>,</p>'
+          + (direct ? '<p style="color:#2D6040;">A message from the Home Grown team:</p>' : '<p style="color:#2D6040;">Thanks for getting in touch!</p>')
+          + '<div style="background:white;border-left:5px solid #FFD93D;padding:16px 20px;margin:20px 0;border-radius:8px;color:#0E3019;line-height:1.7;">'
+          + reply.split('\\n').join('<br>')
+          + '</div>'
+          + '<p style="color:#5A8A6A;font-size:0.9rem;">If you have any questions, please use the chat widget on our website.</p>'
+          + '<p style="color:#999;font-size:0.8rem;margin-top:8px;">Please do not reply directly to this email.</p>'
+          + '<div style="text-align:center;margin-top:28px;">'
+          + '<a href="https://homegrownfoods.online" style="background:#164A2E;color:#FFD93D;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:bold;">Visit Our Shop &rarr;</a>'
+          + '</div></div>'
+          + '<div style="background:#164A2E;padding:14px;text-align:center;">'
+          + '<p style="color:#A8D97F;margin:0;font-size:0.78rem;">Home Grown &middot; Handmade in Sheffield &middot; homegrownfoods.online</p>'
+          + '</div></div>'
+        );
+
         // Send reply email to the customer via Resend
         const { error: replyEmailError } = await resend.emails.send({
-            from: `Home Grown <${SENDER_EMAIL}>`,
-            to: [email],
-            // no replyTo — replies not supported without email forwarding
-            subject: direct ? 'A message from Home Grown 🌿' : 'Re: Your message to Home Grown 🌿',
-            html: `
-                <div style="font-family:Arial,sans-serif; max-width:600px; margin:0 auto; border:3px solid #164A2E; border-radius:16px; overflow:hidden;">
-                    <div style="background:#164A2E; padding:24px; text-align:center;">
-                        <h1 style="color:#FFD93D; margin:0; font-size:2rem; letter-spacing:0.03em;">Home Grown</h1>
-                        <p style="color:#6BBF4A; margin:6px 0 0; font-size:0.8rem; letter-spacing:0.12em; text-transform:uppercase;">Food That Makes You Feel Good</p>
-                    </div>
-                    <div style="padding:32px; background:#FFFBE8;">
-                        <p style="color:#0E3019; font-size:1rem;">Hi <strong>${name}</strong>,</p>
-                        ${direct ? '<p style="color:#2D6040;">We have a message for you from the Home Grown team:</p>' : '<p style="color:#2D6040;">Thanks for getting in touch! Here\'s our reply:</p>'}
-                        <div style="background:white; border-left:5px solid #FFD93D; padding:16px 20px; margin:24px 0; border-radius:8px; color:#0E3019; line-height:1.7;">
-                            ${reply.split('\n').join('<br>')}
-                        </div>
-                        <p style="color:#5A8A6A; font-size:0.9rem;">If you have any more questions, please use the chat widget on our website — we'd love to hear from you!</p>
-                        <p style="color:#999; font-size:0.8rem; margin-top:8px;">⚠️ Please do not reply directly to this email as replies cannot be received.</p>
-                        <div style="text-align:center; margin-top:28px;">
-                            <a href="https://homegrownfoods.online" style="background:#164A2E; color:#FFD93D; padding:12px 28px; border-radius:999px; text-decoration:none; font-weight:bold; font-size:0.95rem;">Visit Our Shop →</a>
-                        </div>
-                    </div>
-                    <div style="background:#164A2E; padding:14px; text-align:center;">
-                        <p style="color:#A8D97F; margin:0; font-size:0.78rem;">Home Grown · Handmade in Sheffield · homegrownfoods.online</p>
-                    </div>
-                </div>
-            `
+            from:    `Home Grown <${SENDER_EMAIL}>`,
+            to:      [email],
+            subject: emailSubject,
+            html:    emailHtml
         });
 
         if (replyEmailError) {
