@@ -405,7 +405,7 @@ app.post('/api/admin/products', authenticateAdmin, async (req, res) => {
 });
 
 app.put('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
-    const { name, emoji, price, description, bg_color, badge, image_url, stock, stripe_recurring_price_id, subscription_enabled } = req.body;
+    const { name, emoji, price, description, bg_color, badge, image_url, stock, stripe_recurring_price_id, subscription_enabled, delivery_enabled } = req.body;
     try {
         // Check current stock before updating so we know if it just came back in stock
         const currentRes = await pool.query('SELECT stock FROM products WHERE id = $1', [req.params.id]);
@@ -414,11 +414,12 @@ app.put('/api/admin/products/:id', authenticateAdmin, async (req, res) => {
         await pool.query(
             `UPDATE products SET name=$1, emoji=$2, price=$3, description=$4,
             bg_color=$5, badge=$6, image_url=$7, stock=$8, stripe_recurring_price_id=$9,
-            subscription_enabled=$10 WHERE id=$11`,
+            subscription_enabled=$10, delivery_enabled=$11 WHERE id=$12`,
             [name, emoji, price, description, bg_color, badge, image_url,
              stock !== undefined ? stock : 0,
              stripe_recurring_price_id || null,
              subscription_enabled === true || subscription_enabled === 'true',
+             delivery_enabled === true || delivery_enabled === 'true',
              req.params.id]
         );
 
