@@ -198,6 +198,7 @@ app.post('/api/orders', async (req, res) => {
         }
 
         let generatedItemsText = [];
+        let receiptItems = [];  // detailed line items for the confirmation receipt
         let subtotal = 0;
 
         for (const item of cartItems) {
@@ -223,8 +224,15 @@ app.post('/api/orders', async (req, res) => {
                 [item.qty, item.id]
             );
 
+            const lineTotal = parseFloat(product.price) * item.qty;
             generatedItemsText.push(`${product.name} × ${item.qty}`);
-            subtotal += parseFloat(product.price) * item.qty;
+            receiptItems.push({
+                name: product.name,
+                qty: item.qty,
+                unitPrice: parseFloat(product.price),
+                lineTotal: lineTotal
+            });
+            subtotal += lineTotal;
         }
 
         let discount = 0;
@@ -241,7 +249,7 @@ app.post('/api/orders', async (req, res) => {
             }
         }
 
-        const shipping = pickup ? 0 : 3.00;
+        const shipping = pickup ? 0 : 3.99;
         const calculatedTotal = Math.max(0, subtotal - discount + shipping);
         const itemsString = generatedItemsText.join(', ');
 
@@ -269,19 +277,35 @@ app.post('/api/orders', async (req, res) => {
 
         // ─── EMAIL NOTIFICATION (RESEND) ──────────────────────────────────────
         const pickupLabel = pickup ? '🏠 Home Pickup' : `🚚 Delivery to ${postcode}`;
+        const adminItemRows = receiptItems.map(function(it) {
+            return '<tr><td style="padding:4px 8px;border-bottom:1px solid #eee;">' + it.name +
+                '</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:center;">×' + it.qty +
+                '</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right;">£' + it.lineTotal.toFixed(2) +
+                '</td></tr>';
+        }).join('');
         const { error: emailError } = await resend.emails.send({
             from: `Home Grown Orders <${SENDER_EMAIL}>`,
-            to: [process.env.EMAIL_USER], // Still sending to your personal inbox for notification
-            subject: `📦 New Order ${id} — £${calculatedTotal.toFixed(2)}`,
+            to: [process.env.EMAIL_USER],
+            subject: `📦 New Order ${id} — £${calculatedTotal.toFixed(2)} (${pickup ? 'Pickup' : 'Delivery'})`,
             html: `
-                <h2>New Order from ${fname} ${lname}</h2>
-                <p><strong>Order ID:</strong> ${id}</p>
-                <p><strong>Email:</strong> ${email}</p>
-                <p><strong>Address:</strong> ${address}</p>
-                <p><strong>Fulfilment:</strong> ${pickupLabel}</p>
-                <p><strong>Items:</strong> ${itemsString}</p>
-                ${promoCode ? `<p><strong>Promo Used:</strong> ${promoCode}</p>` : ''}
-                <p><strong>Total:</strong> £${calculatedTotal.toFixed(2)}</p>
+                <div style="font-family:Arial,sans-serif;max-width:560px;">
+                    <h2 style="color:#164A2E;">New Order — ${id}</h2>
+                    <p style="margin:4px 0;"><strong>Customer:</strong> ${fname} ${lname}</p>
+                    <p style="margin:4px 0;"><strong>Email:</strong> ${email}</p>
+                    <p style="margin:4px 0;"><strong>Fulfilment:</strong> ${pickupLabel}</p>
+                    ${!pickup ? '<p style="margin:4px 0;"><strong>Address:</strong> ' + address + '</p>' : ''}
+                    <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:0.9rem;">
+                        <thead><tr style="background:#164A2E;color:#FFD93D;">
+                            <th style="padding:6px 8px;text-align:left;">Item</th>
+                            <th style="padding:6px 8px;text-align:center;">Qty</th>
+                            <th style="padding:6px 8px;text-align:right;">Total</th>
+                        </tr></thead>
+                        <tbody>${adminItemRows}</tbody>
+                    </table>
+                    ${promoCode ? '<p style="margin:4px 0;"><strong>Promo Used:</strong> ' + promoCode + ' (−£' + discount.toFixed(2) + ')</p>' : ''}
+                    ${!pickup ? '<p style="margin:4px 0;color:#5A8A6A;">Delivery: £' + shipping.toFixed(2) + '</p>' : ''}
+                    <p style="font-size:1.2rem;font-weight:bold;color:#164A2E;">Total: £${calculatedTotal.toFixed(2)}</p>
+                </div>
             `
         });
         
@@ -292,16 +316,35 @@ app.post('/api/orders', async (req, res) => {
         // ─── CUSTOMER ORDER CONFIRMATION (RESEND) ─────────────────────────────
         // Transactional — always sent regardless of marketing subscription status
         try {
-            // Build itemised rows from itemsString ("Name x 2, Other x 1")
-            const itemRows = (itemsString || '').split(',').map(function(line) {
-                var txt = line.trim();
-                if (!txt) return '';
-                return '<tr><td style="padding:8px 0;border-bottom:1px solid #eee;color:#0E3019;">' + txt + '</td></tr>';
+            // Build a proper itemised receipt table
+            const itemRows = receiptItems.map(function(it) {
+                return '<tr>' +
+                    '<td style="padding:10px 0;border-bottom:1px solid #eee;color:#0E3019;">' +
+                        it.name + ' <span style="color:#5A8A6A;">× ' + it.qty + '</span></td>' +
+                    '<td style="padding:10px 0;border-bottom:1px solid #eee;color:#0E3019;text-align:right;white-space:nowrap;">£' +
+                        it.lineTotal.toFixed(2) + '</td>' +
+                '</tr>';
             }).join('');
 
+            // Totals rows (subtotal, discount, delivery/collection, total)
+            var totalsRows = '<tr><td style="padding:8px 0;color:#5A8A6A;">Subtotal</td>' +
+                '<td style="padding:8px 0;color:#5A8A6A;text-align:right;">£' + subtotal.toFixed(2) + '</td></tr>';
+            if (discount > 0) {
+                totalsRows += '<tr><td style="padding:4px 0;color:#2E7D32;">Discount' +
+                    (promoCode ? ' (' + promoCode + ')' : '') + '</td>' +
+                    '<td style="padding:4px 0;color:#2E7D32;text-align:right;">−£' + discount.toFixed(2) + '</td></tr>';
+            }
+            totalsRows += '<tr><td style="padding:4px 0;color:#5A8A6A;">' +
+                (pickup ? 'Collection' : 'UK Postage') + '</td>' +
+                '<td style="padding:4px 0;color:#5A8A6A;text-align:right;">' +
+                (shipping > 0 ? '£' + shipping.toFixed(2) : 'FREE') + '</td></tr>';
+            totalsRows += '<tr><td style="padding:12px 0 0;font-weight:bold;color:#164A2E;font-size:1.15rem;border-top:2px solid #164A2E;">Total</td>' +
+                '<td style="padding:12px 0 0;font-weight:bold;color:#164A2E;font-size:1.15rem;text-align:right;border-top:2px solid #164A2E;">£' +
+                calculatedTotal.toFixed(2) + '</td></tr>';
+
             const fulfilMsg = pickup
-                ? 'We\'ll have your order ready for collection on <strong>Friday or Saturday, 10am–1pm</strong>.'
-                : 'Your order will be delivered to <strong>' + address + '</strong>. Standard UK delivery.';
+                ? 'We\'ll have your order ready for collection on <strong>Friday or Saturday, 10am–1pm</strong>. We\'ll email you when it\'s ready.'
+                : 'Your order will be posted to:<br><strong>' + address + '</strong>';
 
             await resend.emails.send({
                 from:    `Home Grown <${SENDER_EMAIL}>`,
@@ -314,17 +357,24 @@ app.post('/api/orders', async (req, res) => {
                         <p style="color:#6BBF4A;margin:6px 0 0;font-size:0.8rem;letter-spacing:0.12em;text-transform:uppercase;">Food That Makes You Feel Good</p>
                     </div>
                     <div style="padding:32px;background:#FFFBE8;">
-                        <p style="color:#0E3019;font-size:1.1rem;">Hi <strong>${fname}</strong>, thanks for your order! 🎉</p>
-                        <p style="color:#2D6040;">We're getting it ready with love. Here's what you ordered:</p>
-                        <table style="width:100%;border-collapse:collapse;margin:20px 0;">
-                            ${itemRows}
-                            <tr><td style="padding:12px 0 0;font-weight:bold;color:#164A2E;font-size:1.1rem;">Total: £${calculatedTotal.toFixed(2)}</td></tr>
-                        </table>
-                        <div style="background:white;border-left:5px solid #FFD93D;padding:16px 20px;border-radius:8px;color:#0E3019;line-height:1.6;">
-                            <strong>Order Reference:</strong> ${id}<br>
-                            <strong>Fulfilment:</strong> ${pickupLabel}<br><br>
+                        <p style="color:#0E3019;font-size:1.15rem;margin:0 0 4px;">Hi <strong>${fname}</strong>, thanks for your order! 🎉</p>
+                        <p style="color:#2D6040;margin:0 0 20px;">We're getting it ready with love. Here's your receipt:</p>
+
+                        <div style="background:white;border-radius:12px;padding:20px 24px;border:1px solid #e5e5d8;">
+                            <div style="font-size:0.72rem;font-weight:bold;letter-spacing:0.1em;text-transform:uppercase;color:#5A8A6A;margin-bottom:4px;">Order ${id}</div>
+                            <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
+                                ${itemRows}
+                            </table>
+                            <table style="width:100%;border-collapse:collapse;">
+                                ${totalsRows}
+                            </table>
+                        </div>
+
+                        <div style="background:#E8F5E9;border-left:5px solid #6BBF4A;padding:16px 20px;border-radius:8px;color:#0E3019;line-height:1.6;margin-top:20px;">
+                            <strong>${pickup ? '🏠 Collection' : '🚚 Postage'}</strong><br>
                             ${fulfilMsg}
                         </div>
+
                         <p style="color:#5A8A6A;font-size:0.9rem;margin-top:24px;">Any questions? Just use the chat on our website — we'd love to hear from you!</p>
                         <div style="text-align:center;margin-top:24px;">
                             <a href="https://homegrownfoods.online" style="background:#164A2E;color:#FFD93D;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:bold;">Visit Our Shop &rarr;</a>
