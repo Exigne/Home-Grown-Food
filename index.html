@@ -8,7 +8,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://js.stripe.com/v3/"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<link rel="stylesheet" href="styles.css?v=20">
+<link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js"></script>
+<link rel="stylesheet" href="styles.css?v=21">
 </head>
 <body>
 
@@ -112,6 +114,7 @@
       <div class="admin-menu-item" onclick="showAdminSection('promos',this)"><span class="admin-menu-icon">🎟️</span> Promo Codes</div>
       <div class="admin-menu-item" onclick="showAdminSection('wishlist',this)"><span class="admin-menu-icon">🔔</span> Wishlist</div>
       <div class="admin-menu-item" onclick="showAdminSection('crm',this)"><span class="admin-menu-icon">👥</span> CRM &amp; Customers</div>
+      <div class="admin-menu-item" onclick="showAdminSection('campaigns',this)"><span class="admin-menu-icon">📣</span> Campaigns</div>
       <div style="padding:1.5rem; border-top:1px solid rgba(255,255,255,0.1); margin-top:1rem;">
         <button onclick="handleLogout()" style="width:100%; background:none; border:1px solid rgba(255,255,255,0.2); color:#7DC99A; border-radius:var(--radius); padding:8px 12px; font-size:0.8rem; font-weight:700; cursor:pointer; text-align:left;">← Log Out</button>
       </div>
@@ -266,6 +269,23 @@
         </div>
       </section>
 
+
+      <!-- ══ CAMPAIGNS ══ -->
+      <section class="admin-section" id="section-campaigns">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:0.3rem;">
+          <h1 class="admin-heading" style="margin:0;">Campaigns</h1>
+          <button class="action-btn primary" onclick="openCampaignBuilder()" style="padding:12px 24px;">+ New Campaign</button>
+        </div>
+        <p class="admin-sub">Create, schedule and track email campaigns to your audience.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Campaign</th><th>Status</th><th>Audience</th><th>Sent</th><th>Opens</th><th>Clicks</th><th>Actions</th></tr></thead>
+            <tbody id="campaigns-body">
+              <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem;">Loading campaigns…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <!-- ══ CRM ══ -->
       <section class="admin-section" id="section-crm">
@@ -636,6 +656,18 @@
           <div id="crm-orders-list"></div>
         </div>
 
+        <!-- Tags -->
+        <div class="crm-panel">
+          <div class="crm-panel-title">🏷️ Tags</div>
+          <div id="crm-tags-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;"></div>
+          <div style="display:flex;gap:6px;">
+            <input type="text" id="crm-tag-input" placeholder="Add a tag (e.g. VIP)"
+                   style="flex:1;padding:7px 10px;border:2px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);font-size:0.85rem;outline:none;"
+                   onkeydown="if(event.key==='Enter') addCRMTag()">
+            <button class="action-btn primary" onclick="addCRMTag()" style="padding:7px 14px;">+ Add</button>
+          </div>
+        </div>
+
         <!-- Notes -->
         <div class="crm-panel">
           <div class="crm-panel-title">📝 Internal Notes</div>
@@ -792,6 +824,91 @@
         </div>
       </div>
 
+    </div>
+  </div>
+</div>
+
+
+<!-- ══ CAMPAIGN BUILDER MODAL ══ -->
+<div class="modal-overlay" id="campaign-modal" onclick="if(event.target.id==='campaign-modal') closeCampaignBuilder()">
+  <div class="campaign-modal">
+    <div class="modal-head" style="border-radius:20px 20px 0 0;">
+      <h2 id="campaign-modal-title">New Campaign</h2>
+      <button class="close-btn" onclick="closeCampaignBuilder()" style="color:var(--yellow);">✕</button>
+    </div>
+    <div class="campaign-body">
+
+      <!-- LEFT: builder -->
+      <div class="campaign-builder">
+        <input type="hidden" id="campaign-id">
+        <div class="form-group">
+          <label>Campaign Name <span style="font-weight:600;color:var(--text-muted);">(internal only)</span></label>
+          <input type="text" id="campaign-name" placeholder="e.g. October Newsletter">
+        </div>
+        <div class="form-group">
+          <label>Subject Line</label>
+          <input type="text" id="campaign-subject" placeholder="e.g. Fresh bakes this week! 🌿">
+        </div>
+
+        <div class="form-group">
+          <label>Audience Segment</label>
+          <select id="campaign-segment-type" onchange="onSegmentTypeChange()" style="padding:10px 12px;border:2px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);font-weight:700;background:var(--yellow-pale);cursor:pointer;width:100%;">
+            <option value="all">All Subscribers</option>
+            <option value="tag">By Tag</option>
+            <option value="recent">Ordered in last 30 days</option>
+            <option value="never">Never ordered</option>
+            <option value="vip">VIP — spent over £50</option>
+          </select>
+        </div>
+        <div class="form-group" id="segment-tag-wrap" style="display:none;">
+          <label>Select Tag</label>
+          <select id="campaign-segment-tag" style="padding:10px 12px;border:2px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);background:var(--yellow-pale);width:100%;"></select>
+        </div>
+        <div style="background:#E8F5E9;border-radius:var(--radius);padding:10px 14px;font-weight:700;color:var(--green-dark);font-size:0.88rem;margin-bottom:1rem;">
+          👥 <span id="segment-count">—</span> recipients match this segment
+        </div>
+
+        <div class="form-group">
+          <label>Email Body</label>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:6px;">Use <code style="background:#eee;padding:1px 5px;border-radius:4px;">{{first_name}}</code> to personalise. Toolbar supports headings, bold, lists, links and images.</div>
+          <div id="campaign-editor" style="min-height:260px;background:white;"></div>
+        </div>
+
+        <div id="campaign-status-msg" style="font-size:0.88rem;font-weight:700;min-height:1.3rem;margin:0.5rem 0;"></div>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <button class="action-btn" onclick="saveCampaign('draft')">💾 Save Draft</button>
+          <button class="pay-btn" onclick="saveCampaign('send')" style="margin:0;padding:12px 22px;">📧 Send Now</button>
+          <span style="color:var(--text-muted);font-weight:700;font-size:0.85rem;">or schedule:</span>
+          <input type="datetime-local" id="campaign-schedule" style="padding:8px 10px;border:2px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);">
+          <button class="action-btn primary" onclick="saveCampaign('schedule')">🗓 Schedule</button>
+        </div>
+      </div>
+
+      <!-- RIGHT: preview -->
+      <div class="campaign-preview">
+        <div style="font-size:0.72rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px;">📧 Live Preview</div>
+        <div id="campaign-preview-frame" class="broadcast-preview-frame"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══ CAMPAIGN STATS MODAL ══ -->
+<div class="modal-overlay" id="campaign-stats-modal" onclick="if(event.target.id==='campaign-stats-modal') document.getElementById('campaign-stats-modal').classList.remove('open')">
+  <div class="modal" style="width:520px;">
+    <div class="modal-head">
+      <h2 id="stats-campaign-name">Campaign Stats</h2>
+      <button class="close-btn" onclick="document.getElementById('campaign-stats-modal').classList.remove('open')" style="color:var(--yellow);">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="stats-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="stat-card"><div class="stat-label">Sent</div><div class="stat-value" id="stats-sent">0</div></div>
+        <div class="stat-card"><div class="stat-label">Delivered</div><div class="stat-value" id="stats-delivered">0</div></div>
+        <div class="stat-card"><div class="stat-label">Open Rate</div><div class="stat-value" id="stats-openrate">0%</div><div class="stat-change" id="stats-opens">0 opens</div></div>
+        <div class="stat-card"><div class="stat-label">Click Rate</div><div class="stat-value" id="stats-clickrate">0%</div><div class="stat-change" id="stats-clicks">0 clicks</div></div>
+      </div>
     </div>
   </div>
 </div>
