@@ -2099,3 +2099,39 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
   line-height: 1.6;
   margin: 1rem 0;
 }
+
+/* Delivery toggle at checkout */
+.delivery-toggle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 1rem 0;
+  padding: 14px 16px;
+  background: #E3F2FD;
+  border: 2px solid #90CAF9;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.delivery-toggle-row input { width:18px; height:18px; cursor:pointer; accent-color:var(--green-dark); flex-shrink:0; margin-top:2px; }
+.delivery-toggle-row label { cursor:pointer; font-size:0.88rem; font-weight:600; color:var(--text); line-height:1.5; }
+
+/* Quill custom font families */
+.ql-font-arial { font-family: Arial, sans-serif; }
+.ql-font-georgia { font-family: Georgia, serif; }
+.ql-font-trebuchet { font-family: 'Trebuchet MS', sans-serif; }
+.ql-font-courier { font-family: 'Courier New', monospace; }
+.ql-font-verdana { font-family: Verdana, sans-serif; }
+.ql-font-helvetica { font-family: 'Helvetica Neue', Helvetica, sans-serif; }
+/* Font picker labels in toolbar */
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="arial"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="arial"]::before { content: 'Arial'; font-family: Arial; }
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="georgia"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="georgia"]::before { content: 'Georgia'; font-family: Georgia; }
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="trebuchet"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="trebuchet"]::before { content: 'Trebuchet'; font-family: 'Trebuchet MS'; }
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="courier"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="courier"]::before { content: 'Courier'; font-family: 'Courier New'; }
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="verdana"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="verdana"]::before { content: 'Verdana'; font-family: Verdana; }
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="helvetica"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="helvetica"]::before { content: 'Helvetica'; font-family: Helvetica; }
