@@ -714,10 +714,13 @@ function openProductModal(id) {
         if (stripePriceEl) stripePriceEl.value = p.stripe_recurring_price_id || '';
         var subEnabledEl = document.getElementById('pem-subscription-enabled');
         if (subEnabledEl) subEnabledEl.checked = !!p.subscription_enabled;
+        var delEnabledEl = document.getElementById('pem-delivery-enabled');
+        if (delEnabledEl) delEnabledEl.checked = !!p.delivery_enabled;
         updateImagePreview(p.image_url || '');
     } else {
         ['pem-id','pem-name','pem-price','pem-emoji','pem-badge','pem-image','pem-stock'].forEach(id => document.getElementById(id).value = '');
         var subEl2 = document.getElementById('pem-subscription-enabled'); if (subEl2) subEl2.checked = false;
+        var delEl2 = document.getElementById('pem-delivery-enabled'); if (delEl2) delEl2.checked = false;
         document.getElementById('pem-desc').innerHTML = '';
         document.getElementById('pem-bg').value = '#FFFBE8';
         updateImagePreview('');
@@ -740,7 +743,8 @@ async function saveProductFromModal() {
         bg_color: document.getElementById('pem-bg').value,
         stock: parseInt(document.getElementById('pem-stock').value) || 0,
         stripe_recurring_price_id: stripeEl ? stripeEl.value.trim() : '',
-        subscription_enabled: (function(){ var el = document.getElementById('pem-subscription-enabled'); return el ? el.checked : false; })()
+        subscription_enabled: (function(){ var el = document.getElementById('pem-subscription-enabled'); return el ? el.checked : false; })(),
+        delivery_enabled: (function(){ var el = document.getElementById('pem-delivery-enabled'); return el ? el.checked : false; })()
     };
     const saveBtn = document.getElementById('pem-save-btn');
     saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
@@ -1133,6 +1137,35 @@ function hasDeliveryAddress() {
     return city.length > 0 && postcode.length > 0;
 }
 
+function toggleDeliveryFields() {
+    var wants   = document.getElementById('delivery-toggle') && document.getElementById('delivery-toggle').checked;
+    var fields  = document.getElementById('delivery-address-fields');
+    var notice  = document.getElementById('collection-notice');
+    if (fields) fields.style.display = wants ? 'block' : 'none';
+    if (notice) notice.style.display = wants ? 'none' : 'block';
+
+    // Sync real address fields into the hidden ones used by checkout
+    if (wants) {
+        document.getElementById('pickup-check').checked = false;
+        syncDeliveryAddress();
+    } else {
+        document.getElementById('pickup-check').checked = true;
+        document.getElementById('ch-address').value  = 'Collection';
+        document.getElementById('ch-city').value     = 'Sheffield';
+        document.getElementById('ch-postcode').value = 'COLLECT';
+    }
+    updateCheckoutTotals();
+}
+
+function syncDeliveryAddress() {
+    var a = document.getElementById('ch-address-real');
+    var c = document.getElementById('ch-city-real');
+    var p = document.getElementById('ch-postcode-real');
+    if (a) document.getElementById('ch-address').value  = a.value || '';
+    if (c) document.getElementById('ch-city').value     = c.value || '';
+    if (p) document.getElementById('ch-postcode').value = p.value || '';
+}
+
 function updateCheckoutTotals() {
     const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
     const isPickup = document.getElementById('pickup-check')?.checked || false;
@@ -1143,14 +1176,34 @@ function updateCheckoutTotals() {
     const errEl    = document.getElementById('card-errors');
     let shipping = 0, shippingLabel = '🏠 Collection';
 
-    // One-time orders are collection only. Delivery is a subscription-only perk.
+    // Delivery is offered only if the basket contains a delivery-enabled product
+    // AND the customer has chosen delivery via the toggle.
+    var cartAllowsDelivery = cart.some(function(x) { return x.delivery_enabled; });
+    var wantsDelivery = document.getElementById('delivery-toggle') && document.getElementById('delivery-toggle').checked;
+
     btn.disabled = false;
     if (errEl) errEl.textContent = '';
-    msgEl.style.color = 'var(--green-mid)';
-    msgEl.textContent = "✓ We'll have your order ready for collection.";
-    const msg = getFulfilmentMessage(true);
-    const infoEl = document.getElementById('checkout-fulfilment-info');
-    if (infoEl) { infoEl.style.display='block'; infoEl.style.background=msg.bg; infoEl.style.borderColor=msg.border; infoEl.style.color=msg.color; infoEl.innerHTML=msg.html; }
+
+    if (cartAllowsDelivery && wantsDelivery) {
+        shipping = 3.99;
+        shippingLabel = '🚚 UK Delivery (+£3.99)';
+        msgEl.style.color = 'var(--green-mid)';
+        msgEl.textContent = '✓ We\'ll deliver your order anywhere in the UK.';
+        var infoElD = document.getElementById('checkout-fulfilment-info');
+        if (infoElD) infoElD.style.display = 'none';
+    } else {
+        shipping = 0;
+        shippingLabel = '🏠 Collection';
+        msgEl.style.color = 'var(--green-mid)';
+        msgEl.textContent = "✓ We'll have your order ready for collection.";
+        const msg = getFulfilmentMessage(true);
+        const infoEl = document.getElementById('checkout-fulfilment-info');
+        if (infoEl) { infoEl.style.display='block'; infoEl.style.background=msg.bg; infoEl.style.borderColor=msg.border; infoEl.style.color=msg.color; infoEl.innerHTML=msg.html; }
+    }
+
+    // Show/hide the delivery toggle row based on whether cart allows it
+    var toggleRow = document.getElementById('delivery-toggle-row');
+    if (toggleRow) toggleRow.style.display = cartAllowsDelivery ? 'flex' : 'none';
 
     let discount = 0, discountLabel = '';
     if (appliedPromo) { discount = subtotal * (appliedPromo.discount / 100); discountLabel = `🎟️ Promo ${appliedPromo.code} (−${appliedPromo.discount}%)`; }
@@ -1256,6 +1309,9 @@ function getFulfilmentMessage(isPickup) {
 
 // ─── PROCESS PAYMENT ──────────────────────────────────────────────────────────
 async function processPayment() {
+    if (document.getElementById('delivery-toggle') && document.getElementById('delivery-toggle').checked) {
+        syncDeliveryAddress();
+    }
     const fields = [['ch-fname','First name'],['ch-lname','Last name'],['ch-email','Email'],['ch-address','Address'],['ch-city','City'],['ch-postcode','Postcode']];
     for (const [id, label] of fields) {
         if (!document.getElementById(id)?.value.trim()) { showToast(`Please enter your ${label}`); return; }
@@ -1277,7 +1333,9 @@ async function processPayment() {
     const isPickup    = document.getElementById('pickup-check')?.checked || false;
     const subtotal    = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
     const discount    = appliedPromo ? subtotal * (appliedPromo.discount / 100) : 0;
-    const shipping    = 0; // collection only for one-time orders
+    var cartAllowsDelivery = cart.some(function(x) { return x.delivery_enabled; });
+    var wantsDelivery = document.getElementById('delivery-toggle') && document.getElementById('delivery-toggle').checked;
+    const shipping    = (cartAllowsDelivery && wantsDelivery) ? 3.99 : 0;
     const total       = Math.max(0, subtotal - discount + shipping).toFixed(2);
 
     const oid             = 'HG-' + Date.now().toString().slice(-6);
@@ -1545,12 +1603,21 @@ async function openCampaignBuilder() {
     // Init Quill once, after modal is visible
     setTimeout(function() {
         if (!quillEditor) {
+            // Register custom fonts with Quill
+            var Font = Quill.import('formats/font');
+            Font.whitelist = ['arial', 'georgia', 'trebuchet', 'courier', 'verdana', 'helvetica'];
+            Quill.register(Font, true);
+
             quillEditor = new Quill('#campaign-editor', {
                 theme: 'snow',
                 modules: {
                     toolbar: [
+                        [{ font: Font.whitelist }],
+                        [{ size: ['small', false, 'large', 'huge'] }],
                         [{ header: [1, 2, 3, false] }],
                         ['bold', 'italic', 'underline'],
+                        [{ color: [] }, { background: [] }],
+                        [{ align: [] }],
                         [{ list: 'ordered' }, { list: 'bullet' }],
                         ['link', 'image'],
                         ['clean']
@@ -1558,6 +1625,28 @@ async function openCampaignBuilder() {
                 }
             });
             quillEditor.on('text-change', updateCampaignPreview);
+
+            // When an image is clicked in the editor, toggle a frame on/off
+            quillEditor.root.addEventListener('click', function(e) {
+                if (e.target && e.target.tagName === 'IMG') {
+                    if (e.target.getAttribute('data-framed') === 'true') {
+                        e.target.removeAttribute('data-framed');
+                        e.target.style.border = '';
+                        e.target.style.borderRadius = '';
+                        e.target.style.padding = '';
+                        e.target.style.boxShadow = '';
+                        showToast('Frame removed — click image again to add');
+                    } else {
+                        e.target.setAttribute('data-framed', 'true');
+                        e.target.style.border = '3px solid #164A2E';
+                        e.target.style.borderRadius = '10px';
+                        e.target.style.padding = '4px';
+                        e.target.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)';
+                        showToast('🖼️ Frame added — click image again to remove');
+                    }
+                    updateCampaignPreview();
+                }
+            });
         }
         quillEditor.setContents([]); // clear
         updateCampaignPreview();
