@@ -10,7 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js"></script>
-<link rel="stylesheet" href="styles.css?v=22">
+<link rel="stylesheet" href="styles.css?v=23">
 </head>
 <body>
 
@@ -363,14 +363,15 @@
           <div class="form-group"><label>Last Name</label><input type="text" id="ch-lname" placeholder="Smith" autocomplete="family-name"></div>
         </div>
         <div class="form-group"><label>Email</label><input type="email" id="ch-email" placeholder="jane@example.com" autocomplete="email"></div>
-        <div class="form-group"><label>Collection — no delivery address needed for one-off orders</label><input type="text" id="ch-address" placeholder="123 High Street" autocomplete="street-address"></div>
-        <div class="form-row">
-          <div class="form-group"><label>City / Town</label><input type="text" id="ch-city" placeholder="Sheffield" autocomplete="address-level2" oninput="updateCheckoutTotals()"></div>
-          <div class="form-group"><label>Postcode</label><input type="text" id="ch-postcode" placeholder="S1 2AB" autocomplete="postal-code" oninput="updateCheckoutTotals()"></div>
-        </div>
-        <div class="pickup-option" onclick="document.getElementById('pickup-check').click()">
-          <input type="checkbox" id="pickup-check" onclick="event.stopPropagation(); updateCheckoutTotals()">
-          <label for="pickup-check">🏠 <strong>I'll collect my order</strong> — Home pickup (free, Sheffield only)</label>
+
+        <!-- One-time orders are collection only. Hidden fields keep the existing JS happy. -->
+        <input type="hidden" id="ch-address" value="Collection">
+        <input type="hidden" id="ch-city" value="Sheffield">
+        <input type="hidden" id="ch-postcode" value="COLLECT">
+        <input type="checkbox" id="pickup-check" checked style="display:none;">
+
+        <div class="collection-notice">
+          🏠 <strong>Collection only</strong> — your order will be ready to collect on <strong>Friday or Saturday, 10am–1pm</strong>. We'll email you when it's ready.
         </div>
 
         <!-- GDPR marketing consent -->
