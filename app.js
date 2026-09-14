@@ -222,7 +222,9 @@ function showAdminSection(s, el) {
     const menuEl = el instanceof Element ? el : el?.currentTarget;
     if (menuEl && menuEl.classList.contains('admin-menu-item')) menuEl.classList.add('active');
     if (s === 'products') startStockPolling(); else stopStockPolling();
-    if (s === 'crm') loadCRM(); else loadAdminData();
+    if (s === 'crm') loadCRM();
+    else if (s === 'campaigns') loadCampaigns();
+    else loadAdminData();
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -1488,6 +1490,282 @@ function showToast(msg) {
     toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
 }
 
+
+// ═══════════════════════════════════════════════
+//  CAMPAIGNS
+// ═══════════════════════════════════════════════
+var campaigns       = [];
+var quillEditor     = null;
+var availableTags   = [];
+
+// ─── LOAD & RENDER LIST ──
+async function loadCampaigns() {
+    if (!adminToken) return;
+    try {
+        var res = await fetch(API_BASE + '/admin/campaigns', {
+            headers: { 'Authorization': 'Bearer ' + adminToken }
+        });
+        if (res.ok) { campaigns = await res.json(); renderCampaigns(); }
+    } catch (err) { console.error('Campaigns load failed:', err); }
+}
+
+function renderCampaigns() {
+    var tbody = document.getElementById('campaigns-body');
+    if (!tbody) return;
+    if (!campaigns.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2.5rem;">No campaigns yet. Click "New Campaign" to create your first.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = campaigns.map(function(c) {
+        var openRate  = c.sent_count > 0 ? Math.round((c.open_count / c.sent_count) * 100) : 0;
+        var clickRate = c.sent_count > 0 ? Math.round((c.click_count / c.sent_count) * 100) : 0;
+        var statusBadge = {
+            draft:     '<span class="badge" style="background:#eee;color:#666;">Draft</span>',
+            scheduled: '<span class="badge" style="background:#FFF3CD;color:#856404;">🗓 Scheduled</span>',
+            sending:   '<span class="badge" style="background:#CCE5FF;color:#004085;">Sending…</span>',
+            sent:      '<span class="badge badge-delivered">✓ Sent</span>'
+        }[c.status] || c.status;
+
+        var seg = c.segment || {};
+        var segLabel = seg.type === 'tag' ? ('Tag: ' + (seg.tag||'')) :
+                       seg.type === 'recent' ? 'Recent buyers' :
+                       seg.type === 'never'  ? 'Never ordered' :
+                       seg.type === 'vip'    ? 'VIPs' : 'All subscribers';
+
+        return '<tr>' +
+            '<td><strong>' + (c.name || 'Untitled') + '</strong><br><small style="color:var(--text-muted);">' + (c.subject || '') + '</small></td>' +
+            '<td>' + statusBadge + '</td>' +
+            '<td style="font-size:0.85rem;">' + segLabel + '</td>' +
+            '<td>' + (c.sent_count || 0) + '</td>' +
+            '<td>' + (c.status === 'sent' ? openRate + '%' : '—') + '</td>' +
+            '<td>' + (c.status === 'sent' ? clickRate + '%' : '—') + '</td>' +
+            '<td>' +
+                (c.status === 'sent'
+                    ? '<button class="action-btn" onclick="viewCampaignStats(' + c.id + ')">📊 Stats</button>'
+                    : '<button class="action-btn primary" onclick="editCampaign(' + c.id + ')">Edit</button>') +
+                ' <button class="action-btn danger" onclick="deleteCampaign(' + c.id + ')">Delete</button>' +
+            '</td>' +
+            '</tr>';
+    }).join('');
+}
+
+// ─── BUILDER ──
+async function openCampaignBuilder() {
+    document.getElementById('campaign-modal-title').textContent = 'New Campaign';
+    document.getElementById('campaign-id').value       = '';
+    document.getElementById('campaign-name').value     = '';
+    document.getElementById('campaign-subject').value  = '';
+    document.getElementById('campaign-segment-type').value = 'all';
+    document.getElementById('campaign-schedule').value = '';
+    document.getElementById('campaign-status-msg').textContent = '';
+    document.getElementById('segment-tag-wrap').style.display = 'none';
+
+    document.getElementById('campaign-modal').classList.add('open');
+
+    // Init Quill once, after modal is visible
+    setTimeout(function() {
+        if (!quillEditor) {
+            quillEditor = new Quill('#campaign-editor', {
+                theme: 'snow',
+                modules: {
+                    toolbar: [
+                        [{ header: [1, 2, 3, false] }],
+                        ['bold', 'italic', 'underline'],
+                        [{ list: 'ordered' }, { list: 'bullet' }],
+                        ['link', 'image'],
+                        ['clean']
+                    ]
+                }
+            });
+            quillEditor.on('text-change', updateCampaignPreview);
+        }
+        quillEditor.setContents([]); // clear
+        updateCampaignPreview();
+    }, 100);
+
+    await loadTagsForSegment();
+    updateSegmentCount();
+}
+
+function closeCampaignBuilder() {
+    document.getElementById('campaign-modal').classList.remove('open');
+}
+
+async function loadTagsForSegment() {
+    try {
+        var res = await fetch(API_BASE + '/admin/tags', { headers: { 'Authorization': 'Bearer ' + adminToken } });
+        if (res.ok) {
+            availableTags = await res.json();
+            var sel = document.getElementById('campaign-segment-tag');
+            sel.innerHTML = availableTags.length
+                ? availableTags.map(function(t){ return '<option value="'+t+'">'+t+'</option>'; }).join('')
+                : '<option value="">No tags yet — add tags in CRM</option>';
+        }
+    } catch(e) {}
+}
+
+function onSegmentTypeChange() {
+    var type = document.getElementById('campaign-segment-type').value;
+    document.getElementById('segment-tag-wrap').style.display = type === 'tag' ? 'block' : 'none';
+    updateSegmentCount();
+}
+
+function buildSegmentObject() {
+    var type = document.getElementById('campaign-segment-type').value;
+    var seg = { type: type };
+    if (type === 'tag')    seg.tag = document.getElementById('campaign-segment-tag').value;
+    if (type === 'recent') seg.orderedWithinDays = 30;
+    if (type === 'never')  seg.neverOrdered = true;
+    if (type === 'vip')    seg.ltvMin = 50;
+    return seg;
+}
+
+async function updateSegmentCount() {
+    var countEl = document.getElementById('segment-count');
+    if (countEl) countEl.textContent = '…';
+    try {
+        var res = await fetch(API_BASE + '/admin/segment/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+            body: JSON.stringify({ segment: buildSegmentObject() })
+        });
+        var data = await res.json();
+        if (countEl) countEl.textContent = data.count != null ? data.count : '—';
+    } catch(e) { if (countEl) countEl.textContent = '—'; }
+}
+
+function updateCampaignPreview() {
+    var previewEl = document.getElementById('campaign-preview-frame');
+    if (!previewEl || !quillEditor) return;
+    var bodyHtml = quillEditor.root.innerHTML;
+    var subject  = (document.getElementById('campaign-subject').value || '').trim();
+    var sample   = bodyHtml.split('{{first_name}}').join('Jane');
+
+    previewEl.innerHTML =
+        '<div style="font-family:Arial,sans-serif;border:2px solid #164A2E;border-radius:12px;overflow:hidden;font-size:13px;">' +
+        '<div style="background:#164A2E;padding:18px;text-align:center;"><div style="color:#FFD93D;font-size:1.3rem;font-weight:bold;">Home Grown</div></div>' +
+        (subject ? '<div style="background:#f5f5f5;padding:8px 14px;font-size:0.8rem;color:#555;border-bottom:1px solid #ddd;"><strong>Subject:</strong> ' + subject.replace(/</g,'&lt;') + '</div>' : '') +
+        '<div style="padding:24px;background:#FFFBE8;color:#0E3019;line-height:1.6;">' + sample + '</div>' +
+        '<div style="background:#164A2E;padding:12px;text-align:center;"><div style="color:#A8D97F;font-size:0.68rem;">Home Grown · Sheffield · Unsubscribe</div></div>' +
+        '</div>';
+}
+
+async function saveCampaign(action) {
+    var statusEl = document.getElementById('campaign-status-msg');
+    var name     = (document.getElementById('campaign-name').value || '').trim();
+    var subject  = (document.getElementById('campaign-subject').value || '').trim();
+    var bodyHtml = quillEditor ? quillEditor.root.innerHTML : '';
+    var id       = document.getElementById('campaign-id').value;
+
+    if (!name)    { statusEl.style.color='var(--danger)'; statusEl.textContent='Please enter a campaign name.'; return; }
+    if (!subject) { statusEl.style.color='var(--danger)'; statusEl.textContent='Please enter a subject line.'; return; }
+
+    var payload = {
+        name: name, subject: subject, body_html: bodyHtml,
+        segment: buildSegmentObject(), status: 'draft'
+    };
+
+    if (action === 'schedule') {
+        var when = document.getElementById('campaign-schedule').value;
+        if (!when) { statusEl.style.color='var(--danger)'; statusEl.textContent='Please pick a schedule date/time.'; return; }
+        payload.status = 'scheduled';
+        payload.scheduled_at = new Date(when).toISOString();
+    }
+
+    statusEl.style.color = 'var(--text-muted)';
+    statusEl.textContent = 'Saving…';
+
+    try {
+        var url    = id ? (API_BASE + '/admin/campaigns/' + id) : (API_BASE + '/admin/campaigns');
+        var method = id ? 'PUT' : 'POST';
+        var res = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+            body: JSON.stringify(payload)
+        });
+        var saved = await res.json();
+        if (!res.ok) throw new Error(saved.error || 'Save failed');
+
+        if (action === 'send') {
+            statusEl.textContent = 'Sending…';
+            var sendRes = await fetch(API_BASE + '/admin/campaigns/' + saved.id + '/send', {
+                method: 'POST', headers: { 'Authorization': 'Bearer ' + adminToken }
+            });
+            var sendData = await sendRes.json();
+            if (!sendRes.ok) throw new Error(sendData.error || 'Send failed');
+            statusEl.style.color = 'var(--success)';
+            statusEl.textContent = '✓ Sent to ' + sendData.sent + ' recipients!';
+            showToast('📣 Campaign sent to ' + sendData.sent + ' people');
+        } else {
+            statusEl.style.color = 'var(--success)';
+            statusEl.textContent = action === 'schedule' ? '✓ Scheduled!' : '✓ Draft saved!';
+            showToast(action === 'schedule' ? 'Campaign scheduled' : 'Draft saved');
+        }
+        await loadCampaigns();
+        setTimeout(closeCampaignBuilder, 1200);
+    } catch (err) {
+        statusEl.style.color = 'var(--danger)';
+        statusEl.textContent = 'Failed: ' + err.message;
+    }
+}
+
+async function editCampaign(id) {
+    var c = campaigns.find(function(x){ return x.id === id; });
+    if (!c) return;
+    await openCampaignBuilder();
+    document.getElementById('campaign-modal-title').textContent = 'Edit Campaign';
+    document.getElementById('campaign-id').value      = c.id;
+    document.getElementById('campaign-name').value    = c.name || '';
+    document.getElementById('campaign-subject').value = c.subject || '';
+    var seg = c.segment || {};
+    document.getElementById('campaign-segment-type').value = seg.type || 'all';
+    onSegmentTypeChange();
+    if (seg.type === 'tag' && seg.tag) {
+        document.getElementById('campaign-segment-tag').value = seg.tag;
+    }
+    setTimeout(function() {
+        if (quillEditor) { quillEditor.root.innerHTML = c.body_html || ''; updateCampaignPreview(); }
+    }, 200);
+    updateSegmentCount();
+}
+
+async function deleteCampaign(id) {
+    if (!confirm('Delete this campaign?')) return;
+    try {
+        await fetch(API_BASE + '/admin/campaigns/' + id, {
+            method: 'DELETE', headers: { 'Authorization': 'Bearer ' + adminToken }
+        });
+        showToast('Campaign deleted');
+        await loadCampaigns();
+    } catch(e) { showToast('Delete failed'); }
+}
+
+function viewCampaignStats(id) {
+    var c = campaigns.find(function(x){ return x.id === id; });
+    if (!c) return;
+    var openRate  = c.sent_count > 0 ? Math.round((c.open_count / c.sent_count) * 100) : 0;
+    var clickRate = c.sent_count > 0 ? Math.round((c.click_count / c.sent_count) * 100) : 0;
+    document.getElementById('stats-campaign-name').textContent = c.name || 'Campaign Stats';
+    document.getElementById('stats-sent').textContent      = c.sent_count || 0;
+    document.getElementById('stats-delivered').textContent = c.sent_count || 0;
+    document.getElementById('stats-openrate').textContent  = openRate + '%';
+    document.getElementById('stats-opens').textContent     = (c.open_count || 0) + ' opens';
+    document.getElementById('stats-clickrate').textContent = clickRate + '%';
+    document.getElementById('stats-clicks').textContent    = (c.click_count || 0) + ' clicks';
+    document.getElementById('campaign-stats-modal').classList.add('open');
+}
+
+// Wire segment type + subject change to preview/count
+document.addEventListener('DOMContentLoaded', function() {
+    var st = document.getElementById('campaign-segment-type');
+    var st2 = document.getElementById('campaign-segment-tag');
+    var subj = document.getElementById('campaign-subject');
+    if (st)  st.addEventListener('change', updateSegmentCount);
+    if (st2) st2.addEventListener('change', updateSegmentCount);
+    if (subj) subj.addEventListener('input', updateCampaignPreview);
+});
+
+
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
 initApp();
 
@@ -1875,6 +2153,59 @@ function renderCustomerProfile() {
     renderCRMOrders(c);
     renderCRMOverview(c);
     renderCRMComms(c);
+    loadCRMTags();
+}
+
+// ─── CRM TAGS ──
+async function loadCRMTags() {
+    if (!crmCurrentProfile) return;
+    var primaryEmail = (crmCurrentProfile.emails && crmCurrentProfile.emails[0]) || crmCurrentProfile.email;
+    try {
+        var res = await fetch(API_BASE + '/admin/tags/' + encodeURIComponent(primaryEmail), {
+            headers: { 'Authorization': 'Bearer ' + adminToken }
+        });
+        var tags = res.ok ? await res.json() : [];
+        renderCRMTags(tags);
+    } catch(e) { renderCRMTags([]); }
+}
+
+function renderCRMTags(tags) {
+    var el = document.getElementById('crm-tags-list');
+    if (!el) return;
+    el.innerHTML = tags.length ? tags.map(function(t) {
+        return '<span style="display:inline-flex;align-items:center;gap:5px;background:var(--green-dark);color:var(--yellow);border-radius:999px;padding:3px 10px;font-size:0.78rem;font-weight:700;">'
+            + t + ' <span style="cursor:pointer;opacity:0.7;" onclick="removeCRMTag(\'' + t.replace(/'/g,"&#39;") + '\')">✕</span></span>';
+    }).join('') : '<span style="color:var(--text-muted);font-size:0.85rem;font-weight:600;">No tags yet.</span>';
+}
+
+async function addCRMTag() {
+    var input = document.getElementById('crm-tag-input');
+    var tag   = (input.value || '').trim();
+    if (!tag || !crmCurrentProfile) return;
+    var primaryEmail = (crmCurrentProfile.emails && crmCurrentProfile.emails[0]) || crmCurrentProfile.email;
+    try {
+        await fetch(API_BASE + '/admin/tags', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+            body: JSON.stringify({ email: primaryEmail, tag: tag })
+        });
+        input.value = '';
+        showToast('🏷️ Tag added');
+        loadCRMTags();
+    } catch(e) { showToast('Failed to add tag'); }
+}
+
+async function removeCRMTag(tag) {
+    if (!crmCurrentProfile) return;
+    var primaryEmail = (crmCurrentProfile.emails && crmCurrentProfile.emails[0]) || crmCurrentProfile.email;
+    try {
+        await fetch(API_BASE + '/admin/tags', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+            body: JSON.stringify({ email: primaryEmail, tag: tag })
+        });
+        loadCRMTags();
+    } catch(e) { showToast('Failed to remove tag'); }
 }
 
 // ─── PRODUCT CHART ────────────────────────────────────────────────────────────
