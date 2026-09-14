@@ -340,7 +340,7 @@ function renderShop() {
                      </button>
                      <button class="mode-btn" id="mode-sub-${p.id}"
                              onclick="setProductMode(${p.id},'sub')">
-                       <span class="mode-label">📦 Monthly</span>
+                       <span class="mode-label">📦 Monthly + Delivery</span>
                        <span class="mode-price">£${(Number(p.price)+3.99).toFixed(2)}/mo</span>
                      </button>
                    </div>
@@ -1094,7 +1094,7 @@ function updateCartUI() {
             const unitPrice = item.displayPrice !== undefined ? item.displayPrice : parseFloat(item.price);
             const lineTotal = (unitPrice * item.qty).toFixed(2);
             const priceLabel = isSub
-                ? `£${unitPrice.toFixed(2)}/wk <span style="background:#E8F5E9;color:var(--green-dark);border-radius:999px;padding:1px 7px;font-size:0.7rem;font-weight:800;margin-left:4px;">📦 Weekly</span>`
+                ? `£${unitPrice.toFixed(2)}/mo <span style="background:#E8F5E9;color:var(--green-dark);border-radius:999px;padding:1px 7px;font-size:0.7rem;font-weight:800;margin-left:4px;">📦 Monthly inc. £3.99 delivery</span>`
                 : `£${unitPrice.toFixed(2)} each`;
             return `<div class="cart-item">
               <div class="cart-item-emoji">${item.emoji || '🍪'}</div>
@@ -1108,7 +1108,7 @@ function updateCartUI() {
                 </div>
               </div>
               <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
-                <span style="font-weight:800;font-size:0.95rem;color:var(--green-dark);">£${lineTotal}${isSub ? '/wk' : ''}</span>
+                <span style="font-weight:800;font-size:0.95rem;color:var(--green-dark);">£${lineTotal}${isSub ? '/mo' : ''}</span>
                 <button class="remove-item" onclick="removeFromCart(${item.id})" title="Remove">🗑</button>
               </div>
             </div>`;
@@ -1141,30 +1141,16 @@ function updateCheckoutTotals() {
     const btn      = document.getElementById('pay-btn');
     const msgEl    = document.getElementById('delivery-message');
     const errEl    = document.getElementById('card-errors');
-    let shipping = 0, shippingLabel = '';
+    let shipping = 0, shippingLabel = '🏠 Collection';
 
-    if (isPickup) {
-        shipping = 0; shippingLabel = '🏠 Home Pickup';
-        btn.disabled = false;
-        msgEl.style.color = 'var(--green-mid)'; msgEl.textContent = "✓ Great! We'll have your order ready for collection.";
-        if (errEl) errEl.textContent = '';
-        const msg = getFulfilmentMessage(true);
-        const infoEl = document.getElementById('checkout-fulfilment-info');
-        if (infoEl) { infoEl.style.display='block'; infoEl.style.background=msg.bg; infoEl.style.borderColor=msg.border; infoEl.style.color=msg.color; infoEl.innerHTML=msg.html; }
-    } else {
-        const hasAddr = city.length > 0 && postcode.length > 0;
-        if (!hasAddr) {
-            shipping = 0; shippingLabel = '🚚 UK Delivery £3.99 (enter address above)';
-            btn.disabled = false; msgEl.textContent = '';
-            const infoEl = document.getElementById('checkout-fulfilment-info'); if (infoEl) infoEl.style.display='none';
-        } else {
-            shipping = 3.99; shippingLabel = '🚚 UK Delivery (+£3.99)';
-            btn.disabled = false;
-            msgEl.style.color = 'var(--green-mid)'; msgEl.textContent = '✓ We deliver anywhere in the UK!';
-            if (errEl) errEl.textContent = '';
-            const infoEl = document.getElementById('checkout-fulfilment-info'); if (infoEl) infoEl.style.display='none';
-        }
-    }
+    // One-time orders are collection only. Delivery is a subscription-only perk.
+    btn.disabled = false;
+    if (errEl) errEl.textContent = '';
+    msgEl.style.color = 'var(--green-mid)';
+    msgEl.textContent = "✓ We'll have your order ready for collection.";
+    const msg = getFulfilmentMessage(true);
+    const infoEl = document.getElementById('checkout-fulfilment-info');
+    if (infoEl) { infoEl.style.display='block'; infoEl.style.background=msg.bg; infoEl.style.borderColor=msg.border; infoEl.style.color=msg.color; infoEl.innerHTML=msg.html; }
 
     let discount = 0, discountLabel = '';
     if (appliedPromo) { discount = subtotal * (appliedPromo.discount / 100); discountLabel = `🎟️ Promo ${appliedPromo.code} (−${appliedPromo.discount}%)`; }
@@ -1291,14 +1277,8 @@ async function processPayment() {
     const isPickup    = document.getElementById('pickup-check')?.checked || false;
     const subtotal    = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
     const discount    = appliedPromo ? subtotal * (appliedPromo.discount / 100) : 0;
-    const shipping    = isPickup ? 0 : (hasDeliveryAddress() ? 3.99 : 0);
+    const shipping    = 0; // collection only for one-time orders
     const total       = Math.max(0, subtotal - discount + shipping).toFixed(2);
-
-    if (!isPickup && !hasDeliveryAddress()) {
-        showToast('Please enter your delivery address and postcode.');
-        btn.disabled = false; btn.innerHTML = `🌿 Place Order — <span id="pay-amount">£${total}</span>`;
-        return;
-    }
 
     const oid             = 'HG-' + Date.now().toString().slice(-6);
     const secureCartItems = cart.map(i => ({ id: i.id, qty: i.qty }));
@@ -1634,20 +1614,56 @@ async function updateSegmentCount() {
     } catch(e) { if (countEl) countEl.textContent = '—'; }
 }
 
+function getCampaignStyle() {
+    var g = function(id, def) { var el = document.getElementById(id); return el ? el.value : def; };
+    return {
+        headerColor: g('campaign-header-color', '#164A2E'),
+        headerText:  g('campaign-header-text', '#FFD93D'),
+        bodyBg:      g('campaign-body-bg', '#FFFBE8'),
+        btnColor:    g('campaign-btn-color', '#164A2E'),
+        font:        g('campaign-font', 'Arial, sans-serif'),
+        headerStyle: g('campaign-header-style', 'brand'),
+        headingText: g('campaign-heading-text', '')
+    };
+}
+
+// Build the full styled campaign email HTML (used for preview and sending)
+function buildCampaignHTML(bodyHtml, style) {
+    style = style || getCampaignStyle();
+    var header = '';
+    if (style.headerStyle === 'brand') {
+        header = '<div style="background:' + style.headerColor + ';padding:22px;text-align:center;">' +
+                 '<div style="color:' + style.headerText + ';font-size:1.6rem;font-weight:bold;letter-spacing:0.03em;">Home Grown</div>' +
+                 '<div style="color:' + style.headerText + ';opacity:0.75;font-size:0.7rem;letter-spacing:0.12em;text-transform:uppercase;margin-top:4px;">Food That Makes You Feel Good</div>' +
+                 '</div>';
+    } else if (style.headerStyle === 'text' && style.headingText) {
+        header = '<div style="background:' + style.headerColor + ';padding:22px;text-align:center;">' +
+                 '<div style="color:' + style.headerText + ';font-size:1.4rem;font-weight:bold;">' + style.headingText.replace(/</g,'&lt;') + '</div></div>';
+    }
+    return '<div style="font-family:' + style.font + ';max-width:600px;margin:0 auto;border:2px solid ' + style.headerColor + ';border-radius:14px;overflow:hidden;">' +
+        header +
+        '<div style="padding:28px;background:' + style.bodyBg + ';color:#0E3019;line-height:1.7;">' + bodyHtml + '</div>' +
+        '<div style="background:' + style.headerColor + ';padding:12px;text-align:center;">' +
+        '<div style="color:' + style.headerText + ';opacity:0.7;font-size:0.7rem;">Home Grown · Handmade in Sheffield · homegrownfoods.online</div>' +
+        '</div></div>';
+}
+
 function updateCampaignPreview() {
     var previewEl = document.getElementById('campaign-preview-frame');
     if (!previewEl || !quillEditor) return;
-    var bodyHtml = quillEditor.root.innerHTML;
+
+    // Toggle custom heading input visibility
+    var hStyle = document.getElementById('campaign-header-style');
+    var hWrap  = document.getElementById('campaign-heading-wrap');
+    if (hStyle && hWrap) hWrap.style.display = hStyle.value === 'text' ? 'block' : 'none';
+
+    var bodyHtml = quillEditor.root.innerHTML.split('{{first_name}}').join('Jane');
     var subject  = (document.getElementById('campaign-subject').value || '').trim();
-    var sample   = bodyHtml.split('{{first_name}}').join('Jane');
+    var shell    = buildCampaignHTML(bodyHtml, getCampaignStyle());
 
     previewEl.innerHTML =
-        '<div style="font-family:Arial,sans-serif;border:2px solid #164A2E;border-radius:12px;overflow:hidden;font-size:13px;">' +
-        '<div style="background:#164A2E;padding:18px;text-align:center;"><div style="color:#FFD93D;font-size:1.3rem;font-weight:bold;">Home Grown</div></div>' +
-        (subject ? '<div style="background:#f5f5f5;padding:8px 14px;font-size:0.8rem;color:#555;border-bottom:1px solid #ddd;"><strong>Subject:</strong> ' + subject.replace(/</g,'&lt;') + '</div>' : '') +
-        '<div style="padding:24px;background:#FFFBE8;color:#0E3019;line-height:1.6;">' + sample + '</div>' +
-        '<div style="background:#164A2E;padding:12px;text-align:center;"><div style="color:#A8D97F;font-size:0.68rem;">Home Grown · Sheffield · Unsubscribe</div></div>' +
-        '</div>';
+        (subject ? '<div style="background:#f5f5f5;padding:8px 14px;font-size:0.8rem;color:#555;border-bottom:1px solid #ddd;margin-bottom:8px;border-radius:4px;"><strong>Subject:</strong> ' + subject.replace(/</g,'&lt;') + '</div>' : '') +
+        shell;
 }
 
 async function saveCampaign(action) {
@@ -1660,8 +1676,10 @@ async function saveCampaign(action) {
     if (!name)    { statusEl.style.color='var(--danger)'; statusEl.textContent='Please enter a campaign name.'; return; }
     if (!subject) { statusEl.style.color='var(--danger)'; statusEl.textContent='Please enter a subject line.'; return; }
 
+    // Wrap the raw editor content in the styled shell so the sent email is fully branded
+    var styledHtml = buildCampaignHTML(bodyHtml, getCampaignStyle());
     var payload = {
-        name: name, subject: subject, body_html: bodyHtml,
+        name: name, subject: subject, body_html: styledHtml,
         segment: buildSegmentObject(), status: 'draft'
     };
 
