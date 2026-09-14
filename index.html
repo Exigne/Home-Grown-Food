@@ -10,7 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js"></script>
-<link rel="stylesheet" href="styles.css?v=21">
+<link rel="stylesheet" href="styles.css?v=22">
 </head>
 <body>
 
@@ -363,7 +363,7 @@
           <div class="form-group"><label>Last Name</label><input type="text" id="ch-lname" placeholder="Smith" autocomplete="family-name"></div>
         </div>
         <div class="form-group"><label>Email</label><input type="email" id="ch-email" placeholder="jane@example.com" autocomplete="email"></div>
-        <div class="form-group"><label>Delivery Address <span style="font-weight:600;color:var(--text-muted);font-size:0.78rem;">(UK-wide delivery £3.99)</span></label><input type="text" id="ch-address" placeholder="123 High Street" autocomplete="street-address"></div>
+        <div class="form-group"><label>Collection — no delivery address needed for one-off orders</label><input type="text" id="ch-address" placeholder="123 High Street" autocomplete="street-address"></div>
         <div class="form-row">
           <div class="form-group"><label>City / Town</label><input type="text" id="ch-city" placeholder="Sheffield" autocomplete="address-level2" oninput="updateCheckoutTotals()"></div>
           <div class="form-group"><label>Postcode</label><input type="text" id="ch-postcode" placeholder="S1 2AB" autocomplete="postal-code" oninput="updateCheckoutTotals()"></div>
@@ -850,6 +850,56 @@
           <input type="text" id="campaign-subject" placeholder="e.g. Fresh bakes this week! 🌿">
         </div>
 
+        <!-- Email shell styling -->
+        <div style="background:var(--white);border:2px solid var(--border);border-radius:var(--radius);padding:1rem;margin-bottom:1rem;">
+          <div style="font-size:0.75rem;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:var(--green-mid);margin-bottom:12px;">🎨 Email Design</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label style="font-size:0.8rem;">Header Colour</label>
+              <input type="color" id="campaign-header-color" value="#164A2E" onchange="updateCampaignPreview()" style="height:42px;width:100%;cursor:pointer;">
+            </div>
+            <div class="form-group">
+              <label style="font-size:0.8rem;">Header Text Colour</label>
+              <input type="color" id="campaign-header-text" value="#FFD93D" onchange="updateCampaignPreview()" style="height:42px;width:100%;cursor:pointer;">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label style="font-size:0.8rem;">Body Background</label>
+              <input type="color" id="campaign-body-bg" value="#FFFBE8" onchange="updateCampaignPreview()" style="height:42px;width:100%;cursor:pointer;">
+            </div>
+            <div class="form-group">
+              <label style="font-size:0.8rem;">Button Colour</label>
+              <input type="color" id="campaign-btn-color" value="#164A2E" onchange="updateCampaignPreview()" style="height:42px;width:100%;cursor:pointer;">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label style="font-size:0.8rem;">Font</label>
+              <select id="campaign-font" onchange="updateCampaignPreview()" style="padding:9px 10px;border:2px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);background:var(--yellow-pale);width:100%;cursor:pointer;">
+                <option value="Arial, sans-serif">Arial (classic)</option>
+                <option value="Georgia, serif">Georgia (elegant serif)</option>
+                <option value="'Trebuchet MS', sans-serif">Trebuchet (friendly)</option>
+                <option value="'Courier New', monospace">Courier (typewriter)</option>
+                <option value="Verdana, sans-serif">Verdana (clean)</option>
+                <option value="'Helvetica Neue', sans-serif">Helvetica (modern)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label style="font-size:0.8rem;">Header Style</label>
+              <select id="campaign-header-style" onchange="updateCampaignPreview()" style="padding:9px 10px;border:2px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);background:var(--yellow-pale);width:100%;cursor:pointer;">
+                <option value="brand">Show "Home Grown" logo</option>
+                <option value="minimal">Minimal — no header</option>
+                <option value="text">Custom heading text</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group" id="campaign-heading-wrap" style="display:none;">
+            <label style="font-size:0.8rem;">Custom Heading Text</label>
+            <input type="text" id="campaign-heading-text" placeholder="e.g. Autumn Specials" oninput="updateCampaignPreview()">
+          </div>
+        </div>
+
         <div class="form-group">
           <label>Audience Segment</label>
           <select id="campaign-segment-type" onchange="onSegmentTypeChange()" style="padding:10px 12px;border:2px solid var(--border);border-radius:var(--radius);font-family:var(--font-body);font-weight:700;background:var(--yellow-pale);cursor:pointer;width:100%;">
@@ -916,6 +966,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="app.js?v=31"></script>
+<script src="app.js?v=32"></script>
 </body>
 </html>
