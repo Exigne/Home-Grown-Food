@@ -10,7 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js"></script>
-<link rel="stylesheet" href="styles.css?v=23">
+<link rel="stylesheet" href="styles.css?v=24">
 </head>
 <body>
 
@@ -364,13 +364,28 @@
         </div>
         <div class="form-group"><label>Email</label><input type="email" id="ch-email" placeholder="jane@example.com" autocomplete="email"></div>
 
-        <!-- One-time orders are collection only. Hidden fields keep the existing JS happy. -->
+        <!-- Delivery toggle — only shown if cart has a delivery-enabled product -->
+        <div id="delivery-toggle-row" class="delivery-toggle-row" style="display:none;">
+          <input type="checkbox" id="delivery-toggle" onchange="toggleDeliveryFields()">
+          <label for="delivery-toggle">🚚 <strong>Deliver my order</strong> — UK-wide delivery (+£3.99). Leave unticked to collect for free.</label>
+        </div>
+
+        <!-- Delivery address — shown only when delivery toggle is on -->
+        <div id="delivery-address-fields" style="display:none;">
+          <div class="form-group"><label>Delivery Address</label><input type="text" id="ch-address-real" placeholder="123 High Street" autocomplete="street-address" oninput="syncDeliveryAddress()"></div>
+          <div class="form-row">
+            <div class="form-group"><label>City / Town</label><input type="text" id="ch-city-real" placeholder="Sheffield" autocomplete="address-level2" oninput="syncDeliveryAddress()"></div>
+            <div class="form-group"><label>Postcode</label><input type="text" id="ch-postcode-real" placeholder="S1 2AB" autocomplete="postal-code" oninput="syncDeliveryAddress()"></div>
+          </div>
+        </div>
+
+        <!-- Hidden fields keep existing JS working -->
         <input type="hidden" id="ch-address" value="Collection">
         <input type="hidden" id="ch-city" value="Sheffield">
         <input type="hidden" id="ch-postcode" value="COLLECT">
         <input type="checkbox" id="pickup-check" checked style="display:none;">
 
-        <div class="collection-notice">
+        <div class="collection-notice" id="collection-notice">
           🏠 <strong>Collection only</strong> — your order will be ready to collect on <strong>Friday or Saturday, 10am–1pm</strong>. We'll email you when it's ready.
         </div>
 
@@ -485,6 +500,13 @@
         <div>
           <label for="pem-subscription-enabled" style="cursor:pointer;font-weight:800;color:var(--green-dark);font-size:0.95rem;">Enable Monthly Subscription</label>
           <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Shows a One-time / 📦 Monthly toggle on the product card. Requires a Stripe recurring price ID above.</div>
+        </div>
+      </div>
+      <div class="form-group" style="flex-direction:row;align-items:center;gap:12px;background:#E3F2FD;border:2px solid #90CAF9;border-radius:var(--radius);padding:14px 16px;">
+        <input type="checkbox" id="pem-delivery-enabled" style="width:20px;height:20px;cursor:pointer;accent-color:var(--green-dark);flex-shrink:0;">
+        <div>
+          <label for="pem-delivery-enabled" style="cursor:pointer;font-weight:800;color:#0D47A1;font-size:0.95rem;">Offer UK Delivery (£3.99)</label>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Lets customers choose delivery (+£3.99 flat fee) instead of collection for one-off orders of this product.</div>
         </div>
       </div>
       <div class="form-group full">
@@ -967,6 +989,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="app.js?v=32"></script>
+<script src="app.js?v=33"></script>
 </body>
 </html>
