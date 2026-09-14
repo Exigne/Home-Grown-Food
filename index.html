@@ -10,7 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js"></script>
-<link rel="stylesheet" href="styles.css?v=24">
+<link rel="stylesheet" href="styles.css?v=25">
 </head>
 <body>
 
@@ -367,12 +367,12 @@
         <!-- Delivery toggle — only shown if cart has a delivery-enabled product -->
         <div id="delivery-toggle-row" class="delivery-toggle-row" style="display:none;">
           <input type="checkbox" id="delivery-toggle" onchange="toggleDeliveryFields()">
-          <label for="delivery-toggle">🚚 <strong>Deliver my order</strong> — UK-wide delivery (+£3.99). Leave unticked to collect for free.</label>
+          <label for="delivery-toggle">🚚 <strong>Post my order</strong> — UK-wide postage (+£3.99). Leave unticked to collect for free.</label>
         </div>
 
         <!-- Delivery address — shown only when delivery toggle is on -->
         <div id="delivery-address-fields" style="display:none;">
-          <div class="form-group"><label>Delivery Address</label><input type="text" id="ch-address-real" placeholder="123 High Street" autocomplete="street-address" oninput="syncDeliveryAddress()"></div>
+          <div class="form-group"><label>Postage Address</label><input type="text" id="ch-address-real" placeholder="123 High Street" autocomplete="street-address" oninput="syncDeliveryAddress()"></div>
           <div class="form-row">
             <div class="form-group"><label>City / Town</label><input type="text" id="ch-city-real" placeholder="Sheffield" autocomplete="address-level2" oninput="syncDeliveryAddress()"></div>
             <div class="form-group"><label>Postcode</label><input type="text" id="ch-postcode-real" placeholder="S1 2AB" autocomplete="postal-code" oninput="syncDeliveryAddress()"></div>
@@ -493,7 +493,7 @@
       <div class="form-group">
         <label>Stripe Recurring Price ID <span style="font-weight:600;color:var(--text-muted);">(monthly subscription)</span></label>
         <input type="text" id="pem-stripe-recurring" placeholder="price_1ABC... — create in Stripe Dashboard → Products → Add monthly price">
-        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;">Create a monthly recurring price in Stripe and paste the price_xxx ID here. £3.99 delivery is added automatically on top.</div>
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;">Create a monthly recurring price in Stripe and paste the price_xxx ID here. £3.99 postage is added automatically on top.</div>
       </div>
       <div class="form-group" style="flex-direction:row;align-items:center;gap:12px;background:#E8F5E9;border:2px solid #A5D6A7;border-radius:var(--radius);padding:14px 16px;">
         <input type="checkbox" id="pem-subscription-enabled" style="width:20px;height:20px;cursor:pointer;accent-color:var(--green-dark);flex-shrink:0;">
@@ -505,8 +505,8 @@
       <div class="form-group" style="flex-direction:row;align-items:center;gap:12px;background:#E3F2FD;border:2px solid #90CAF9;border-radius:var(--radius);padding:14px 16px;">
         <input type="checkbox" id="pem-delivery-enabled" style="width:20px;height:20px;cursor:pointer;accent-color:var(--green-dark);flex-shrink:0;">
         <div>
-          <label for="pem-delivery-enabled" style="cursor:pointer;font-weight:800;color:#0D47A1;font-size:0.95rem;">Offer UK Delivery (£3.99)</label>
-          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Lets customers choose delivery (+£3.99 flat fee) instead of collection for one-off orders of this product.</div>
+          <label for="pem-delivery-enabled" style="cursor:pointer;font-weight:800;color:#0D47A1;font-size:0.95rem;">Offer UK Postage (£3.99)</label>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Lets customers choose postage (+£3.99 flat fee) instead of collection for one-off orders of this product.</div>
         </div>
       </div>
       <div class="form-group full">
@@ -989,6 +989,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="app.js?v=33"></script>
+<script src="app.js?v=34"></script>
 </body>
 </html>
