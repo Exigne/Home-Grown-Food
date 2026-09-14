@@ -2031,3 +2031,58 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
 .mode-label { display: block; font-size: 0.65rem; opacity: 0.85; }
 .mode-price  { display: block; font-size: 0.88rem; font-weight: 900; }
 .mode-btn.mode-active .mode-label { opacity: 1; }
+
+/* ══════════════════════════════════════════════
+   CAMPAIGNS
+══════════════════════════════════════════════ */
+.campaign-modal {
+  background: var(--white);
+  border-radius: 20px;
+  border: 3px solid var(--green-dark);
+  box-shadow: 0 32px 80px rgba(10,35,20,0.45);
+  width: 95vw;
+  max-width: 1300px;
+  height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.campaign-body {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+.campaign-builder {
+  padding: 1.5rem;
+  overflow-y: auto;
+  border-right: 2px solid var(--border);
+  background: var(--yellow-pale);
+}
+.campaign-preview {
+  padding: 1.5rem;
+  overflow-y: auto;
+  background: var(--white);
+  display: flex;
+  flex-direction: column;
+}
+/* Quill overrides to match brand */
+.ql-toolbar.ql-snow {
+  border: 2px solid var(--border) !important;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--white);
+}
+.ql-container.ql-snow {
+  border: 2px solid var(--border) !important;
+  border-top: none !important;
+  border-radius: 0 0 var(--radius) var(--radius);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+}
+.ql-editor { min-height: 240px; }
+
+@media (max-width: 900px) {
+  .campaign-body { grid-template-columns: 1fr; }
+  .campaign-preview { display: none; }
+}
