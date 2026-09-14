@@ -340,7 +340,7 @@ function renderShop() {
                      </button>
                      <button class="mode-btn" id="mode-sub-${p.id}"
                              onclick="setProductMode(${p.id},'sub')">
-                       <span class="mode-label">📦 Monthly + Delivery</span>
+                       <span class="mode-label">📦 Monthly + Postage</span>
                        <span class="mode-price">£${(Number(p.price)+3.99).toFixed(2)}/mo</span>
                      </button>
                    </div>
@@ -1098,7 +1098,7 @@ function updateCartUI() {
             const unitPrice = item.displayPrice !== undefined ? item.displayPrice : parseFloat(item.price);
             const lineTotal = (unitPrice * item.qty).toFixed(2);
             const priceLabel = isSub
-                ? `£${unitPrice.toFixed(2)}/mo <span style="background:#E8F5E9;color:var(--green-dark);border-radius:999px;padding:1px 7px;font-size:0.7rem;font-weight:800;margin-left:4px;">📦 Monthly inc. £3.99 delivery</span>`
+                ? `£${unitPrice.toFixed(2)}/mo <span style="background:#E8F5E9;color:var(--green-dark);border-radius:999px;padding:1px 7px;font-size:0.7rem;font-weight:800;margin-left:4px;">📦 Monthly inc. £3.99 postage</span>`
                 : `£${unitPrice.toFixed(2)} each`;
             return `<div class="cart-item">
               <div class="cart-item-emoji">${item.emoji || '🍪'}</div>
@@ -1125,9 +1125,15 @@ function updateCartUI() {
         document.getElementById('cart-total-amount').textContent = '£' + displaySubtotal.toFixed(2);
         footerEl.style.display = 'block';
     }
+    refreshCheckoutIfOpen();
 }
 
 function toggleCart() { document.getElementById('cart-overlay').classList.toggle('open'); }
+// Keep checkout postage option in sync if the checkout modal is open
+function refreshCheckoutIfOpen() {
+    var modal = document.getElementById('checkout-modal');
+    if (modal && modal.classList.contains('open')) updateCheckoutTotals();
+}
 function closeCartOnOverlay(e) { if (e.target.id === 'cart-overlay') toggleCart(); }
 
 // ─── CHECKOUT ─────────────────────────────────────────────────────────────────
@@ -1178,7 +1184,7 @@ function updateCheckoutTotals() {
 
     // Delivery is offered only if the basket contains a delivery-enabled product
     // AND the customer has chosen delivery via the toggle.
-    var cartAllowsDelivery = cart.some(function(x) { return x.delivery_enabled; });
+    var cartAllowsDelivery = cart.length > 0 && cart.every(function(x) { return x.delivery_enabled; });
     var wantsDelivery = document.getElementById('delivery-toggle') && document.getElementById('delivery-toggle').checked;
 
     btn.disabled = false;
@@ -1186,9 +1192,9 @@ function updateCheckoutTotals() {
 
     if (cartAllowsDelivery && wantsDelivery) {
         shipping = 3.99;
-        shippingLabel = '🚚 UK Delivery (+£3.99)';
+        shippingLabel = '🚚 UK Postage (+£3.99)';
         msgEl.style.color = 'var(--green-mid)';
-        msgEl.textContent = '✓ We\'ll deliver your order anywhere in the UK.';
+        msgEl.textContent = '✓ We\'ll post your order anywhere in the UK.';
         var infoElD = document.getElementById('checkout-fulfilment-info');
         if (infoElD) infoElD.style.display = 'none';
     } else {
@@ -1201,9 +1207,24 @@ function updateCheckoutTotals() {
         if (infoEl) { infoEl.style.display='block'; infoEl.style.background=msg.bg; infoEl.style.borderColor=msg.border; infoEl.style.color=msg.color; infoEl.innerHTML=msg.html; }
     }
 
-    // Show/hide the delivery toggle row based on whether cart allows it
+    // Show/hide the postage toggle row based on whether cart allows it
     var toggleRow = document.getElementById('delivery-toggle-row');
     if (toggleRow) toggleRow.style.display = cartAllowsDelivery ? 'flex' : 'none';
+    // If cart no longer qualifies for postage, force the toggle off + hide address
+    if (!cartAllowsDelivery) {
+        var dt = document.getElementById('delivery-toggle');
+        if (dt && dt.checked) {
+            dt.checked = false;
+            var df = document.getElementById('delivery-address-fields');
+            var cn = document.getElementById('collection-notice');
+            if (df) df.style.display = 'none';
+            if (cn) cn.style.display = 'block';
+            var pc = document.getElementById('pickup-check'); if (pc) pc.checked = true;
+            document.getElementById('ch-address').value  = 'Collection';
+            document.getElementById('ch-city').value     = 'Sheffield';
+            document.getElementById('ch-postcode').value = 'COLLECT';
+        }
+    }
 
     let discount = 0, discountLabel = '';
     if (appliedPromo) { discount = subtotal * (appliedPromo.discount / 100); discountLabel = `🎟️ Promo ${appliedPromo.code} (−${appliedPromo.discount}%)`; }
@@ -1333,7 +1354,7 @@ async function processPayment() {
     const isPickup    = document.getElementById('pickup-check')?.checked || false;
     const subtotal    = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
     const discount    = appliedPromo ? subtotal * (appliedPromo.discount / 100) : 0;
-    var cartAllowsDelivery = cart.some(function(x) { return x.delivery_enabled; });
+    var cartAllowsDelivery = cart.length > 0 && cart.every(function(x) { return x.delivery_enabled; });
     var wantsDelivery = document.getElementById('delivery-toggle') && document.getElementById('delivery-toggle').checked;
     const shipping    = (cartAllowsDelivery && wantsDelivery) ? 3.99 : 0;
     const total       = Math.max(0, subtotal - discount + shipping).toFixed(2);
