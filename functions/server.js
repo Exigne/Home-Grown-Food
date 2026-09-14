@@ -289,6 +289,56 @@ app.post('/api/orders', async (req, res) => {
             console.warn('Admin email failed:', emailError);
         }
 
+        // ─── CUSTOMER ORDER CONFIRMATION (RESEND) ─────────────────────────────
+        // Transactional — always sent regardless of marketing subscription status
+        try {
+            // Build itemised rows from itemsString ("Name x 2, Other x 1")
+            const itemRows = (itemsString || '').split(',').map(function(line) {
+                var txt = line.trim();
+                if (!txt) return '';
+                return '<tr><td style="padding:8px 0;border-bottom:1px solid #eee;color:#0E3019;">' + txt + '</td></tr>';
+            }).join('');
+
+            const fulfilMsg = pickup
+                ? 'We\'ll have your order ready for collection on <strong>Friday or Saturday, 10am–1pm</strong>.'
+                : 'Your order will be delivered to <strong>' + address + '</strong>. Standard UK delivery.';
+
+            await resend.emails.send({
+                from:    `Home Grown <${SENDER_EMAIL}>`,
+                to:      [email],
+                subject: `Your Home Grown order ${id} is confirmed! 🌿`,
+                html: `
+                <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:3px solid #164A2E;border-radius:16px;overflow:hidden;">
+                    <div style="background:#164A2E;padding:24px;text-align:center;">
+                        <h1 style="color:#FFD93D;margin:0;font-size:2rem;">Home Grown</h1>
+                        <p style="color:#6BBF4A;margin:6px 0 0;font-size:0.8rem;letter-spacing:0.12em;text-transform:uppercase;">Food That Makes You Feel Good</p>
+                    </div>
+                    <div style="padding:32px;background:#FFFBE8;">
+                        <p style="color:#0E3019;font-size:1.1rem;">Hi <strong>${fname}</strong>, thanks for your order! 🎉</p>
+                        <p style="color:#2D6040;">We're getting it ready with love. Here's what you ordered:</p>
+                        <table style="width:100%;border-collapse:collapse;margin:20px 0;">
+                            ${itemRows}
+                            <tr><td style="padding:12px 0 0;font-weight:bold;color:#164A2E;font-size:1.1rem;">Total: £${calculatedTotal.toFixed(2)}</td></tr>
+                        </table>
+                        <div style="background:white;border-left:5px solid #FFD93D;padding:16px 20px;border-radius:8px;color:#0E3019;line-height:1.6;">
+                            <strong>Order Reference:</strong> ${id}<br>
+                            <strong>Fulfilment:</strong> ${pickupLabel}<br><br>
+                            ${fulfilMsg}
+                        </div>
+                        <p style="color:#5A8A6A;font-size:0.9rem;margin-top:24px;">Any questions? Just use the chat on our website — we'd love to hear from you!</p>
+                        <div style="text-align:center;margin-top:24px;">
+                            <a href="https://homegrownfoods.online" style="background:#164A2E;color:#FFD93D;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:bold;">Visit Our Shop &rarr;</a>
+                        </div>
+                    </div>
+                    <div style="background:#164A2E;padding:14px;text-align:center;">
+                        <p style="color:#A8D97F;margin:0;font-size:0.78rem;">Home Grown &middot; Handmade in Sheffield &middot; homegrownfoods.online</p>
+                    </div>
+                </div>`
+            });
+        } catch (custEmailErr) {
+            console.warn('Customer confirmation email failed:', custEmailErr);
+        }
+
         // ─── NTFY PUSH NOTIFICATION ───────────────────────────────────────────
         try {
             const NTFY_TOPIC = 'homegrownfoods-orders';
@@ -1066,6 +1116,325 @@ app.post('/api/create-subscription-session', async (req, res) => {
         console.error('Stripe subscription session error:', err);
         res.status(500).json({ error: err.message });
     }
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  CAMPAIGNS / AUDIENCE / TAGS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Ensure a contact row exists + return its unsub token ──
+async function ensureContact(email, firstName) {
+    const e = email.toLowerCase().trim();
+    const crypto = require('crypto');
+    const token  = crypto.randomBytes(16).toString('hex');
+    const r = await pool.query(
+        `INSERT INTO contacts (email, first_name, unsub_token)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (email) DO UPDATE SET first_name = COALESCE(contacts.first_name, EXCLUDED.first_name)
+         RETURNING *`,
+        [e, firstName || null, token]
+    );
+    return r.rows[0];
+}
+
+// ─── TAGS ──
+app.get('/api/admin/tags/:email', authenticateAdmin, async (req, res) => {
+    try {
+        const r = await pool.query('SELECT tag FROM customer_tags WHERE email = $1 ORDER BY tag',
+            [req.params.email.toLowerCase().trim()]);
+        res.json(r.rows.map(x => x.tag));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/admin/tags', authenticateAdmin, async (req, res) => {
+    const { email, tag } = req.body;
+    if (!email || !tag) return res.status(400).json({ error: 'email and tag required' });
+    try {
+        await pool.query(
+            'INSERT INTO customer_tags (email, tag) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+            [email.toLowerCase().trim(), tag.trim()]
+        );
+        res.json({ message: 'Tag added' });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/admin/tags', authenticateAdmin, async (req, res) => {
+    const { email, tag } = req.body;
+    try {
+        await pool.query('DELETE FROM customer_tags WHERE email = $1 AND tag = $2',
+            [email.toLowerCase().trim(), tag.trim()]);
+        res.json({ message: 'Tag removed' });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// All distinct tags in use (for segment dropdown)
+app.get('/api/admin/tags', authenticateAdmin, async (req, res) => {
+    try {
+        const r = await pool.query('SELECT DISTINCT tag FROM customer_tags ORDER BY tag');
+        res.json(r.rows.map(x => x.tag));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── SEGMENT RESOLVER — returns array of {email, first_name} matching a segment ──
+async function resolveSegment(segment) {
+    segment = segment || {};
+    // Base: all subscribed contacts
+    let sql = `
+        SELECT c.email, c.first_name
+        FROM contacts c
+        WHERE c.is_subscribed = TRUE
+    `;
+    const params = [];
+    let n = 0;
+
+    if (segment.tag) {
+        n++;
+        sql += ` AND c.email IN (SELECT email FROM customer_tags WHERE tag = $${n})`;
+        params.push(segment.tag);
+    }
+
+    if (segment.neverOrdered) {
+        sql += ` AND c.email NOT IN (SELECT DISTINCT LOWER(email) FROM orders)`;
+    }
+
+    if (segment.orderedWithinDays) {
+        n++;
+        sql += ` AND c.email IN (
+            SELECT DISTINCT LOWER(email) FROM orders
+            WHERE created_at > NOW() - ($${n} || ' days')::interval
+        )`;
+        params.push(String(parseInt(segment.orderedWithinDays)));
+    }
+
+    if (segment.ltvMin) {
+        n++;
+        sql += ` AND c.email IN (
+            SELECT LOWER(email) FROM orders
+            GROUP BY LOWER(email)
+            HAVING SUM(total::numeric) >= $${n}
+        )`;
+        params.push(parseFloat(segment.ltvMin));
+    }
+
+    const r = await pool.query(sql, params);
+    return r.rows;
+}
+
+// Preview how many people a segment matches
+app.post('/api/admin/segment/preview', authenticateAdmin, async (req, res) => {
+    try {
+        const rows = await resolveSegment(req.body.segment);
+        res.json({ count: rows.length });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── CAMPAIGNS CRUD ──
+app.get('/api/admin/campaigns', authenticateAdmin, async (req, res) => {
+    try {
+        const r = await pool.query('SELECT * FROM campaigns ORDER BY created_at DESC');
+        res.json(r.rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/admin/campaigns', authenticateAdmin, async (req, res) => {
+    const { name, subject, body_html, segment, status, scheduled_at } = req.body;
+    try {
+        const r = await pool.query(
+            `INSERT INTO campaigns (name, subject, body_html, segment, status, scheduled_at)
+             VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+            [name || 'Untitled Campaign', subject || '', body_html || '',
+             JSON.stringify(segment || {}), status || 'draft', scheduled_at || null]
+        );
+        res.status(201).json(r.rows[0]);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/admin/campaigns/:id', authenticateAdmin, async (req, res) => {
+    const { name, subject, body_html, segment, status, scheduled_at } = req.body;
+    try {
+        const r = await pool.query(
+            `UPDATE campaigns SET name=$1, subject=$2, body_html=$3, segment=$4,
+             status=$5, scheduled_at=$6 WHERE id=$7 RETURNING *`,
+            [name, subject, body_html, JSON.stringify(segment || {}),
+             status, scheduled_at || null, req.params.id]
+        );
+        res.json(r.rows[0]);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/admin/campaigns/:id', authenticateAdmin, async (req, res) => {
+    try {
+        await pool.query('DELETE FROM campaigns WHERE id = $1', [req.params.id]);
+        res.json({ message: 'Campaign deleted' });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── SEND A CAMPAIGN (immediate) ──
+async function sendCampaign(campaignId) {
+    const cRes = await pool.query('SELECT * FROM campaigns WHERE id = $1', [campaignId]);
+    const campaign = cRes.rows[0];
+    if (!campaign) throw new Error('Campaign not found');
+
+    await pool.query('UPDATE campaigns SET status = $1 WHERE id = $2', ['sending', campaignId]);
+
+    const recipients = await resolveSegment(campaign.segment || {});
+    let sent = 0;
+
+    for (const person of recipients) {
+        const contact = await ensureContact(person.email, person.first_name);
+        const firstName = person.first_name || 'there';
+
+        // Personalisation merge tags
+        let html = (campaign.body_html || '')
+            .split('{{first_name}}').join(firstName)
+            .split('{{email}}').join(person.email);
+
+        // Tracking pixel + unsubscribe link
+        const trackId  = campaignId + '_' + Buffer.from(person.email).toString('base64');
+        const pixel    = `<img src="https://homegrownfoods.online/api/track/open/${trackId}" width="1" height="1" style="display:none;" alt="">`;
+        const unsubUrl = `https://homegrownfoods.online/api/unsubscribe/${contact.unsub_token}`;
+        const footer   = `<div style="text-align:center;padding:16px;font-size:0.72rem;color:#999;">
+            You're receiving this because you're a Home Grown customer.<br>
+            <a href="${unsubUrl}" style="color:#999;">Unsubscribe</a> &middot; Home Grown, Sheffield</div>`;
+
+        try {
+            await resend.emails.send({
+                from:    `Home Grown <${SENDER_EMAIL}>`,
+                to:      [person.email],
+                subject: campaign.subject || 'A message from Home Grown',
+                html:    html + pixel + footer
+            });
+            await pool.query(
+                `INSERT INTO campaign_events (campaign_id, email, event_type) VALUES ($1,$2,'delivered')`,
+                [campaignId, person.email]
+            );
+            sent++;
+        } catch (e) { console.warn('Campaign send failed for', person.email, e.message); }
+    }
+
+    await pool.query(
+        'UPDATE campaigns SET status=$1, sent_at=NOW(), sent_count=$2 WHERE id=$3',
+        ['sent', sent, campaignId]
+    );
+    return sent;
+}
+
+app.post('/api/admin/campaigns/:id/send', authenticateAdmin, async (req, res) => {
+    try {
+        const sent = await sendCampaign(req.params.id);
+        res.json({ message: `Campaign sent to ${sent} recipients`, sent });
+    } catch (err) {
+        console.error('Send campaign error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── OPEN TRACKING (1x1 pixel) ──
+app.get('/api/track/open/:trackId', async (req, res) => {
+    try {
+        const [cid, emailB64] = req.params.trackId.split('_');
+        const email = Buffer.from(emailB64, 'base64').toString('utf8');
+        // Only count first open per recipient
+        const existing = await pool.query(
+            `SELECT 1 FROM campaign_events WHERE campaign_id=$1 AND email=$2 AND event_type='opened'`,
+            [cid, email]
+        );
+        if (existing.rowCount === 0) {
+            await pool.query(
+                `INSERT INTO campaign_events (campaign_id, email, event_type) VALUES ($1,$2,'opened')`,
+                [cid, email]
+            );
+            await pool.query('UPDATE campaigns SET open_count = open_count + 1 WHERE id = $1', [cid]);
+        }
+    } catch (e) { /* swallow — never break the pixel */ }
+    // Return a 1x1 transparent gif
+    const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+    res.setHeader('Content-Type', 'image/gif');
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(gif);
+});
+
+// ─── CLICK TRACKING (redirect) ──
+app.get('/api/track/click/:trackId', async (req, res) => {
+    const dest = req.query.url || 'https://homegrownfoods.online';
+    try {
+        const [cid, emailB64] = req.params.trackId.split('_');
+        const email = Buffer.from(emailB64, 'base64').toString('utf8');
+        await pool.query(
+            `INSERT INTO campaign_events (campaign_id, email, event_type) VALUES ($1,$2,'clicked')`,
+            [cid, email]
+        );
+        await pool.query('UPDATE campaigns SET click_count = click_count + 1 WHERE id = $1', [cid]);
+    } catch (e) {}
+    res.redirect(dest);
+});
+
+// ─── UNSUBSCRIBE ──
+app.get('/api/unsubscribe/:token', async (req, res) => {
+    try {
+        const r = await pool.query(
+            'UPDATE contacts SET is_subscribed = FALSE WHERE unsub_token = $1 RETURNING email',
+            [req.params.token]
+        );
+        const email = r.rows[0]?.email || 'your email';
+        res.setHeader('Content-Type', 'text/html');
+        res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Unsubscribed — Home Grown</title></head>
+            <body style="font-family:Arial,sans-serif;max-width:520px;margin:60px auto;text-align:center;padding:0 20px;">
+            <div style="border:3px solid #164A2E;border-radius:16px;overflow:hidden;">
+              <div style="background:#164A2E;padding:28px;">
+                <h1 style="color:#FFD93D;margin:0;">Home Grown</h1></div>
+              <div style="padding:32px;background:#FFFBE8;">
+                <h2 style="color:#164A2E;">You've been unsubscribed</h2>
+                <p style="color:#2D6040;line-height:1.6;">${email} will no longer receive marketing emails from us.
+                You'll still get order confirmations for any purchases.</p>
+                <p style="color:#5A8A6A;font-size:0.9rem;">Changed your mind? Just contact us and we'll add you back.</p>
+                <a href="https://homegrownfoods.online" style="display:inline-block;margin-top:16px;background:#164A2E;color:#FFD93D;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:bold;">Back to Shop</a>
+              </div></div></body></html>`);
+    } catch (err) { res.status(500).send('Error processing unsubscribe'); }
+});
+
+// ─── EMAIL WEBHOOK (Resend/SendGrid events) ──
+app.post('/api/webhooks/email', async (req, res) => {
+    try {
+        const evt = req.body;
+        // Resend format: { type: 'email.opened'|'email.clicked', data: { email_id, to, ... } }
+        const type = evt.type || evt.event;
+        const email = (evt.data && (evt.data.to || evt.data.email)) || evt.email;
+        const campaignId = evt.data?.tags?.campaign_id || req.query.cid;
+        if (campaignId && email) {
+            if (type && type.indexOf('open') !== -1) {
+                await pool.query('UPDATE campaigns SET open_count = open_count + 1 WHERE id = $1', [campaignId]);
+                await pool.query(`INSERT INTO campaign_events (campaign_id, email, event_type) VALUES ($1,$2,'opened')`, [campaignId, email]);
+            } else if (type && type.indexOf('click') !== -1) {
+                await pool.query('UPDATE campaigns SET click_count = click_count + 1 WHERE id = $1', [campaignId]);
+                await pool.query(`INSERT INTO campaign_events (campaign_id, email, event_type) VALUES ($1,$2,'clicked')`, [campaignId, email]);
+            }
+        }
+        res.json({ received: true });
+    } catch (err) { res.status(200).json({ received: true }); } // always 200 so provider doesn't retry-storm
+});
+
+// ─── SCHEDULED CAMPAIGN POLLER ──
+// Netlify scheduled function or external cron should hit this endpoint every few minutes.
+app.post('/api/admin/campaigns/run-scheduled', async (req, res) => {
+    // simple shared-secret guard
+    if (req.query.key !== process.env.CRON_SECRET) {
+        return res.status(403).json({ error: 'forbidden' });
+    }
+    try {
+        const due = await pool.query(
+            `SELECT id FROM campaigns WHERE status='scheduled' AND scheduled_at <= NOW()`
+        );
+        let ran = 0;
+        for (const row of due.rows) {
+            await sendCampaign(row.id);
+            ran++;
+        }
+        res.json({ message: `Ran ${ran} scheduled campaign(s)`, ran });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ─── SERVERLESS EXPORT ────────────────────────────────────────────────────────
