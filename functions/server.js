@@ -269,6 +269,33 @@ app.post('/api/orders', async (req, res) => {
 
         await client.query('COMMIT');
 
+        // ─── MARKETING PREFERENCE ─────────────────────────────────────────────
+        // Always ensure a contact row exists. If they opted OUT of marketing,
+        // mark them unsubscribed and tag them so it shows in the CRM and they're
+        // excluded from all future campaigns and broadcasts.
+        try {
+            const lcEmail = email.toLowerCase().trim();
+            const crypto  = require('crypto');
+            const token   = crypto.randomBytes(16).toString('hex');
+            await pool.query(
+                `INSERT INTO contacts (email, first_name, unsub_token, is_subscribed)
+                 VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (email) DO UPDATE SET
+                    first_name    = COALESCE(contacts.first_name, EXCLUDED.first_name),
+                    is_subscribed = CASE WHEN $4 = FALSE THEN FALSE ELSE contacts.is_subscribed END`,
+                [lcEmail, fname || null, token, marketingConsent]
+            );
+            if (!marketingConsent) {
+                await pool.query(
+                    `INSERT INTO customer_tags (email, tag) VALUES ($1, 'No Marketing')
+                     ON CONFLICT DO NOTHING`,
+                    [lcEmail]
+                );
+            }
+        } catch (prefErr) {
+            console.warn('Marketing preference update failed:', prefErr);
+        }
+
         // ─── EMAIL NOTIFICATION (RESEND) ──────────────────────────────────────
         const pickupLabel = isPickup ? '🏠 Home Pickup' : `🚚 Postage to ${postcode}`;
         const adminItemRows = receiptItems.map(function(it) {
@@ -1066,7 +1093,8 @@ app.post('/api/admin/crm/broadcast', authenticateAdmin, async (req, res) => {
         return res.status(400).json({ error: 'subject and message are required' });
     }
     try {
-        // Collect every unique email across orders, chat_messages and wishlist
+        // Collect every unique email across orders, chat_messages and wishlist,
+        // then EXCLUDE anyone who has opted out (is_subscribed = false in contacts).
         const emailRes = await pool.query(`
             SELECT DISTINCT LOWER(TRIM(email)) AS email
             FROM (
@@ -1076,6 +1104,9 @@ app.post('/api/admin/crm/broadcast', authenticateAdmin, async (req, res) => {
                 UNION
                 SELECT email FROM wishlist      WHERE email IS NOT NULL AND email <> ''
             ) all_emails
+            WHERE LOWER(TRIM(email)) NOT IN (
+                SELECT email FROM contacts WHERE is_subscribed = FALSE
+            )
             ORDER BY email
         `);
 
