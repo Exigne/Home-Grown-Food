@@ -224,6 +224,7 @@ function showAdminSection(s, el) {
     if (s === 'products') startStockPolling(); else stopStockPolling();
     if (s === 'crm') loadCRM();
     else if (s === 'campaigns') loadCampaigns();
+    else if (s === 'stockists') loadProspects();
     else loadAdminData();
 }
 
@@ -1632,40 +1633,29 @@ async function openCampaignBuilder() {
             quillEditor = new Quill('#campaign-editor', {
                 theme: 'snow',
                 modules: {
-                    toolbar: [
-                        [{ font: Font.whitelist }],
-                        [{ size: ['small', false, 'large', 'huge'] }],
-                        [{ header: [1, 2, 3, false] }],
-                        ['bold', 'italic', 'underline'],
-                        [{ color: [] }, { background: [] }],
-                        [{ align: [] }],
-                        [{ list: 'ordered' }, { list: 'bullet' }],
-                        ['link', 'image'],
-                        ['clean']
-                    ]
+                    toolbar: {
+                        container: [
+                            [{ font: Font.whitelist }],
+                            [{ size: ['small', false, 'large', 'huge'] }],
+                            [{ header: [1, 2, 3, false] }],
+                            ['bold', 'italic', 'underline'],
+                            [{ color: [] }, { background: [] }],
+                            [{ align: [] }],
+                            [{ list: 'ordered' }, { list: 'bullet' }],
+                            ['link', 'image'],
+                            ['clean']
+                        ]
+                    }
                 }
             });
             quillEditor.on('text-change', updateCampaignPreview);
 
-            // When an image is clicked in the editor, toggle a frame on/off
+            // ── Image controls: click an image to open a floating control bar ──
             quillEditor.root.addEventListener('click', function(e) {
                 if (e.target && e.target.tagName === 'IMG') {
-                    if (e.target.getAttribute('data-framed') === 'true') {
-                        e.target.removeAttribute('data-framed');
-                        e.target.style.border = '';
-                        e.target.style.borderRadius = '';
-                        e.target.style.padding = '';
-                        e.target.style.boxShadow = '';
-                        showToast('Frame removed — click image again to add');
-                    } else {
-                        e.target.setAttribute('data-framed', 'true');
-                        e.target.style.border = '3px solid #164A2E';
-                        e.target.style.borderRadius = '10px';
-                        e.target.style.padding = '4px';
-                        e.target.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)';
-                        showToast('🖼️ Frame added — click image again to remove');
-                    }
-                    updateCampaignPreview();
+                    showImageControls(e.target);
+                } else {
+                    hideImageControls();
                 }
             });
         }
@@ -1675,6 +1665,88 @@ async function openCampaignBuilder() {
 
     await loadTagsForSegment();
     updateSegmentCount();
+}
+
+// ── Floating image control bar (resize / align / frame) ──
+var _activeImg = null;
+function showImageControls(img) {
+    _activeImg = img;
+    var bar = document.getElementById('img-control-bar');
+    if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'img-control-bar';
+        bar.className = 'img-control-bar';
+        bar.innerHTML =
+            '<button type="button" onclick="resizeActiveImg(0.25)">25%</button>' +
+            '<button type="button" onclick="resizeActiveImg(0.5)">50%</button>' +
+            '<button type="button" onclick="resizeActiveImg(0.75)">75%</button>' +
+            '<button type="button" onclick="resizeActiveImg(1)">100%</button>' +
+            '<span class="img-ctrl-divider"></span>' +
+            '<button type="button" onclick="alignActiveImg(\'left\')">◧ Left</button>' +
+            '<button type="button" onclick="alignActiveImg(\'center\')">▣ Centre</button>' +
+            '<button type="button" onclick="alignActiveImg(\'right\')">◨ Right</button>' +
+            '<span class="img-ctrl-divider"></span>' +
+            '<button type="button" onclick="toggleActiveImgFrame()">🖼️ Frame</button>';
+        document.body.appendChild(bar);
+    }
+    var rect = img.getBoundingClientRect();
+    bar.style.display = 'flex';
+    bar.style.top  = (window.scrollY + rect.top - 46) + 'px';
+    bar.style.left = (window.scrollX + rect.left) + 'px';
+}
+function hideImageControls() {
+    var bar = document.getElementById('img-control-bar');
+    if (bar) bar.style.display = 'none';
+    _activeImg = null;
+}
+function resizeActiveImg(fraction) {
+    if (!_activeImg) return;
+    _activeImg.style.width  = (fraction * 100) + '%';
+    _activeImg.style.height = 'auto';
+    _activeImg.setAttribute('width', Math.round(fraction * 560)); // email-safe px width
+    updateCampaignPreview();
+    showImageControls(_activeImg);
+}
+function alignActiveImg(align) {
+    if (!_activeImg) return;
+    _activeImg.style.display = 'block';
+    if (align === 'center') { _activeImg.style.margin = '10px auto'; }
+    else if (align === 'right') { _activeImg.style.margin = '10px 0 10px auto'; }
+    else { _activeImg.style.margin = '10px auto 10px 0'; }
+    _activeImg.setAttribute('data-align', align);
+    updateCampaignPreview();
+    showImageControls(_activeImg);
+}
+function toggleActiveImgFrame() {
+    if (!_activeImg) return;
+    if (_activeImg.getAttribute('data-framed') === 'true') {
+        _activeImg.removeAttribute('data-framed');
+        _activeImg.style.border = ''; _activeImg.style.borderRadius = '';
+        _activeImg.style.padding = ''; _activeImg.style.boxShadow = '';
+    } else {
+        _activeImg.setAttribute('data-framed', 'true');
+        _activeImg.style.border = '3px solid #164A2E';
+        _activeImg.style.borderRadius = '10px';
+        _activeImg.style.padding = '4px';
+        _activeImg.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)';
+    }
+    updateCampaignPreview();
+    showImageControls(_activeImg);
+}
+
+// ── Insert a call-to-action button into the email body ──
+function insertCampaignButton() {
+    if (!quillEditor) return;
+    var label = prompt('Button text:', 'Shop Now');
+    if (!label) return;
+    var url = prompt('Button link (https://…):', 'https://homegrownfoods.online');
+    if (!url) return;
+    var range = quillEditor.getSelection(true);
+    // Insert an HTML button as a styled link via clipboard
+    var btnHtml = '<a href="' + url + '" style="display:inline-block;background:#164A2E;color:#FFD93D;padding:12px 28px;border-radius:999px;text-decoration:none;font-weight:bold;margin:10px 0;">' + label + '</a>';
+    quillEditor.clipboard.dangerouslyPasteHTML(range.index, btnHtml);
+    updateCampaignPreview();
+    showToast('🔘 Button added');
 }
 
 function closeCampaignBuilder() {
@@ -1733,13 +1805,16 @@ function getCampaignStyle() {
         btnColor:    g('campaign-btn-color', '#164A2E'),
         font:        g('campaign-font', 'Arial, sans-serif'),
         headerStyle: g('campaign-header-style', 'brand'),
-        headingText: g('campaign-heading-text', '')
+        headingText: g('campaign-heading-text', ''),
+        showUnsub:   (function(){ var el = document.getElementById('campaign-show-unsub'); return el ? el.checked : true; })()
     };
 }
 
 // Build the full styled campaign email HTML (used for preview and sending)
-function buildCampaignHTML(bodyHtml, style) {
+// unsubUrl: real URL when sending, '#' placeholder in preview
+function buildCampaignHTML(bodyHtml, style, unsubUrl) {
     style = style || getCampaignStyle();
+    unsubUrl = unsubUrl || '{{unsubscribe_url}}';
     var header = '';
     if (style.headerStyle === 'brand') {
         header = '<div style="background:' + style.headerColor + ';padding:22px;text-align:center;">' +
@@ -1750,9 +1825,16 @@ function buildCampaignHTML(bodyHtml, style) {
         header = '<div style="background:' + style.headerColor + ';padding:22px;text-align:center;">' +
                  '<div style="color:' + style.headerText + ';font-size:1.4rem;font-weight:bold;">' + style.headingText.replace(/</g,'&lt;') + '</div></div>';
     }
+    var unsubFooter = style.showUnsub
+        ? '<div style="padding:16px;text-align:center;font-size:0.72rem;color:#999;line-height:1.6;">' +
+          'You\'re receiving this because you\'re a Home Grown customer.<br>' +
+          'If you don\'t want to receive these emails, please <a href="' + unsubUrl + '" style="color:#999;text-decoration:underline;">unsubscribe here</a>.' +
+          '</div>'
+        : '';
     return '<div style="font-family:' + style.font + ';max-width:600px;margin:0 auto;border:2px solid ' + style.headerColor + ';border-radius:14px;overflow:hidden;">' +
         header +
         '<div style="padding:28px;background:' + style.bodyBg + ';color:#0E3019;line-height:1.7;">' + bodyHtml + '</div>' +
+        unsubFooter +
         '<div style="background:' + style.headerColor + ';padding:12px;text-align:center;">' +
         '<div style="color:' + style.headerText + ';opacity:0.7;font-size:0.7rem;">Home Grown · Handmade in Sheffield · homegrownfoods.online</div>' +
         '</div></div>';
@@ -1892,6 +1974,210 @@ document.addEventListener('DOMContentLoaded', function() {
     if (st2) st2.addEventListener('change', updateSegmentCount);
     if (subj) subj.addEventListener('input', updateCampaignPreview);
 });
+
+
+
+// ═══════════════════════════════════════════════
+//  STOCKIST FINDER
+// ═══════════════════════════════════════════════
+var prospects       = [];
+var searchResults   = [];
+
+async function loadProspects() {
+    if (!adminToken) return;
+    try {
+        var res = await fetch(API_BASE + '/admin/prospects', {
+            headers: { 'Authorization': 'Bearer ' + adminToken }
+        });
+        if (res.ok) { prospects = await res.json(); renderProspects(); }
+    } catch (err) { console.error('Prospects load failed:', err); }
+}
+
+function renderProspects() {
+    var tbody = document.getElementById('prospects-body');
+    if (!tbody) return;
+    if (!prospects.length) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:2rem;">No prospects yet — search above to find some.</td></tr>';
+        return;
+    }
+    var statusBadge = {
+        'new':       '<span class="badge" style="background:#eee;color:#666;">New</span>',
+        'approved':  '<span class="badge" style="background:#CCE5FF;color:#004085;">Approved</span>',
+        'contacted': '<span class="badge" style="background:#FFF3CD;color:#856404;">Contacted</span>',
+        'stocking':  '<span class="badge badge-delivered">✓ Stocking</span>',
+        'declined':  '<span class="badge badge-cancelled">Declined</span>'
+    };
+    tbody.innerHTML = prospects.map(function(p) {
+        return '<tr>' +
+            '<td><strong>' + p.name + '</strong>' + (p.website ? '<br><a href="' + p.website + '" target="_blank" style="font-size:0.8rem;color:var(--green-mid);">' + p.website.replace(/^https?:\/\//,'').substring(0,30) + '</a>' : '') + '</td>' +
+            '<td style="font-size:0.85rem;">' + (p.category || '—') + '</td>' +
+            '<td style="font-size:0.82rem;">' + (p.phone || '') + (p.email ? '<br>' + p.email : '') + '</td>' +
+            '<td>' + (statusBadge[p.status] || p.status) + '</td>' +
+            '<td>' +
+                '<button class="action-btn primary" onclick="openProspectModal(' + p.id + ')">📧 Contact</button> ' +
+                '<button class="action-btn danger" onclick="deleteProspect(' + p.id + ')">Delete</button>' +
+            '</td></tr>';
+    }).join('');
+}
+
+async function searchProspects() {
+    var query    = (document.getElementById('prospect-query').value || '').trim();
+    var location = (document.getElementById('prospect-location').value || 'Sheffield, UK').trim();
+    var btn      = document.getElementById('prospect-search-btn');
+    var resultsEl = document.getElementById('prospect-search-results');
+    if (!query) { showToast('Enter a business type to search'); return; }
+
+    btn.disabled = true; btn.textContent = 'Searching…';
+    resultsEl.innerHTML = '<p style="color:var(--text-muted);padding:1rem 0;">Searching Google for local businesses…</p>';
+
+    try {
+        var res = await fetch(API_BASE + '/admin/prospects/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+            body: JSON.stringify({ query: query, location: location })
+        });
+        var data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Search failed');
+        searchResults = data.results || [];
+        renderSearchResults();
+    } catch (err) {
+        resultsEl.innerHTML = '<p style="color:var(--danger);font-weight:700;padding:1rem 0;">Search failed: ' + err.message + '</p>';
+    } finally {
+        btn.disabled = false; btn.textContent = 'Search';
+    }
+}
+
+function renderSearchResults() {
+    var el = document.getElementById('prospect-search-results');
+    if (!searchResults.length) {
+        el.innerHTML = '<p style="color:var(--text-muted);padding:1rem 0;">No results found. Try a different search.</p>';
+        return;
+    }
+    el.innerHTML =
+        '<div style="margin:1rem 0;display:flex;align-items:center;gap:12px;">' +
+        '<strong style="color:var(--green-dark);">' + searchResults.length + ' businesses found</strong>' +
+        '<button class="action-btn primary" onclick="saveSelectedProspects()" style="padding:7px 16px;">+ Save All to Prospects</button>' +
+        '</div>' +
+        '<div class="table-wrap"><table><thead><tr><th></th><th>Business</th><th>Address</th><th>Phone</th><th>Website</th></tr></thead><tbody>' +
+        searchResults.map(function(r, i) {
+            return '<tr>' +
+                '<td><input type="checkbox" class="prospect-check" data-idx="' + i + '" checked style="width:18px;height:18px;accent-color:var(--green-dark);"></td>' +
+                '<td><strong>' + r.name + '</strong></td>' +
+                '<td style="font-size:0.82rem;">' + (r.address || '') + '</td>' +
+                '<td style="font-size:0.82rem;">' + (r.phone || '—') + '</td>' +
+                '<td style="font-size:0.82rem;">' + (r.website ? '<a href="' + r.website + '" target="_blank" style="color:var(--green-mid);">Visit</a>' : '—') + '</td>' +
+                '</tr>';
+        }).join('') +
+        '</tbody></table></div>';
+}
+
+async function saveSelectedProspects() {
+    var checks = document.querySelectorAll('.prospect-check:checked');
+    var selected = [];
+    checks.forEach(function(c) { selected.push(searchResults[parseInt(c.dataset.idx)]); });
+    if (!selected.length) { showToast('Select at least one business'); return; }
+
+    try {
+        var res = await fetch(API_BASE + '/admin/prospects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+            body: JSON.stringify({ prospects: selected })
+        });
+        var data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Save failed');
+        showToast('✓ ' + data.saved + ' prospects saved');
+        document.getElementById('prospect-search-results').innerHTML = '';
+        await loadProspects();
+    } catch (err) { showToast('Failed: ' + err.message); }
+}
+
+function openProspectModal(id) {
+    var p = prospects.find(function(x){ return x.id === id; });
+    if (!p) return;
+    document.getElementById('prospect-modal-id').value = p.id;
+    document.getElementById('prospect-modal-name').textContent = 'Contact ' + p.name;
+    document.getElementById('prospect-modal-info').innerHTML =
+        '<strong>' + p.name + '</strong>' + (p.category ? ' · ' + p.category : '') + '<br>' +
+        (p.address || '') + (p.phone ? '<br>📞 ' + p.phone : '') +
+        (p.website ? '<br>🌐 <a href="' + p.website + '" target="_blank">' + p.website + '</a>' : '');
+    document.getElementById('prospect-modal-email').value = p.email || '';
+    // Pre-fill with saved draft, or the reusable template with their name slotted in
+    document.getElementById('prospect-modal-body').value = p.draft_email || getProspectTemplate().split('[name]').join(p.name);
+    document.getElementById('prospect-modal-status').textContent = '';
+    document.getElementById('prospect-modal').classList.add('open');
+}
+
+// Default outreach template — [name] is swapped for the business name
+var DEFAULT_PROSPECT_TEMPLATE =
+    'Hi [name],\n\n' +
+    'I\'m getting in touch from Home Grown, a small Sheffield business making handmade healthy snacks — ' +
+    'energy balls, oat clusters and seeded crackers, all in small batches.\n\n' +
+    'I thought your customers might really enjoy them, and I wondered whether you\'d consider stocking us ' +
+    'or arranging a quick tasting? I\'d be delighted to drop some samples in.\n\n' +
+    'Either way, thanks for your time — I love what you do.\n\n' +
+    'Warm regards,\nThe Home Grown Team 🌿';
+
+function getProspectTemplate() {
+    return localStorage.getItem('hg_prospect_template') || DEFAULT_PROSPECT_TEMPLATE;
+}
+
+function applyProspectTemplate() {
+    var p = prospects.find(function(x){ return String(x.id) === document.getElementById('prospect-modal-id').value; });
+    var name = p ? p.name : 'there';
+    var body = getProspectTemplate().split('[name]').join(name);
+    document.getElementById('prospect-modal-body').value = body;
+    var statusEl = document.getElementById('prospect-modal-status');
+    statusEl.style.color = 'var(--text-muted)';
+    statusEl.textContent = 'Template applied — edit as needed before sending.';
+}
+
+function saveProspectTemplate() {
+    var body = (document.getElementById('prospect-modal-body').value || '').trim();
+    if (!body) { showToast('Write a message first'); return; }
+    // Save with the business name turned back into [name] placeholder for reuse
+    var p = prospects.find(function(x){ return String(x.id) === document.getElementById('prospect-modal-id').value; });
+    var template = body;
+    if (p && p.name) template = body.split(p.name).join('[name]');
+    localStorage.setItem('hg_prospect_template', template);
+    showToast('✓ Saved as your reusable template');
+}
+
+async function sendProspectEmail() {
+    var id    = document.getElementById('prospect-modal-id').value;
+    var email = (document.getElementById('prospect-modal-email').value || '').trim();
+    var body  = (document.getElementById('prospect-modal-body').value || '').trim();
+    var statusEl = document.getElementById('prospect-modal-status');
+    if (!email) { statusEl.style.color='var(--danger)'; statusEl.textContent='Enter their email address.'; return; }
+    if (!body)  { statusEl.style.color='var(--danger)'; statusEl.textContent='Write or generate a message first.'; return; }
+
+    statusEl.style.color = 'var(--text-muted)'; statusEl.textContent = 'Sending…';
+    try {
+        var res = await fetch(API_BASE + '/admin/prospects/' + id + '/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+            body: JSON.stringify({ email: email, body: body })
+        });
+        var data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Send failed');
+        statusEl.style.color = 'var(--success)'; statusEl.textContent = '✓ Introduction sent!';
+        showToast('📧 Outreach sent to ' + email);
+        await loadProspects();
+        setTimeout(function(){ document.getElementById('prospect-modal').classList.remove('open'); }, 1200);
+    } catch (err) {
+        statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Failed: ' + err.message;
+    }
+}
+
+async function deleteProspect(id) {
+    if (!confirm('Delete this prospect?')) return;
+    try {
+        await fetch(API_BASE + '/admin/prospects/' + id, {
+            method: 'DELETE', headers: { 'Authorization': 'Bearer ' + adminToken }
+        });
+        showToast('Prospect deleted');
+        await loadProspects();
+    } catch (err) { showToast('Delete failed'); }
+}
 
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
