@@ -1174,8 +1174,11 @@ function syncDeliveryAddress() {
 }
 
 function updateCheckoutTotals() {
-    const subtotal = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
-    const isPickup = document.getElementById('pickup-check')?.checked || false;
+    // Use displayPrice so subscription markups are included (falls back to price)
+    const subtotal = cart.reduce((s, x) => {
+        const up = x.displayPrice !== undefined ? x.displayPrice : parseFloat(x.price);
+        return s + up * x.qty;
+    }, 0);
     const postcode = (document.getElementById('ch-postcode')?.value || '').trim().toUpperCase();
     const city     = (document.getElementById('ch-city')?.value || '').trim().toLowerCase();
     const btn      = document.getElementById('pay-btn');
@@ -1230,7 +1233,10 @@ function updateCheckoutTotals() {
     let discount = 0, discountLabel = '';
     if (appliedPromo) { discount = subtotal * (appliedPromo.discount / 100); discountLabel = `🎟️ Promo ${appliedPromo.code} (−${appliedPromo.discount}%)`; }
     const total = Math.max(0, subtotal - discount + shipping);
-    let html = cart.map(i => `<div class="os-item"><span>${i.emoji||''} ${i.name} ×${i.qty}</span><span>£${(parseFloat(i.price)*i.qty).toFixed(2)}</span></div>`).join('');
+    let html = cart.map(i => {
+        const up = i.displayPrice !== undefined ? i.displayPrice : parseFloat(i.price);
+        return `<div class="os-item"><span>${i.emoji||''} ${i.name} ×${i.qty}</span><span>£${(up*i.qty).toFixed(2)}</span></div>`;
+    }).join('');
     if (discountLabel) html += `<div class="os-item" style="color:var(--success);"><span>${discountLabel}</span><span>−£${discount.toFixed(2)}</span></div>`;
     html += `<div class="os-item"><span>${shippingLabel}</span><span>${shipping > 0 ? '£'+shipping.toFixed(2) : 'Free'}</span></div>`;
     html += `<div class="os-item total"><span>Total</span><span>£${total.toFixed(2)}</span></div>`;
@@ -1245,8 +1251,16 @@ function openCheckout() {
     const promoInput = document.getElementById('promo-input');
     if (promoMsgEl) promoMsgEl.textContent = '';
     if (promoInput) promoInput.value = '';
+    // Default to collection (pickup = true). Postage is opt-in via the toggle,
+    // which starts unchecked, so the hidden pickup-check must start checked.
     const pickupCheck = document.getElementById('pickup-check');
-    if (pickupCheck) pickupCheck.checked = false;
+    if (pickupCheck) pickupCheck.checked = true;
+    const deliveryToggle = document.getElementById('delivery-toggle');
+    if (deliveryToggle) deliveryToggle.checked = false;
+    const dAddr = document.getElementById('delivery-address-fields');
+    if (dAddr) dAddr.style.display = 'none';
+    const cNotice = document.getElementById('collection-notice');
+    if (cNotice) cNotice.style.display = 'block';
     const infoEl = document.getElementById('checkout-fulfilment-info');
     if (infoEl) infoEl.style.display = 'none';
     document.getElementById('checkout-content').style.display = 'block';
@@ -1352,12 +1366,24 @@ async function processPayment() {
     };
     customer.name     = `${customer.fname} ${customer.lname}`;
     const fullAddress = `${customer.address}, ${customer.city}, ${customer.postcode}`;
-    const isPickup    = document.getElementById('pickup-check')?.checked || false;
-    const subtotal    = cart.reduce((s, x) => s + parseFloat(x.price) * x.qty, 0);
-    const discount    = appliedPromo ? subtotal * (appliedPromo.discount / 100) : 0;
+
+    // ── Single source of truth for fulfilment ──
+    // Postage only applies if EVERY item is postable AND the customer opted in.
+    // isPickup is derived from that, then the hidden pickup-check is forced to match
+    // so the backend receives exactly what the customer saw.
     var cartAllowsDelivery = cart.length > 0 && cart.every(function(x) { return x.delivery_enabled; });
     var wantsDelivery = document.getElementById('delivery-toggle') && document.getElementById('delivery-toggle').checked;
-    const shipping    = (cartAllowsDelivery && wantsDelivery) ? 3.99 : 0;
+    const isPickup    = !(cartAllowsDelivery && wantsDelivery);
+    const pickupCheckEl = document.getElementById('pickup-check');
+    if (pickupCheckEl) pickupCheckEl.checked = isPickup;
+
+    // Use displayPrice so subscription markups are included (matches the summary)
+    const subtotal    = cart.reduce((s, x) => {
+        const up = x.displayPrice !== undefined ? x.displayPrice : parseFloat(x.price);
+        return s + up * x.qty;
+    }, 0);
+    const discount    = appliedPromo ? subtotal * (appliedPromo.discount / 100) : 0;
+    const shipping    = isPickup ? 0 : 3.99;
     const total       = Math.max(0, subtotal - discount + shipping).toFixed(2);
 
     const oid             = 'HG-' + Date.now().toString().slice(-6);
