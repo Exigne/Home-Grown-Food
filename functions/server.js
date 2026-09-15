@@ -1335,26 +1335,29 @@ async function sendCampaign(campaignId) {
     for (const person of recipients) {
         const contact = await ensureContact(person.email, person.first_name);
         const firstName = person.first_name || 'there';
+        const unsubUrl = `https://homegrownfoods.online/api/unsubscribe/${contact.unsub_token}`;
 
-        // Personalisation merge tags
+        // Personalisation merge tags + real unsubscribe link
         let html = (campaign.body_html || '')
             .split('{{first_name}}').join(firstName)
-            .split('{{email}}').join(person.email);
+            .split('{{email}}').join(person.email)
+            .split('{{unsubscribe_url}}').join(unsubUrl);
 
-        // Tracking pixel + unsubscribe link
+        // Tracking pixel
         const trackId  = campaignId + '_' + Buffer.from(person.email).toString('base64');
         const pixel    = `<img src="https://homegrownfoods.online/api/track/open/${trackId}" width="1" height="1" style="display:none;" alt="">`;
-        const unsubUrl = `https://homegrownfoods.online/api/unsubscribe/${contact.unsub_token}`;
-        const footer   = `<div style="text-align:center;padding:16px;font-size:0.72rem;color:#999;">
-            You're receiving this because you're a Home Grown customer.<br>
-            <a href="${unsubUrl}" style="color:#999;">Unsubscribe</a> &middot; Home Grown, Sheffield</div>`;
+
+        // Safety net: if the template has no unsubscribe link at all, append a minimal one (legal requirement)
+        const unsubFooter = html.indexOf(unsubUrl) === -1
+            ? `<div style="text-align:center;padding:16px;font-size:0.72rem;color:#999;">If you don't want to receive these emails, please <a href="${unsubUrl}" style="color:#999;">unsubscribe here</a>.</div>`
+            : '';
 
         try {
             await resend.emails.send({
                 from:    `Home Grown <${SENDER_EMAIL}>`,
                 to:      [person.email],
                 subject: campaign.subject || 'A message from Home Grown',
-                html:    html + pixel + footer
+                html:    html + unsubFooter + pixel
             });
             await pool.query(
                 `INSERT INTO campaign_events (campaign_id, email, event_type) VALUES ($1,$2,'delivered')`,
@@ -1486,6 +1489,130 @@ app.post('/api/admin/campaigns/run-scheduled', async (req, res) => {
         }
         res.json({ message: `Ran ${ran} scheduled campaign(s)`, ran });
     } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  STOCKIST PROSPECTING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Search Google Places for local businesses of a given type near a location
+app.post('/api/admin/prospects/search', authenticateAdmin, async (req, res) => {
+    const { query, location } = req.body; // e.g. query="cafe", location="Sheffield, UK"
+    if (!query) return res.status(400).json({ error: 'query required' });
+    const apiKey = process.env.GOOGLE_PLACES_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'GOOGLE_PLACES_KEY not set in environment' });
+
+    try {
+        const searchText = query + ' in ' + (location || 'Sheffield, UK');
+        const url = 'https://places.googleapis.com/v1/places:searchText';
+        const r = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Goog-Api-Key': apiKey,
+                'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.websiteUri,places.primaryTypeDisplayName'
+            },
+            body: JSON.stringify({ textQuery: searchText, maxResultCount: 20, regionCode: 'GB' })
+        });
+        const data = await r.json();
+        if (data.error) return res.status(500).json({ error: data.error.message || 'Places API error' });
+
+        const results = (data.places || []).map(function(p) {
+            return {
+                place_id: p.id,
+                name:     p.displayName ? p.displayName.text : '',
+                address:  p.formattedAddress || '',
+                phone:    p.nationalPhoneNumber || '',
+                website:  p.websiteUri || '',
+                category: p.primaryTypeDisplayName ? p.primaryTypeDisplayName.text : query
+            };
+        });
+        res.json({ results: results });
+    } catch (err) {
+        console.error('Prospect search error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Save selected prospects to the database (dedupe by place_id)
+app.post('/api/admin/prospects', authenticateAdmin, async (req, res) => {
+    const { prospects } = req.body; // array
+    if (!prospects || !prospects.length) return res.status(400).json({ error: 'no prospects provided' });
+    try {
+        let saved = 0;
+        for (const p of prospects) {
+            const r = await pool.query(
+                `INSERT INTO prospects (name, category, address, phone, website, place_id, status)
+                 VALUES ($1,$2,$3,$4,$5,$6,'new')
+                 ON CONFLICT (place_id) DO NOTHING`,
+                [p.name, p.category || null, p.address || null, p.phone || null, p.website || null, p.place_id || null]
+            );
+            if (r.rowCount > 0) saved++;
+        }
+        res.json({ message: 'Saved ' + saved + ' new prospects', saved: saved });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// List saved prospects
+app.get('/api/admin/prospects', authenticateAdmin, async (req, res) => {
+    try {
+        const r = await pool.query('SELECT * FROM prospects ORDER BY created_at DESC');
+        res.json(r.rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Update a prospect (status, email, notes, draft)
+app.put('/api/admin/prospects/:id', authenticateAdmin, async (req, res) => {
+    const { status, email, notes, draft_email } = req.body;
+    try {
+        const r = await pool.query(
+            `UPDATE prospects SET
+                status      = COALESCE($1, status),
+                email       = COALESCE($2, email),
+                notes       = COALESCE($3, notes),
+                draft_email = COALESCE($4, draft_email)
+             WHERE id = $5 RETURNING *`,
+            [status || null, email || null, notes || null, draft_email || null, req.params.id]
+        );
+        res.json(r.rows[0]);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/admin/prospects/:id', authenticateAdmin, async (req, res) => {
+    try {
+        await pool.query('DELETE FROM prospects WHERE id = $1', [req.params.id]);
+        res.json({ message: 'Prospect deleted' });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Send the outreach email to a prospect (individual, B2B)
+app.post('/api/admin/prospects/:id/send', authenticateAdmin, async (req, res) => {
+    const { email, body } = req.body;
+    if (!email || !body) return res.status(400).json({ error: 'email and body required' });
+    try {
+        const pRes = await pool.query('SELECT * FROM prospects WHERE id = $1', [req.params.id]);
+        const p = pRes.rows[0];
+        if (!p) return res.status(404).json({ error: 'Prospect not found' });
+
+        await resend.emails.send({
+            from:    `Home Grown <${SENDER_EMAIL}>`,
+            to:      [email],
+            replyTo: process.env.REPLY_TO_EMAIL,
+            subject: `Home Grown — a Sheffield snack maker saying hello 🌿`,
+            html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;line-height:1.7;color:#0E3019;">`
+                + body.split('\n').join('<br>')
+                + `<br><br><div style="border-top:1px solid #ddd;padding-top:12px;margin-top:20px;font-size:0.8rem;color:#999;">`
+                + `Home Grown &middot; Handmade in Sheffield &middot; homegrownfoods.online<br>`
+                + `This is a one-off B2B enquiry. If you'd rather not hear from us, just reply and let us know.</div></div>`
+        });
+
+        await pool.query('UPDATE prospects SET status = $1, email = $2 WHERE id = $3', ['contacted', email, req.params.id]);
+        res.json({ message: 'Outreach sent' });
+    } catch (err) {
+        console.error('Prospect send error:', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // ─── SERVERLESS EXPORT ────────────────────────────────────────────────────────
