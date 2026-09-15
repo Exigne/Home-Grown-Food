@@ -130,13 +130,12 @@ app.post('/api/create-payment-intent', async (req, res) => {
             }
         }
 
+        // Postage: £3.99 UK-wide. pickup is normalised to a strict boolean so the
+        // string "false" can never be treated as truthy.
+        const isPickup = (pickup === true || pickup === 'true');
         let shippingCents = 0;
-        if (!pickup) {
-            const cleanPostcode = (postcode || '').trim().toUpperCase();
-            if (!cleanPostcode.startsWith('S')) {
-                return res.status(400).json({ error: 'Delivery is only available for Sheffield (S) postcodes.' });
-            }
-            shippingCents = 300;
+        if (!isPickup) {
+            shippingCents = 399;  // £3.99 flat UK postage
         }
 
         const totalCents = Math.max(50, subtotalCents - discountCents + shippingCents);
@@ -189,13 +188,8 @@ app.post('/api/orders', async (req, res) => {
             return res.status(400).json({ error: 'Payment intent mismatch.' });
         }
 
-        if (!pickup) {
-            const cleanPostcode = (postcode || '').trim().toUpperCase();
-            if (!cleanPostcode.startsWith('S')) {
-                await client.query('ROLLBACK');
-                return res.status(400).json({ error: 'Delivery is only available for Sheffield (S) postcodes.' });
-            }
-        }
+        // Normalise pickup to a strict boolean — matches the payment intent logic
+        const isPickup = (pickup === true || pickup === 'true');
 
         let generatedItemsText = [];
         let receiptItems = [];  // detailed line items for the confirmation receipt
@@ -249,7 +243,7 @@ app.post('/api/orders', async (req, res) => {
             }
         }
 
-        const shipping = pickup ? 0 : 3.99;
+        const shipping = isPickup ? 0 : 3.99;
         const calculatedTotal = Math.max(0, subtotal - discount + shipping);
         const itemsString = generatedItemsText.join(', ');
 
@@ -259,7 +253,7 @@ app.post('/api/orders', async (req, res) => {
             `INSERT INTO orders (id, fname, lname, email, address, items, total, status, date, postcode, pickup, marketing_consent)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
             [id, fname, lname, email, address, itemsString, calculatedTotal.toFixed(2),
-             status, date, postcode, pickup || false, marketingConsent]
+             status, date, postcode, isPickup, marketingConsent]
         );
 
         if (promoCode) {
@@ -276,7 +270,7 @@ app.post('/api/orders', async (req, res) => {
         await client.query('COMMIT');
 
         // ─── EMAIL NOTIFICATION (RESEND) ──────────────────────────────────────
-        const pickupLabel = pickup ? '🏠 Home Pickup' : `🚚 Delivery to ${postcode}`;
+        const pickupLabel = isPickup ? '🏠 Home Pickup' : `🚚 Postage to ${postcode}`;
         const adminItemRows = receiptItems.map(function(it) {
             return '<tr><td style="padding:4px 8px;border-bottom:1px solid #eee;">' + it.name +
                 '</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:center;">×' + it.qty +
@@ -286,14 +280,14 @@ app.post('/api/orders', async (req, res) => {
         const { error: emailError } = await resend.emails.send({
             from: `Home Grown Orders <${SENDER_EMAIL}>`,
             to: [process.env.EMAIL_USER],
-            subject: `📦 New Order ${id} — £${calculatedTotal.toFixed(2)} (${pickup ? 'Pickup' : 'Delivery'})`,
+            subject: `📦 New Order ${id} — £${calculatedTotal.toFixed(2)} (${isPickup ? 'Pickup' : 'Postage'})`,
             html: `
                 <div style="font-family:Arial,sans-serif;max-width:560px;">
                     <h2 style="color:#164A2E;">New Order — ${id}</h2>
                     <p style="margin:4px 0;"><strong>Customer:</strong> ${fname} ${lname}</p>
                     <p style="margin:4px 0;"><strong>Email:</strong> ${email}</p>
                     <p style="margin:4px 0;"><strong>Fulfilment:</strong> ${pickupLabel}</p>
-                    ${!pickup ? '<p style="margin:4px 0;"><strong>Address:</strong> ' + address + '</p>' : ''}
+                    ${!isPickup ? '<p style="margin:4px 0;"><strong>Address:</strong> ' + address + '</p>' : ''}
                     <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:0.9rem;">
                         <thead><tr style="background:#164A2E;color:#FFD93D;">
                             <th style="padding:6px 8px;text-align:left;">Item</th>
@@ -303,7 +297,7 @@ app.post('/api/orders', async (req, res) => {
                         <tbody>${adminItemRows}</tbody>
                     </table>
                     ${promoCode ? '<p style="margin:4px 0;"><strong>Promo Used:</strong> ' + promoCode + ' (−£' + discount.toFixed(2) + ')</p>' : ''}
-                    ${!pickup ? '<p style="margin:4px 0;color:#5A8A6A;">Delivery: £' + shipping.toFixed(2) + '</p>' : ''}
+                    ${!isPickup ? '<p style="margin:4px 0;color:#5A8A6A;">Postage: £' + shipping.toFixed(2) + '</p>' : ''}
                     <p style="font-size:1.2rem;font-weight:bold;color:#164A2E;">Total: £${calculatedTotal.toFixed(2)}</p>
                 </div>
             `
@@ -335,14 +329,14 @@ app.post('/api/orders', async (req, res) => {
                     '<td style="padding:4px 0;color:#2E7D32;text-align:right;">−£' + discount.toFixed(2) + '</td></tr>';
             }
             totalsRows += '<tr><td style="padding:4px 0;color:#5A8A6A;">' +
-                (pickup ? 'Collection' : 'UK Postage') + '</td>' +
+                (isPickup ? 'Collection' : 'UK Postage') + '</td>' +
                 '<td style="padding:4px 0;color:#5A8A6A;text-align:right;">' +
                 (shipping > 0 ? '£' + shipping.toFixed(2) : 'FREE') + '</td></tr>';
             totalsRows += '<tr><td style="padding:12px 0 0;font-weight:bold;color:#164A2E;font-size:1.15rem;border-top:2px solid #164A2E;">Total</td>' +
                 '<td style="padding:12px 0 0;font-weight:bold;color:#164A2E;font-size:1.15rem;text-align:right;border-top:2px solid #164A2E;">£' +
                 calculatedTotal.toFixed(2) + '</td></tr>';
 
-            const fulfilMsg = pickup
+            const fulfilMsg = isPickup
                 ? 'We\'ll have your order ready for collection on <strong>Friday or Saturday, 10am–1pm</strong>. We\'ll email you when it\'s ready.'
                 : 'Your order will be posted to:<br><strong>' + address + '</strong>';
 
@@ -371,7 +365,7 @@ app.post('/api/orders', async (req, res) => {
                         </div>
 
                         <div style="background:#E8F5E9;border-left:5px solid #6BBF4A;padding:16px 20px;border-radius:8px;color:#0E3019;line-height:1.6;margin-top:20px;">
-                            <strong>${pickup ? '🏠 Collection' : '🚚 Postage'}</strong><br>
+                            <strong>${isPickup ? '🏠 Collection' : '🚚 Postage'}</strong><br>
                             ${fulfilMsg}
                         </div>
 
@@ -392,7 +386,7 @@ app.post('/api/orders', async (req, res) => {
         // ─── NTFY PUSH NOTIFICATION ───────────────────────────────────────────
         try {
             const NTFY_TOPIC = 'homegrownfoods-orders';
-            const typeLabel = pickup ? '🏠 PICKUP' : '🚚 DELIVERY';
+            const typeLabel = isPickup ? '🏠 PICKUP' : '🚚 POSTAGE';
             await fetch('https://ntfy.sh', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
