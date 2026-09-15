@@ -2135,3 +2135,32 @@ tbody td small { display: block; color: var(--text-muted); font-size: 0.78rem; f
 .ql-snow .ql-picker.ql-font .ql-picker-item[data-value="verdana"]::before { content: 'Verdana'; font-family: Verdana; }
 .ql-snow .ql-picker.ql-font .ql-picker-label[data-value="helvetica"]::before,
 .ql-snow .ql-picker.ql-font .ql-picker-item[data-value="helvetica"]::before { content: 'Helvetica'; font-family: Helvetica; }
+
+/* Floating image control bar in campaign editor */
+.img-control-bar {
+  position: absolute;
+  display: none;
+  gap: 4px;
+  background: var(--green-dark);
+  border-radius: 8px;
+  padding: 5px 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  z-index: 3000;
+  align-items: center;
+}
+.img-control-bar button {
+  background: rgba(255,255,255,0.1);
+  border: none;
+  color: var(--yellow);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 5px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.img-control-bar button:hover { background: var(--yellow); color: var(--green-dark); }
+.img-ctrl-divider { width: 1px; height: 20px; background: rgba(255,255,255,0.2); margin: 0 2px; }
+
+/* Make images in the Quill editor show a pointer so users know they're clickable */
+#campaign-editor img { cursor: pointer; max-width: 100%; }
