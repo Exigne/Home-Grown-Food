@@ -3037,6 +3037,8 @@ async function subscribeToProduct(productId) {
 //  GDPR CONSENT HELPER
 // ═══════════════════════════════════════════════
 function getMarketingConsent() {
-    var el = document.getElementById('marketing-consent');
-    return el ? el.checked : false;
+    // Opt-out model: box ticked = they do NOT want marketing.
+    // Returns true if they're happy to receive (i.e. box NOT ticked).
+    var el = document.getElementById('marketing-optout');
+    return el ? !el.checked : true;
 }
